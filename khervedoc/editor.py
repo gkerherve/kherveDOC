@@ -16,7 +16,8 @@ from PySide6.QtGui import (
     QTextCursor, QTextListFormat,
 )
 from PySide6.QtWidgets import (
-    QInputDialog, QTextEdit, QVBoxLayout, QWidget,
+    QFrame, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QTextEdit,
+    QVBoxLayout, QWidget,
 )
 
 from .model import (
@@ -127,6 +128,36 @@ class DocumentEditor(QWidget):
         super().__init__(parent)
         self._building = False
 
+        # Header strip — title + author, always visible at the top of the
+        # editor so users can edit the document metadata in place (these
+        # become \title / \author / \maketitle in the LaTeX output).
+        self._title_edit = QLineEdit(self)
+        self._title_edit.setPlaceholderText("Document title")
+        title_font = QFont(); title_font.setPointSize(22); title_font.setBold(True)
+        self._title_edit.setFont(title_font)
+        self._title_edit.setStyleSheet(
+            "QLineEdit { border: none; background: transparent; padding: 4px 8px; }")
+
+        self._author_edit = QLineEdit(self)
+        self._author_edit.setPlaceholderText("Author")
+        author_font = QFont(); author_font.setPointSize(13); author_font.setItalic(True)
+        self._author_edit.setFont(author_font)
+        self._author_edit.setStyleSheet(
+            "QLineEdit { border: none; background: transparent; "
+            "padding: 0 8px; color: #555; }")
+
+        self._title_edit.textChanged.connect(self._on_meta_changed)
+        self._author_edit.textChanged.connect(self._on_meta_changed)
+
+        header = QFrame(self)
+        header.setStyleSheet(
+            "QFrame { background: #fafbfc; border-bottom: 1px solid #d0d4d8; }")
+        header_layout = QVBoxLayout(header)
+        header_layout.setContentsMargins(8, 8, 8, 8)
+        header_layout.setSpacing(2)
+        header_layout.addWidget(self._title_edit)
+        header_layout.addWidget(self._author_edit)
+
         self._edit = QTextEdit(self)
         self._edit.setAcceptRichText(False)
         f = QFont(); f.setPointSize(12)
@@ -134,7 +165,9 @@ class DocumentEditor(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self._edit)
+        layout.setSpacing(0)
+        layout.addWidget(header)
+        layout.addWidget(self._edit, 1)
 
         self._debounce = QTimer(self)
         self._debounce.setSingleShot(True)
@@ -156,12 +189,31 @@ class DocumentEditor(QWidget):
 
     def set_meta(self, meta: DocMeta) -> None:
         self._meta = meta
+        self._sync_header_from_meta()
         self._on_text_changed()
+
+    def _sync_header_from_meta(self) -> None:
+        # Suppress signals while we set the text so we don't loop back into
+        # _on_meta_changed and mark the document dirty during a load.
+        self._title_edit.blockSignals(True)
+        self._author_edit.blockSignals(True)
+        self._title_edit.setText(self._meta.title)
+        self._author_edit.setText(self._meta.author)
+        self._title_edit.blockSignals(False)
+        self._author_edit.blockSignals(False)
+
+    def _on_meta_changed(self) -> None:
+        if self._building:
+            return
+        self._meta.title = self._title_edit.text()
+        self._meta.author = self._author_edit.text()
+        self._debounce.start()
 
     def set_document(self, doc: Document) -> None:
         self._building = True
         try:
             self._meta = doc.meta
+            self._sync_header_from_meta()
             self._edit.clear()
             cursor = self._edit.textCursor()
             cursor.movePosition(QTextCursor.Start)
