@@ -455,13 +455,17 @@ class MainWindow(QMainWindow):
     def _update_title(self) -> None:
         name = self._current_path.name if self._current_path else "Untitled"
         self.setWindowTitle(f"kherveDOC {version_string()} — {name}")
-        # Status bar mirrors the full path so the user can see where the
-        # document lives on disk (and copy it via mouse selection).
+        # Status bar shows "filename  —  full/parent/directory/" so the user
+        # can identify the document at a glance and still see where it lives.
         if self._current_path is not None:
-            self._path_label.setText(str(self._current_path))
+            parent = str(self._current_path.parent)
+            self._path_label.setText(
+                f"<b>{self._current_path.name}</b>  —  "
+                f"<span style='color:#666'>{parent}</span>")
             self._path_label.setToolTip(str(self._current_path))
         else:
-            self._path_label.setText("Untitled — not saved yet")
+            self._path_label.setText(
+                "<b>Untitled</b>  —  <span style='color:#888'>not saved yet</span>")
             self._path_label.setToolTip("")
 
     # ----- file actions -----
@@ -611,6 +615,7 @@ class MainWindow(QMainWindow):
         pct = self._zoom_combo.itemData(idx)
         if pct:
             self._editor.set_zoom_percent(int(pct))
+            self._preview.set_zoom_percent(int(pct))
 
     def _step_zoom(self, direction: int) -> None:
         """Walk through the preset zoom levels in the combo. direction=+1

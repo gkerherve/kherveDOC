@@ -256,12 +256,21 @@ class DocumentEditor(QWidget):
         self._resize_to_document()
 
     def _resize_to_document(self, size=None) -> None:
-        """Sync the QTextEdit's height to its document so the outer
-        QScrollArea owns the only scrollbar."""
-        doc_size = self._edit.document().size()
-        h = max(600, int(doc_size.height()) + 16)
-        self._edit.setMinimumHeight(h)
-        self._edit.setMaximumHeight(h)
+        """Round the QTextEdit's height up to a whole number of pages so the
+        page card on screen always has true A4/Letter/Legal proportions.
+
+        Without this clamp the card stretches to whatever the document
+        layout reports, which can produce arbitrary ratios for short
+        documents and made the page look "wrong" in v0.5.
+        """
+        page = page_sizes.by_code(self._meta.page_size)
+        scale = self._zoom_percent / 100 if self._zoom_percent else 1.0
+        page_h = max(1, round(page.height_px * scale))
+        doc_h = int(self._edit.document().size().height())
+        n_pages = max(1, -(-doc_h // page_h))   # ceil div
+        total_h = n_pages * page_h
+        self._edit.setMinimumHeight(total_h)
+        self._edit.setMaximumHeight(total_h)
 
     def set_document(self, doc: Document) -> None:
         self._building = True
