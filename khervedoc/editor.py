@@ -287,22 +287,17 @@ class DocumentEditor(QWidget):
         self._resize_to_document()
 
     def _resize_to_document(self, size=None) -> None:
-        """Size the QTextEdit to its actual content (plus a bit of slack), and
-        extend it to the next whole page only when content has crossed a page
-        boundary. A short document gets a short page card that starts at the
-        top — no more empty A4 sheet on first launch.
+        """Size the QTextEdit to its actual content so the cursor lands at
+        the top of the page card. Now that PagedTextEdit no longer calls
+        QTextDocument.setPageSize, document().size().height() reports the
+        real content height rather than a minimum-one-page reading, so a
+        new document gets a short card with the title at the top and the
+        card grows downward as the user types.
         """
-        page = page_sizes.by_code(self._meta.page_size)
-        scale = self._zoom_percent / 100 if self._zoom_percent else 1.0
-        page_h = max(1, round(page.height_px * scale))
         doc_h = max(1, int(self._edit.document().size().height()))
-        # Round up to the next page only when the document genuinely overflows
-        # one; otherwise use the content height directly so the cursor lands
-        # near the top instead of in the middle of an empty A4 sheet.
-        if doc_h <= page_h:
-            total_h = max(doc_h + 16, round(page_h * 0.3))
-        else:
-            total_h = -(-doc_h // page_h) * page_h
+        # A small minimum so the card always has a visible outline; small
+        # enough that content stays anchored to the top.
+        total_h = max(doc_h + 24, 240)
         self._edit.setMinimumHeight(total_h)
         self._edit.setMaximumHeight(total_h)
 

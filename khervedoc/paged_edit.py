@@ -12,7 +12,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QSizeF, Qt, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen
 from PySide6.QtWidgets import QTextEdit, QWidget
 
@@ -104,12 +104,19 @@ class PagedTextEdit(QTextEdit):
         return self._page_height_px
 
     def set_page_size_px(self, width_px: int, height_px: int) -> None:
-        """Set the document's pagination size in pixels."""
+        """Record the page dimensions used by the break-line overlay.
+
+        We deliberately do NOT call QTextDocument.setPageSize: that forces
+        document().size().height() to report a multiple of the page
+        height even when the content is short, which made a brand-new
+        document render as a fully-empty A4 sheet with the title floating
+        in the middle. The page-break overlay paints its dashed indicator
+        lines at multiples of page_height_px without help from the layout
+        engine; the document itself flows as one continuous sheet that
+        grows with content.
+        """
         self._page_width_px = width_px
         self._page_height_px = height_px
-        # QTextDocument.setPageSize tells the layout engine where to break
-        # pages — value is in the same units as the document's pixel-size.
-        self.document().setPageSize(QSizeF(width_px, height_px))
         self._overlay.update()
 
     def resizeEvent(self, ev):
