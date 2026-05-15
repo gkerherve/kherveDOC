@@ -182,6 +182,7 @@ class DocumentEditor(QWidget):
         self._meta = DocMeta()
         # Zoom state: tracked so set_zoom_percent can compute deltas.
         self._base_font_pt = 12
+        self._body_font_pt = 12   # user-controllable body text size
         self._zoom_percent = 100
         self._zoom_delta = 0
 
@@ -194,7 +195,10 @@ class DocumentEditor(QWidget):
         self._edit.setFrameShape(QFrame.NoFrame)
         f = QFont("Georgia"); f.setPointSize(12)
         self._edit.setFont(f)
-        self._edit.document().setDocumentMargin(72)   # ~1 inch of inner padding
+        # ~1 inch of inner padding at 100% zoom; scaled by set_zoom_percent
+        # so the number of characters per line stays constant when zooming.
+        self._base_doc_margin = 72
+        self._edit.document().setDocumentMargin(self._base_doc_margin)
         self._edit.setStyleSheet("QTextEdit { background: white; border: none; }")
         self._edit.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._edit.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -273,19 +277,22 @@ class DocumentEditor(QWidget):
         self._resize_to_document()
 
     def _resize_to_document(self, size=None) -> None:
-        """Round the QTextEdit's height up to a whole number of pages so the
-        page card on screen always has true A4/Letter/Legal proportions.
-
-        Without this clamp the card stretches to whatever the document
-        layout reports, which can produce arbitrary ratios for short
-        documents and made the page look "wrong" in v0.5.
+        """Size the QTextEdit to its actual content (plus a bit of slack), and
+        extend it to the next whole page only when content has crossed a page
+        boundary. A short document gets a short page card that starts at the
+        top — no more empty A4 sheet on first launch.
         """
         page = page_sizes.by_code(self._meta.page_size)
         scale = self._zoom_percent / 100 if self._zoom_percent else 1.0
         page_h = max(1, round(page.height_px * scale))
-        doc_h = int(self._edit.document().size().height())
-        n_pages = max(1, -(-doc_h // page_h))   # ceil div
-        total_h = n_pages * page_h
+        doc_h = max(1, int(self._edit.document().size().height()))
+        # Round up to the next page only when the document genuinely overflows
+        # one; otherwise use the content height directly so the cursor lands
+        # near the top instead of in the middle of an empty A4 sheet.
+        if doc_h <= page_h:
+            total_h = max(doc_h + 16, round(page_h * 0.3))
+        else:
+            total_h = -(-doc_h // page_h) * page_h
         self._edit.setMinimumHeight(total_h)
         self._edit.setMaximumHeight(total_h)
 
@@ -602,7 +609,14 @@ class DocumentEditor(QWidget):
         else:
             block.setUserState(_STATE_PARAGRAPH)
             QTextCursor(block).setBlockFormat(QTextBlockFormat())
-            fmt = QTextCharFormat(); f = QFont("Georgia"); f.setPointSize(12)
+            # Use setCharFormat (not merge) so EVERY font property —
+            # family, size, weight, italic, smallcaps, super/subscript —
+            # gets wiped back to the document defaults. Anything less and a
+            # paragraph carrying an inherited heading font would still
+            # render larger than its neighbours.
+            fmt = QTextCharFormat()
+            f = QFont("Georgia")
+            f.setPointSizeF(self._body_font_pt * (self._zoom_percent / 100))
             fmt.setFont(f)
             block_cursor.setCharFormat(fmt)
         self._on_text_changed()
@@ -620,6 +634,37 @@ class DocumentEditor(QWidget):
         return self._alignment_of(self._edit.textCursor().block())
 
     # ----- zoom -----
+
+    def body_font_pt(self) -> int:
+        return self._body_font_pt
+
+    def set_body_font_pt(self, pt: int) -> None:
+        """Change the default body text size and re-apply it to every
+        Paragraph block, so existing body text grows/shrinks with the
+        new default. Headings keep their own sizes."""
+        pt = max(6, min(72, int(pt)))
+        if pt == self._body_font_pt:
+            return
+        self._body_font_pt = pt
+        self._building = True
+        try:
+            doc = self._edit.document()
+            block = doc.firstBlock()
+            zoom = self._zoom_percent / 100 if self._zoom_percent else 1.0
+            while block.isValid():
+                state = block.userState()
+                if state in (0, -1):    # Paragraph or uninitialised
+                    bc = QTextCursor(block)
+                    bc.select(QTextCursor.BlockUnderCursor)
+                    fmt = QTextCharFormat()
+                    f = QFont("Georgia")
+                    f.setPointSizeF(pt * zoom)
+                    fmt.setFont(f)
+                    bc.setCharFormat(fmt)
+                block = block.next()
+        finally:
+            self._building = False
+        self._on_text_changed()
 
     def zoom_percent(self) -> int:
         return self._zoom_percent
@@ -670,12 +715,16 @@ class DocumentEditor(QWidget):
 
         self._zoom_percent = percent
         # Page card grows/shrinks proportionally so paper proportions are
-        # preserved and the rescaled text still fits the visible page width.
+        # preserved. The document margin also scales so the number of
+        # characters per line stays constant — zoom should make everything
+        # bigger uniformly, not reflow the text.
         page = page_sizes.by_code(self._meta.page_size)
         scaled_w = round(page.width_px * percent / 100)
         scaled_h = round(page.height_px * percent / 100)
         self._page.setFixedWidth(scaled_w)
         self._edit.set_page_size_px(scaled_w, scaled_h)
+        self._edit.document().setDocumentMargin(
+            self._base_doc_margin * percent / 100)
         self._resize_to_document()
 
     def toggle_mark(self, mark: str) -> None:

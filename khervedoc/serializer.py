@@ -175,7 +175,11 @@ def serialize_block(node: Block) -> str:
 def serialize_document(doc: Document) -> str:
     from . import page_sizes
     page = page_sizes.by_code(doc.meta.page_size)
-    geometry = f"\\usepackage[{page.geometry_option}]{{geometry}}"
+    # 2.5cm uniform margins — matches the Word-document default the user
+    # is comparing against, and stops short documents from rendering as a
+    # tiny ribbon of text centred on a vast white page.
+    geometry = (f"\\usepackage[{page.geometry_option},"
+                f"margin=2.5cm]{{geometry}}")
     packages = geometry + "\n" + "\n".join(
         f"\\usepackage{{{p}}}" for p in doc.meta.packages)
 

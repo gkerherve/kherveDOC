@@ -213,20 +213,20 @@ def test_meta_title_fallback_when_no_title_block():
 def test_geometry_package_emitted_for_a4_by_default():
     doc = Document(meta=DocMeta(), children=[Paragraph(children=[Text(text="x")])])
     out = serialize_document(doc)
-    assert r"\usepackage[a4paper]{geometry}" in out
+    assert r"\usepackage[a4paper,margin=2.5cm]{geometry}" in out
 
 
 def test_geometry_package_changes_with_page_size():
     doc = Document(meta=DocMeta(page_size="Letter"),
                    children=[Paragraph(children=[Text(text="x")])])
     out = serialize_document(doc)
-    assert r"\usepackage[letterpaper]{geometry}" in out
+    assert r"\usepackage[letterpaper,margin=2.5cm]{geometry}" in out
 
 
 def test_geometry_package_for_legal():
     doc = Document(meta=DocMeta(page_size="Legal"),
                    children=[Paragraph(children=[Text(text="x")])])
-    assert r"\usepackage[legalpaper]{geometry}" in serialize_document(doc)
+    assert r"\usepackage[legalpaper,margin=2.5cm]{geometry}" in serialize_document(doc)
 
 
 def test_set_title_emits_maketitle():

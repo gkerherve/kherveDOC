@@ -428,6 +428,21 @@ class MainWindow(QMainWindow):
         self._template_combo.currentIndexChanged.connect(self._on_template_changed)
         tb.addWidget(self._template_combo)
 
+        # Body-text font size — affects only the default body size; headings
+        # keep their canonical sizes. Editable so users can type 11.5 etc.
+        self._fontsize_combo = QComboBox(self)
+        self._fontsize_combo.setEditable(True)
+        for pt in (8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 24):
+            self._fontsize_combo.addItem(str(pt), pt)
+        self._fontsize_combo.setCurrentText("12")
+        self._fontsize_combo.setMaximumWidth(60)
+        self._fontsize_combo.setToolTip("Body text font size (pt)")
+        self._fontsize_combo.lineEdit().editingFinished.connect(
+            self._on_fontsize_changed)
+        self._fontsize_combo.currentIndexChanged.connect(
+            self._on_fontsize_changed)
+        tb.addWidget(self._fontsize_combo)
+
         # Paper size combo (A4 / Letter / Legal).
         self._pagesize_combo = QComboBox(self)
         for p in page_sizes.ALL:
@@ -661,6 +676,13 @@ class MainWindow(QMainWindow):
 
     def _nudge_zoom(self, delta: int) -> None:
         self._zoom_slider.setValue(self._zoom_slider.value() + delta)
+
+    def _on_fontsize_changed(self, *_) -> None:
+        try:
+            pt = int(float(self._fontsize_combo.currentText().strip().rstrip("pt")))
+        except (ValueError, TypeError):
+            return
+        self._editor.set_body_font_pt(pt)
 
     def _on_pagesize_changed(self, idx: int) -> None:
         code = self._pagesize_combo.itemData(idx)
