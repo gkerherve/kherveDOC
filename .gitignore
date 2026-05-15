@@ -6,6 +6,10 @@ __pycache__/
 venv/
 *.egg-info/
 
+# IDE configs
+.idea/
+.vscode/
+
 # Build/preview artefacts
 build/
 *.aux
