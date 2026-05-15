@@ -17,10 +17,10 @@ from PySide6.QtWidgets import (
 
 from . import __version__, git_backend, icons, version_string
 from .compiler import CompileResult, compile_tex, tectonic_available
-from .editor import DocumentEditor
+from .editor import DocumentEditor, TEMPLATE_CHOICES
 from .latex_view import LatexView
 from .model import (
-    Document, DocMeta, Paragraph, Section, Text, from_json, to_json,
+    Document, DocMeta, Paragraph, Section, Text, Title, from_json, to_json,
 )
 from .preview import PdfPreview
 from .serializer import serialize_document
@@ -332,12 +332,25 @@ class MainWindow(QMainWindow):
         tb.addSeparator()
 
         self._heading_combo = QComboBox(self)
+        # Order matches Word's paragraph-style picker.
         self._heading_combo.addItem("Body text", 0)
+        self._heading_combo.addItem("Title", -1)
         for level in range(1, 6):
             self._heading_combo.addItem(f"Heading {level}", level)
+        self._heading_combo.setMinimumWidth(120)
         self._heading_combo.currentIndexChanged.connect(
             lambda idx: self._editor.apply_heading(self._heading_combo.itemData(idx)))
         tb.addWidget(self._heading_combo)
+
+        # Narrow template combo — just the document-class shortcodes.
+        self._template_combo = QComboBox(self)
+        for cls in TEMPLATE_CHOICES:
+            self._template_combo.addItem(cls, cls)
+        self._template_combo.setMinimumWidth(90)
+        self._template_combo.setMaximumWidth(110)
+        self._template_combo.setToolTip("LaTeX document class")
+        self._template_combo.currentIndexChanged.connect(self._on_template_changed)
+        tb.addWidget(self._template_combo)
         tb.addSeparator()
 
         for act in (self.act_bold, self.act_italic, self.act_underline,
@@ -460,6 +473,15 @@ class MainWindow(QMainWindow):
             self._editor.set_meta(dlg.result_meta())
             self._kick_compile()
 
+    def _on_template_changed(self, idx: int) -> None:
+        cls = self._template_combo.itemData(idx)
+        if not cls: return
+        meta = self._editor.meta()
+        if meta.documentclass == cls: return
+        meta.documentclass = cls
+        self._editor.set_meta(meta)
+        self._kick_compile()
+
     def _insert_link_with_hyperref(self) -> None:
         # Ensure hyperref is in the package list before inserting.
         meta = self._editor.meta()
@@ -564,29 +586,49 @@ class MainWindow(QMainWindow):
         self.act_sub.setChecked(e.is_mark_active("subscript"))
         self.act_super.setChecked(e.is_mark_active("superscript"))
         level = e.current_heading_level()
-        idx = max(0, level) if level >= 0 else 0
+        # heading_combo indices: 0=Body, 1=Title, 2..6=Heading 1..5
+        if level == -1: idx = 1
+        elif 1 <= level <= 5: idx = level + 1
+        elif level == 0: idx = 0
+        else: idx = 0
         if self._heading_combo.currentIndex() != idx:
             self._heading_combo.blockSignals(True)
             self._heading_combo.setCurrentIndex(idx)
             self._heading_combo.blockSignals(False)
-        # Heading radio group
+        # Heading radio group (only tracks body/headings 1..5)
         if level == 0:
             self.act_h_body.setChecked(True)
         elif 1 <= level <= 5:
             self.heading_actions[level - 1].setChecked(True)
+
+        # Keep the template combo in sync with the document class.
+        meta_cls = e.meta().documentclass
+        cur = self._template_combo.currentData()
+        if cur != meta_cls:
+            tidx = self._template_combo.findData(meta_cls)
+            if tidx < 0:
+                self._template_combo.addItem(meta_cls, meta_cls)
+                tidx = self._template_combo.count() - 1
+            self._template_combo.blockSignals(True)
+            self._template_combo.setCurrentIndex(tidx)
+            self._template_combo.blockSignals(False)
 
 
 def _starter_document() -> Document:
     return Document(
         meta=DocMeta(title="", author=""),
         children=[
-            Section(level=1, children=[Text(text="Welcome to kherveDOC")]),
+            Title(children=[Text(text="My document")]),
+            Section(level=1, children=[Text(text="Introduction")]),
             Paragraph(children=[
-                Text(text="Type here. Use the toolbar or the Insert menu to add "),
-                Text(text="bold", marks=["bold"]),
+                Text(text="Type here. Use the paragraph-style picker to choose "),
+                Text(text="Title", marks=["bold"]),
                 Text(text=", "),
-                Text(text="italic", marks=["italic"]),
-                Text(text=", math, lists, links, figures, tables and more."),
+                Text(text="Heading 1-5", marks=["bold"]),
+                Text(text=" or "),
+                Text(text="Body text", marks=["bold"]),
+                Text(text=". Use the Insert menu for math, lists, links, "),
+                Text(text="figures, tables and more."),
             ]),
         ],
     )

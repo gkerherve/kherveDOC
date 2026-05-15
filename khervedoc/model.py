@@ -121,7 +121,16 @@ class RawLatex:
     type: str = "RawLatex"
 
 
-Block = Union[Paragraph, Section, MathBlock, List, Figure, Table, RawLatex]
+@dataclass
+class Title:
+    """Document title paragraph — like Word's "Title" style. Becomes
+    \\title{...}\\maketitle in the LaTeX output (only the first one wins;
+    subsequent Title blocks are still rendered, last definition takes)."""
+    children: list[Inline] = field(default_factory=list)
+    type: str = "Title"
+
+
+Block = Union[Paragraph, Section, MathBlock, List, Figure, Table, RawLatex, Title]
 
 
 # ---------------- Metadata + document ----------------
@@ -214,6 +223,8 @@ def _build_block(d: dict) -> Block:
         )
     if t == "RawLatex":
         return RawLatex(text=d["text"])
+    if t == "Title":
+        return Title(children=_build_inlines(d.get("children", [])))
     raise ValueError(f"Unknown block node type: {t!r}")
 
 

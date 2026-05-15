@@ -1,7 +1,7 @@
 from khervedoc.model import (
     Citation, CrossRef, Document, DocMeta, Figure, Footnote, Link,
     List as ListNode, ListItem, MathBlock, MathInline, Paragraph, RawLatex,
-    Section, Table, Text, from_json, to_json,
+    Section, Table, Text, Title, from_json, to_json,
 )
 
 
@@ -9,6 +9,7 @@ def test_round_trip_preserves_all_node_types():
     doc = Document(
         meta=DocMeta(title="T", author="A"),
         children=[
+            Title(children=[Text(text="My title")]),
             Section(level=2, children=[Text(text="Heading")]),
             Paragraph(children=[
                 Text(text="hi ", marks=["bold", "italic"]),

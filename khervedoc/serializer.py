@@ -7,7 +7,7 @@ from __future__ import annotations
 from .model import (
     Block, Citation, CrossRef, Document, Figure, Footnote, Inline, Link,
     List as ListNode, ListItem, MathBlock, MathInline, Paragraph, RawLatex,
-    Section, Table, Text,
+    Section, Table, Text, Title,
 )
 
 
@@ -147,35 +147,59 @@ def serialize_block(node: Block) -> str:
     if isinstance(node, RawLatex):
         return node.text + ("\n" if not node.text.endswith("\n") else "")
 
+    if isinstance(node, Title):
+        # Title blocks emit \maketitle here; the actual \title{...} is set in
+        # the preamble by serialize_document.
+        return "\\maketitle\n"
+
     raise TypeError(f"Unknown block node: {type(node).__name__}")
 
 
 def serialize_document(doc: Document) -> str:
     packages = "\n".join(f"\\usepackage{{{p}}}" for p in doc.meta.packages)
-    title = (doc.meta.title or "").strip()
-    author = (doc.meta.author or "").strip()
 
-    # Skip \title/\author entirely if both are empty — some packages break on
-    # "\maketitle" with empty metadata.
-    title_block = ""
-    if title or author:
-        title_block += f"\\title{{{escape_text(title) or '~'}}}\n"
-        title_block += f"\\author{{{escape_text(author) or '~'}}}\n"
-    maketitle = "\\maketitle\n" if (title or author) else ""
+    # A Title block in the document body takes precedence over meta.title —
+    # this lets the user pick the "Title" style inside the editor and have
+    # the document title flow naturally into the LaTeX output.
+    inline_title: str | None = None
+    has_title_block = False
+    for block in doc.children:
+        if isinstance(block, Title):
+            inline_title = serialize_inlines(block.children)
+            has_title_block = True
+            break
+    title_text = inline_title if inline_title is not None else (
+        escape_text((doc.meta.title or "").strip()))
+    author_text = escape_text((doc.meta.author or "").strip())
+
+    has_metadata = bool(title_text or author_text)
+    preamble_meta = ""
+    if has_metadata:
+        preamble_meta += f"\\title{{{title_text or '~'}}}\n"
+        preamble_meta += f"\\author{{{author_text or '~'}}}\n"
 
     parts: list[str] = []
+    emitted_maketitle = False
     for i, block in enumerate(doc.children):
-        parts.append(serialize_block(block))
+        rendered = serialize_block(block)
+        if isinstance(block, Title):
+            emitted_maketitle = True
+        parts.append(rendered)
         if i < len(doc.children) - 1:
             parts.append("\n")
+
+    # If meta.title is set but no Title block exists in the body, fall back
+    # to emitting \maketitle once at the top — preserves the previous
+    # behaviour for documents created via the properties dialog.
+    if has_metadata and not has_title_block and not emitted_maketitle:
+        parts.insert(0, "\\maketitle\n")
     body = "".join(parts)
 
     return (
         f"\\documentclass{{{doc.meta.documentclass}}}\n"
         f"{packages}\n"
-        f"{title_block}"
+        f"{preamble_meta}"
         f"\\begin{{document}}\n"
-        f"{maketitle}"
         f"{body}"
         f"\\end{{document}}\n"
     )

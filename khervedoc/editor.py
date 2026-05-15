@@ -15,32 +15,26 @@ from PySide6.QtGui import (
     QAction, QColor, QFont, QKeySequence, QTextBlockFormat, QTextCharFormat,
     QTextCursor, QTextListFormat,
 )
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QFrame, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
-    QTextEdit, QVBoxLayout, QWidget,
+    QFrame, QHBoxLayout, QInputDialog, QScrollArea, QTextEdit, QVBoxLayout,
+    QWidget,
 )
 
 
-# Known LaTeX document classes the combo offers. Editable in the document
-# properties dialog, but the everyday choices live here.
-TEMPLATE_CHOICES = [
-    ("article", "Article — standard short papers, reports"),
-    ("report",  "Report — multi-chapter reports, theses"),
-    ("book",    "Book — chaptered books, long monographs"),
-    ("letter",  "Letter — formal letters with address blocks"),
-    ("beamer",  "Beamer — slide presentations"),
-    ("memoir",  "Memoir — flexible book/article hybrid"),
-]
+# LaTeX document classes shown in the toolbar combo. Order = display order.
+TEMPLATE_CHOICES = ["article", "report", "book", "letter", "beamer", "memoir"]
 
 from .model import (
     Citation, CrossRef, Document, DocMeta, Figure, Footnote, Link,
     List as ListNode, ListItem, MathBlock, MathInline, Paragraph, RawLatex,
-    Section, Table, Text,
+    Section, Table, Text, Title,
 )
 
 
 # ---- per-block user state encoding ----
 _STATE_PARAGRAPH = 0
+_STATE_TITLE = 7        # Word-style "Title" paragraph; emits \maketitle
 _STATE_MATH_BLOCK = 99
 _STATE_FIGURE = 100
 _STATE_TABLE = 101
@@ -67,6 +61,7 @@ _RAW_PREFIX = "[RAW] "
 
 
 _HEADING_FONT_SIZES = {1: 22, 2: 18, 3: 15, 4: 13, 5: 12}
+_TITLE_FONT_SIZE = 28
 
 
 def _heading_char_format(level: int) -> QTextCharFormat:
@@ -76,6 +71,22 @@ def _heading_char_format(level: int) -> QTextCharFormat:
     f.setPointSize(_HEADING_FONT_SIZES.get(level, 12))
     fmt.setFont(f)
     return fmt
+
+
+def _title_char_format() -> QTextCharFormat:
+    fmt = QTextCharFormat()
+    f = QFont()
+    f.setBold(True)
+    f.setPointSize(_TITLE_FONT_SIZE)
+    fmt.setFont(f)
+    return fmt
+
+
+def _title_block_format() -> QTextBlockFormat:
+    bfmt = QTextBlockFormat()
+    bfmt.setAlignment(Qt.AlignHCenter)
+    bfmt.setTopMargin(8); bfmt.setBottomMargin(20)
+    return bfmt
 
 
 def _math_block_char_format() -> QTextCharFormat:
@@ -140,89 +151,55 @@ class DocumentEditor(QWidget):
         super().__init__(parent)
         self._building = False
 
-        # Title + author + template selector. The header sits at the top of
-        # the white "page" so the document metadata is editable in place.
-        self._title_edit = QLineEdit()
-        self._title_edit.setPlaceholderText("Document title")
-        title_font = QFont(); title_font.setPointSize(22); title_font.setBold(True)
-        self._title_edit.setFont(title_font)
-        self._title_edit.setStyleSheet(
-            "QLineEdit { border: none; background: transparent; padding: 0; }")
-
-        self._author_edit = QLineEdit()
-        self._author_edit.setPlaceholderText("Author")
-        author_font = QFont(); author_font.setPointSize(13); author_font.setItalic(True)
-        self._author_edit.setFont(author_font)
-        self._author_edit.setStyleSheet(
-            "QLineEdit { border: none; background: transparent; "
-            "padding: 0; color: #555; }")
-
-        self._template_combo = QComboBox()
-        for cls, label in TEMPLATE_CHOICES:
-            self._template_combo.addItem(label, cls)
-        self._template_combo.setToolTip(
-            "LaTeX document class — controls page layout, sectioning and overall style.")
-        template_label = QLabel("Template:")
-        template_label.setStyleSheet("color: #555;")
-
-        self._title_edit.textChanged.connect(self._on_meta_changed)
-        self._author_edit.textChanged.connect(self._on_meta_changed)
-        self._template_combo.currentIndexChanged.connect(self._on_meta_changed)
-
-        # Header: meta column on the left, template selector on the right.
-        meta_col = QVBoxLayout()
-        meta_col.setSpacing(2)
-        meta_col.addWidget(self._title_edit)
-        meta_col.addWidget(self._author_edit)
-
-        tmpl_col = QVBoxLayout()
-        tmpl_col.setSpacing(2)
-        tmpl_col.addWidget(template_label)
-        tmpl_col.addWidget(self._template_combo)
-        tmpl_col.addStretch(1)
-
-        header = QFrame()
-        header.setObjectName("docHeader")
-        header.setStyleSheet(
-            "#docHeader { background: white; border-bottom: 1px solid #e5e7eb; }")
-        header_h = QHBoxLayout(header)
-        header_h.setContentsMargins(60, 50, 60, 18)
-        header_h.addLayout(meta_col, 1)
-        header_h.addLayout(tmpl_col, 0)
-
-        # The "page": white card holding the header strip and the editable
-        # text area. Wrapped in a horizontal layout with grey gutters so it
-        # looks like a sheet of paper sitting on a grey desk.
+        # MS Word look: a white "page" card centered on a grey desk, with a
+        # single scrollbar pinned to the far right edge of the whole tab.
+        # The QTextEdit doesn't scroll itself — it grows to fit its content
+        # and the outer QScrollArea handles scrolling.
         self._edit = QTextEdit()
         self._edit.setAcceptRichText(False)
         self._edit.setFrameShape(QFrame.NoFrame)
         f = QFont("Georgia"); f.setPointSize(12)
         self._edit.setFont(f)
-        # Inner document margin replicates the white-space inside a page.
-        self._edit.document().setDocumentMargin(60)
-        self._edit.setStyleSheet(
-            "QTextEdit { background: white; border: none; }")
+        self._edit.document().setDocumentMargin(72)   # ~1 inch of "page" padding
+        self._edit.setStyleSheet("QTextEdit { background: white; border: none; }")
+        self._edit.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._edit.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         page = QFrame()
         page.setObjectName("page")
         page.setStyleSheet(
-            "#page { background: white; border: 1px solid #c8ccd1; }")
-        page.setMinimumWidth(700)
-        page.setMaximumWidth(950)
+            "#page { background: white; border: 1px solid #b8bcc1; }")
+        page.setMinimumWidth(720)
+        page.setMaximumWidth(900)
         page_layout = QVBoxLayout(page)
         page_layout.setContentsMargins(0, 0, 0, 0)
         page_layout.setSpacing(0)
-        page_layout.addWidget(header)
         page_layout.addWidget(self._edit, 1)
 
-        outer = QHBoxLayout(self)
+        desk = QWidget()
+        desk.setObjectName("desk")
+        desk.setStyleSheet("#desk { background: #d0d4d8; }")
+        desk_layout = QHBoxLayout(desk)
+        desk_layout.setContentsMargins(0, 24, 0, 32)
+        desk_layout.addStretch(1)
+        desk_layout.addWidget(page, 0)
+        desk_layout.addStretch(1)
+
+        self._scroll = QScrollArea(self)
+        self._scroll.setWidget(desk)
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.NoFrame)
+        self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+
+        outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        outer.addStretch(1)
-        outer.addWidget(page, 0)
-        outer.addStretch(1)
-        # Grey desk behind the white page.
-        self.setAutoFillBackground(True)
-        self.setStyleSheet("DocumentEditor { background: #d0d4d8; }")
+        outer.addWidget(self._scroll)
+
+        # Resize the QTextEdit to its document height so the outer scrollbar
+        # is the only one — like a real page in Word that grows downward.
+        self._edit.document().documentLayout().documentSizeChanged.connect(
+            self._resize_to_document)
 
         self._debounce = QTimer(self)
         self._debounce.setSingleShot(True)
@@ -244,41 +221,20 @@ class DocumentEditor(QWidget):
 
     def set_meta(self, meta: DocMeta) -> None:
         self._meta = meta
-        self._sync_header_from_meta()
         self._on_text_changed()
 
-    def _sync_header_from_meta(self) -> None:
-        # Suppress signals while we set the text so we don't loop back into
-        # _on_meta_changed and mark the document dirty during a load.
-        for w in (self._title_edit, self._author_edit, self._template_combo):
-            w.blockSignals(True)
-        self._title_edit.setText(self._meta.title)
-        self._author_edit.setText(self._meta.author)
-        # Match the combo to the meta's documentclass; if it's a custom class
-        # not in TEMPLATE_CHOICES, add it on the fly and select it.
-        idx = self._template_combo.findData(self._meta.documentclass)
-        if idx < 0:
-            self._template_combo.addItem(
-                f"{self._meta.documentclass} (custom)", self._meta.documentclass)
-            idx = self._template_combo.count() - 1
-        self._template_combo.setCurrentIndex(idx)
-        for w in (self._title_edit, self._author_edit, self._template_combo):
-            w.blockSignals(False)
-
-    def _on_meta_changed(self) -> None:
-        if self._building:
-            return
-        self._meta.title = self._title_edit.text()
-        self._meta.author = self._author_edit.text()
-        self._meta.documentclass = self._template_combo.currentData() \
-            or self._meta.documentclass
-        self._debounce.start()
+    def _resize_to_document(self, size=None) -> None:
+        """Sync the QTextEdit's height to its document so the outer
+        QScrollArea owns the only scrollbar."""
+        doc_size = self._edit.document().size()
+        h = max(600, int(doc_size.height()) + 16)
+        self._edit.setMinimumHeight(h)
+        self._edit.setMaximumHeight(h)
 
     def set_document(self, doc: Document) -> None:
         self._building = True
         try:
             self._meta = doc.meta
-            self._sync_header_from_meta()
             self._edit.clear()
             cursor = self._edit.textCursor()
             cursor.movePosition(QTextCursor.Start)
@@ -320,6 +276,8 @@ class DocumentEditor(QWidget):
                 text = block.text()
                 if state == _STATE_MATH_BLOCK:
                     blocks.append(MathBlock(latex=text))
+                elif state == _STATE_TITLE:
+                    blocks.append(Title(children=self._inlines_from_block(block)))
                 elif state == _STATE_FIGURE:
                     blocks.append(self._figure_from_stub(text))
                 elif state == _STATE_TABLE:
@@ -337,6 +295,12 @@ class DocumentEditor(QWidget):
     # ---------- block rendering ----------
 
     def _render_block(self, cursor: QTextCursor, block) -> None:
+        if isinstance(block, Title):
+            cursor.setBlockFormat(_title_block_format())
+            cursor.block().setUserState(_STATE_TITLE)
+            for inline in block.children:
+                self._insert_inline(cursor, inline, base_format=_title_char_format())
+            return
         if isinstance(block, Section):
             cursor.block().setUserState(block.level)
             cfmt = _heading_char_format(block.level)
@@ -481,15 +445,24 @@ class DocumentEditor(QWidget):
     # ---------- formatting actions (called by mainwindow) ----------
 
     def apply_heading(self, level: int) -> None:
+        """level: -1 = Title, 0 = Body, 1..5 = Heading 1..5."""
         cursor = self._edit.textCursor()
         block = cursor.block()
-        block.setUserState(level if level else _STATE_PARAGRAPH)
         block_cursor = QTextCursor(block)
         block_cursor.select(QTextCursor.BlockUnderCursor)
-        if level >= 1:
+        if level == -1:
+            block.setUserState(_STATE_TITLE)
+            QTextCursor(block).setBlockFormat(_title_block_format())
+            block_cursor.mergeCharFormat(_title_char_format())
+        elif level >= 1:
+            block.setUserState(level)
+            QTextCursor(block).setBlockFormat(QTextBlockFormat())
             block_cursor.mergeCharFormat(_heading_char_format(level))
         else:
-            fmt = QTextCharFormat(); f = QFont(); f.setPointSize(12); fmt.setFont(f)
+            block.setUserState(_STATE_PARAGRAPH)
+            QTextCursor(block).setBlockFormat(QTextBlockFormat())
+            fmt = QTextCharFormat(); f = QFont("Georgia"); f.setPointSize(12)
+            fmt.setFont(f)
             block_cursor.setCharFormat(fmt)
         self._on_text_changed()
 
@@ -646,11 +619,12 @@ class DocumentEditor(QWidget):
         c.block().setUserState(_STATE_PARAGRAPH)
 
     def current_heading_level(self) -> int:
-        """Return 0 for body / 1-5 for headings / -1 if cursor is on a non-text block."""
+        """Returns -1 = Title, 0 = Body, 1..5 = Heading, -2 = non-text block."""
         state = self._edit.textCursor().block().userState()
+        if state == _STATE_TITLE: return -1
         if 1 <= state <= 5: return state
         if state == _STATE_PARAGRAPH: return 0
-        return -1
+        return -2
 
     def is_mark_active(self, mark: str) -> bool:
         f = self._edit.currentFont()

@@ -1,7 +1,7 @@
 from khervedoc.model import (
     Citation, CrossRef, Document, DocMeta, Figure, Footnote, Link,
     List as ListNode, ListItem, MathBlock, MathInline, Paragraph, RawLatex,
-    Section, Table, Text,
+    Section, Table, Text, Title,
 )
 from khervedoc.serializer import (
     escape_text, serialize_block, serialize_document, serialize_inline,
@@ -122,6 +122,40 @@ def test_empty_title_and_author_omits_maketitle():
     out = serialize_document(doc)
     assert r"\title" not in out
     assert r"\maketitle" not in out
+
+
+def test_title_block_drives_title_and_maketitle():
+    doc = Document(
+        meta=DocMeta(title="", author=""),
+        children=[
+            Title(children=[Text(text="My Document")]),
+            Paragraph(children=[Text(text="body")]),
+        ],
+    )
+    out = serialize_document(doc)
+    assert r"\title{My Document}" in out
+    assert r"\maketitle" in out
+    # \maketitle should come from the Title block in the body, not the
+    # fallback prepend — verify by checking it appears after \begin{document}.
+    body_start = out.index(r"\begin{document}")
+    assert out.index(r"\maketitle", body_start) > body_start
+
+
+def test_title_block_with_inline_marks():
+    doc = Document(
+        children=[Title(children=[
+            Text(text="Bold "), Text(text="title", marks=["italic"])
+        ])])
+    out = serialize_document(doc)
+    assert r"\title{Bold \textit{title}}" in out
+
+
+def test_meta_title_fallback_when_no_title_block():
+    doc = Document(meta=DocMeta(title="From meta", author="x"),
+                   children=[Paragraph(children=[Text(text="body")])])
+    out = serialize_document(doc)
+    assert r"\title{From meta}" in out
+    assert r"\maketitle" in out
 
 
 def test_set_title_emits_maketitle():
