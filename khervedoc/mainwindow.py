@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QToolBar, QVBoxLayout, QWidget,
 )
 
-from . import __version__, git_backend, icons
+from . import __version__, git_backend, icons, version_string
 from .compiler import CompileResult, compile_tex, tectonic_available
 from .editor import DocumentEditor
 from .latex_view import LatexView
@@ -365,7 +365,7 @@ class MainWindow(QMainWindow):
 
     def _update_title(self) -> None:
         name = self._current_path.name if self._current_path else "Untitled"
-        self.setWindowTitle(f"kherveDOC v{__version__} — {name}")
+        self.setWindowTitle(f"kherveDOC {version_string()} — {name}")
 
     # ----- file actions -----
 
@@ -512,7 +512,7 @@ class MainWindow(QMainWindow):
     def _about(self) -> None:
         QMessageBox.about(
             self, "About kherveDOC",
-            f"<h3>kherveDOC v{__version__}</h3>"
+            f"<h3>kherveDOC {version_string()}</h3>"
             f"<p>WYSIWYG editor that produces LaTeX and tracks changes in Git.</p>"
             f"<p>tectonic: {'OK' if tectonic_available() else 'not installed'}</p>")
 
