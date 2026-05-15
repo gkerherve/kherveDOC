@@ -152,6 +152,8 @@ class DocumentEditor(QWidget):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self._building = False
+        # Initialise meta up front — _apply_page_size below reads it.
+        self._meta = DocMeta()
 
         # MS Word look: a white "page" card centered on a grey desk, sized
         # to real A4/Letter/Legal paper at 96 DPI. The text flows as one
@@ -208,8 +210,6 @@ class DocumentEditor(QWidget):
         self._debounce.timeout.connect(self.documentChanged)
 
         self._edit.textChanged.connect(self._on_text_changed)
-
-        self._meta = DocMeta()
 
     # ---------- public ----------
 
