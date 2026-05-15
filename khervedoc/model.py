@@ -61,9 +61,13 @@ Inline = Union[Text, MathInline, Link, Footnote, Citation, CrossRef]
 
 # ---------------- Block nodes ----------------
 
+Alignment = Literal["left", "center", "right", "justify"]
+
+
 @dataclass
 class Paragraph:
     children: list[Inline] = field(default_factory=list)
+    alignment: Alignment = "left"
     type: str = "Paragraph"
 
 
@@ -188,7 +192,10 @@ def _build_inlines(items: list[dict]) -> list[Inline]:
 def _build_block(d: dict) -> Block:
     t = d["type"]
     if t == "Paragraph":
-        return Paragraph(children=_build_inlines(d.get("children", [])))
+        return Paragraph(
+            children=_build_inlines(d.get("children", [])),
+            alignment=d.get("alignment", "left"),
+        )
     if t == "Section":
         return Section(
             level=d.get("level", 1),

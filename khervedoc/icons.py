@@ -324,3 +324,53 @@ def horizontal_rule() -> QIcon:
     p.drawLine(3, 12, 21, 12)
     p.end()
     return QIcon(px)
+
+
+# ----- alignment -----
+
+def _alignment_icon(lines: list[tuple[int, int, int]]) -> QIcon:
+    """lines: list of (y, x1, x2) for each horizontal stroke."""
+    px, p = _new_canvas()
+    p.setPen(QPen(_FG, 2.0, Qt.SolidLine, Qt.RoundCap))
+    for y, x1, x2 in lines:
+        p.drawLine(x1, y, x2, y)
+    p.end()
+    return QIcon(px)
+
+
+def align_left() -> QIcon:
+    return _alignment_icon([(6, 3, 21), (11, 3, 16), (16, 3, 19), (21, 3, 14)])
+
+
+def align_center() -> QIcon:
+    return _alignment_icon([(6, 3, 21), (11, 7, 17), (16, 5, 19), (21, 6, 18)])
+
+
+def align_right() -> QIcon:
+    return _alignment_icon([(6, 3, 21), (11, 8, 21), (16, 5, 21), (21, 10, 21)])
+
+
+def align_justify() -> QIcon:
+    return _alignment_icon([(6, 3, 21), (11, 3, 21), (16, 3, 21), (21, 3, 21)])
+
+
+def zoom_in() -> QIcon:
+    px, p = _new_canvas()
+    p.setPen(QPen(_FG, 1.8, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    p.setBrush(Qt.NoBrush)
+    p.drawEllipse(QRect(4, 4, 12, 12))
+    p.drawLine(15, 15, 20, 20)
+    p.drawLine(7, 10, 13, 10); p.drawLine(10, 7, 10, 13)
+    p.end()
+    return QIcon(px)
+
+
+def zoom_out() -> QIcon:
+    px, p = _new_canvas()
+    p.setPen(QPen(_FG, 1.8, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    p.setBrush(Qt.NoBrush)
+    p.drawEllipse(QRect(4, 4, 12, 12))
+    p.drawLine(15, 15, 20, 20)
+    p.drawLine(7, 10, 13, 10)
+    p.end()
+    return QIcon(px)

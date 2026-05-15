@@ -82,9 +82,17 @@ def _maybe_label(label: str | None) -> str:
     return f"\\label{{{label}}}\n" if label else ""
 
 
+_ALIGN_ENVS = {"center": "center", "right": "flushright", "left": "flushleft"}
+
+
 def serialize_block(node: Block) -> str:
     if isinstance(node, Paragraph):
-        return serialize_inlines(node.children) + "\n"
+        body = serialize_inlines(node.children)
+        if node.alignment in ("center", "right"):
+            env = _ALIGN_ENVS[node.alignment]
+            return f"\\begin{{{env}}}\n{body}\n\\end{{{env}}}\n"
+        # "left" and "justify" both use LaTeX's natural justify default.
+        return body + "\n"
 
     if isinstance(node, Section):
         cmd = _SECTION_COMMANDS.get(max(1, min(5, node.level)), "section")
