@@ -21,20 +21,22 @@ If a push fails (no network, auth), report it but do not retry destructively.
 
 ## Bump the version when behaviour changes
 
-`khervedoc/__init__.py` defines `__version__`. The window title displays it as
+`khervedoc/__init__.py` defines `__version__` as `"<major>.<minor>"` only
+(e.g. `"0.2"`). The window title renders it as
 
-> `kherveDOC v<X.Y.Z> · <N> commits · <sha8> — <filename>`
+> `kherveDOC v<major>.<minor>.<commit_count>+<sha7> — <filename>`
 
-The commit count and short SHA are read from the repo at startup — they
-update on their own. The `__version__` itself must be updated **by hand**:
+The patch component is the total commit count and the `+<sha7>` build tag
+are appended automatically from `pygit2` at startup — they update every
+commit on their own. **Never put a third number in `__version__`.**
 
-- **Patch bump** (e.g. `0.2.0 → 0.2.1`): bug fixes only, no new features.
-- **Minor bump** (e.g. `0.2.1 → 0.3.0`): new user-visible features, new
-  toolbar buttons, new model node types, new menus.
-- **Major bump** (e.g. `0.x.y → 1.0.0`): only at user's explicit request.
+Bump the **minor** (`"0.2" → "0.3"`) when there is a meaningful
+user-visible feature shift: new toolbar group, new model node type,
+new menu, new tab, etc. Bump the **major** (`"0.x" → "1.0"`) only at
+the user's explicit request. Routine bug fixes, refactors, and
+documentation edits get no bump — the commit count moves on its own.
 
 Bump `__version__` in the **same commit** as the change that justifies it.
-Do not batch version bumps separately.
 
 ## House style for this project
 
