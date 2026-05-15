@@ -35,8 +35,22 @@ def init_repo(repo_dir: Path) -> bool:
     return True
 
 
-def _signature() -> "pygit2.Signature":
-    return pygit2.Signature("kherveDOC", "khervedoc@local", int(datetime.now().timestamp()), 0)
+def _signature(repo: "pygit2.Repository | None" = None) -> "pygit2.Signature":
+    """Build a commit signature, preferring the user's real git identity.
+
+    Order:
+      1. repo.default_signature — reads user.name/user.email from .git/config,
+         the user's global config, or the system config (the same chain plain
+         `git commit` uses, so auto-commits look identical to CLI commits).
+      2. Hard-coded fallback only if no git identity is configured anywhere.
+    """
+    if repo is not None:
+        try:
+            return repo.default_signature
+        except (KeyError, pygit2.GitError):
+            pass
+    return pygit2.Signature(
+        "kherveDOC", "khervedoc@local", int(datetime.now().timestamp()), 0)
 
 
 def commit_all(repo_dir: Path, message: str | None = None) -> str | None:
@@ -63,7 +77,7 @@ def commit_all(repo_dir: Path, message: str | None = None) -> str | None:
             return None
         parents = [head_commit.id]
 
-    sig = _signature()
+    sig = _signature(repo)
     msg = message or f"Edit at {datetime.now().isoformat(timespec='seconds')}"
     commit_oid = repo.create_commit(
         "HEAD" if repo.head_is_unborn else repo.head.name,
