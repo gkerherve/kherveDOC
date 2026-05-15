@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# Build/preview artefacts
+build/
+*.aux
+*.log
+*.synctex.gz
+*.out

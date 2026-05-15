@@ -1,0 +1,51 @@
+{
+  "type": "Document",
+  "meta": {
+    "title": "kherveDOC demo",
+    "author": "Gwilherm",
+    "documentclass": "article",
+    "packages": ["amsmath", "amssymb", "graphicx", "hyperref"]
+  },
+  "children": [
+    {
+      "type": "Section",
+      "level": 1,
+      "numbered": true,
+      "label": null,
+      "children": [{ "type": "Text", "text": "Introduction", "marks": [] }]
+    },
+    {
+      "type": "Paragraph",
+      "children": [
+        { "type": "Text", "text": "Einstein famously wrote ", "marks": [] },
+        { "type": "MathInline", "latex": "E = mc^2" },
+        { "type": "Text", "text": " in 1905. The integral below is more typographically interesting:", "marks": [] }
+      ]
+    },
+    {
+      "type": "MathBlock",
+      "latex": "\\int_{-\\infty}^{\\infty} e^{-x^2}\\,dx = \\sqrt{\\pi}",
+      "numbered": true,
+      "label": "eq:gauss"
+    },
+    {
+      "type": "Section",
+      "level": 2,
+      "numbered": true,
+      "label": null,
+      "children": [{ "type": "Text", "text": "Formatting", "marks": [] }]
+    },
+    {
+      "type": "Paragraph",
+      "children": [
+        { "type": "Text", "text": "You can use ", "marks": [] },
+        { "type": "Text", "text": "bold", "marks": ["bold"] },
+        { "type": "Text", "text": ", ", "marks": [] },
+        { "type": "Text", "text": "italic", "marks": ["italic"] },
+        { "type": "Text", "text": ", and ", "marks": [] },
+        { "type": "Text", "text": "both", "marks": ["bold", "italic"] },
+        { "type": "Text", "text": ". Special characters like 100% & $5 are escaped automatically.", "marks": [] }
+      ]
+    }
+  ]
+}
