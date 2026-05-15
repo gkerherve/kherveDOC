@@ -18,9 +18,12 @@ class PdfPreview(QWidget):
         self._scroll = QScrollArea(self)
         self._scroll.setWidgetResizable(True)
         self._scroll.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
-        self._scroll.setStyleSheet("QScrollArea { background: #303030; }")
+        # Light grey backdrop so the white PDF pages still have visible edges.
+        self._scroll.setStyleSheet(
+            "QScrollArea { background: #d0d4d8; border: none; }")
 
         self._inner = QWidget()
+        self._inner.setStyleSheet("background: #d0d4d8;")
         self._inner_layout = QVBoxLayout(self._inner)
         self._inner_layout.setContentsMargins(20, 20, 20, 20)
         self._inner_layout.setSpacing(16)
@@ -28,7 +31,9 @@ class PdfPreview(QWidget):
         self._scroll.setWidget(self._inner)
 
         self._status = QLabel("No preview yet — start typing to compile.", self)
-        self._status.setStyleSheet("color: #ddd; padding: 8px;")
+        self._status.setStyleSheet(
+            "color: #333; padding: 8px; background: #f0f0f0; "
+            "border-bottom: 1px solid #c0c0c0;")
         self._status.setAlignment(Qt.AlignCenter)
 
         outer = QVBoxLayout(self)
@@ -59,7 +64,7 @@ class PdfPreview(QWidget):
             label.setPixmap(QPixmap.fromImage(img))
             label.setAlignment(Qt.AlignHCenter)
             label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-            label.setStyleSheet("background: white; border: 1px solid #555;")
+            label.setStyleSheet("background: white; border: 1px solid #888;")
             # Insert before the stretch.
             self._inner_layout.insertWidget(self._inner_layout.count() - 1, label)
         self._status.setText(f"{len(pages)} page(s) — {pdf_path.name}")
