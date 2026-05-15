@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QTabWidget, QToolBar, QToolButton, QVBoxLayout, QWidget,
 )
 
-from . import __version__, git_backend, icons, page_sizes, version_string
+from . import __version__, git_backend, icons, kdocz, page_sizes, version_string
 from .compiler import CompileResult, compile_tex, tectonic_available
 from .editor import DocumentEditor, TEMPLATE_CHOICES
 from . import importers
@@ -89,6 +89,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self._current_path: Path | None = None
+        self._kdocz_extract_dir: Path | None = None   # set when opening a .kdocz
         self._build_dir = Path(tempfile.mkdtemp(prefix="khervedoc-"))
         self._compile_worker: _CompileWorker | None = None
         self._pending_recompile = False
@@ -491,13 +492,22 @@ class MainWindow(QMainWindow):
     def _open(self) -> None:
         path_s, _ = QFileDialog.getOpenFileName(
             self, "Open document", "",
-            "kherveDOC documents (*.kdoc.json);;All files (*)")
+            "kherveDOC documents (*.kdocz *.kdoc.json);;"
+            "Bundled (*.kdocz);;JSON (*.kdoc.json);;All files (*)")
         if path_s:
             self._open_path(Path(path_s))
 
     def _open_path(self, path: Path) -> None:
         try:
-            doc = from_json(path.read_text(encoding="utf-8"))
+            if kdocz.is_kdocz_path(path):
+                doc, extract_dir = kdocz.load_kdocz(path)
+                # Remember where the images were unpacked so any subsequent
+                # save knows to re-bundle them rather than try to copy from
+                # the source-archive paths.
+                self._kdocz_extract_dir = extract_dir
+            else:
+                doc = from_json(path.read_text(encoding="utf-8"))
+                self._kdocz_extract_dir = None
         except Exception as exc:
             QMessageBox.critical(self, "Open failed", str(exc))
             return
@@ -513,13 +523,19 @@ class MainWindow(QMainWindow):
             self._write_to(self._current_path)
 
     def _save_as(self) -> None:
-        path_s, _ = QFileDialog.getSaveFileName(
-            self, "Save document", "document.kdoc.json",
-            "kherveDOC documents (*.kdoc.json)")
+        path_s, selected_filter = QFileDialog.getSaveFileName(
+            self, "Save document", "document.kdocz",
+            "Bundled kherveDOC (*.kdocz);;JSON kherveDOC (*.kdoc.json)")
         if not path_s: return
         path = Path(path_s)
-        if not str(path).endswith(".kdoc.json"):
-            path = path.with_name(path.stem + ".kdoc.json")
+        # If the user didn't type an extension, infer it from the chosen
+        # filter. Default to the bundled format because it is self-contained
+        # for documents with images.
+        if path.suffix.lower() not in (".kdocz",) and not str(path).endswith(".kdoc.json"):
+            if "kdoc.json" in selected_filter:
+                path = path.with_name(path.stem + ".kdoc.json")
+            else:
+                path = path.with_suffix(".kdocz")
         self._current_path = path
         self._update_title()
         self._write_to(path)
@@ -527,8 +543,16 @@ class MainWindow(QMainWindow):
 
     def _write_to(self, path: Path) -> None:
         doc = self._editor.get_document()
-        path.write_text(to_json(doc), encoding="utf-8")
-        tex_path = path.parent / (path.name.replace(".kdoc.json", "") + ".tex")
+        # Dispatch on the file extension: .kdocz is the bundled ZIP container,
+        # .kdoc.json is the plain JSON model. The .tex export sits alongside
+        # in both cases so users can inspect the source without unzipping.
+        if kdocz.is_kdocz_path(path):
+            kdocz.save_kdocz(doc, path)
+            tex_basename = path.stem
+        else:
+            path.write_text(to_json(doc), encoding="utf-8")
+            tex_basename = path.name.replace(".kdoc.json", "")
+        tex_path = path.parent / f"{tex_basename}.tex"
         tex_path.write_text(serialize_document(doc), encoding="utf-8")
 
         commit_msg = f"Save {path.name} at {datetime.now().isoformat(timespec='seconds')}"
