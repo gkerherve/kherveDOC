@@ -1,28 +1,38 @@
 from khervedoc.model import (
-    Document, DocMeta, Paragraph, Section, MathBlock, MathInline,
-    Text, from_json, to_json,
+    Citation, CrossRef, Document, DocMeta, Figure, Footnote, Link,
+    List as ListNode, ListItem, MathBlock, MathInline, Paragraph, RawLatex,
+    Section, Table, Text, from_json, to_json,
 )
 
 
-def test_round_trip_preserves_structure():
+def test_round_trip_preserves_all_node_types():
     doc = Document(
         meta=DocMeta(title="T", author="A"),
         children=[
             Section(level=2, children=[Text(text="Heading")]),
             Paragraph(children=[
-                Text(text="hello ", marks=[]),
-                Text(text="world", marks=["bold", "italic"]),
+                Text(text="hi ", marks=["bold", "italic"]),
                 MathInline(latex="x^2"),
+                Link(url="https://x.com", children=[Text(text="link")]),
+                Footnote(children=[Text(text="see below")]),
+                Citation(keys=["a", "b"], style="citep"),
+                CrossRef(label="sec:1", kind="ref"),
             ]),
-            MathBlock(latex=r"\int_0^1 f(x)\,dx", numbered=True, label="eq:int"),
+            ListNode(ordered=True, items=[
+                ListItem(children=[Text(text="first")]),
+                ListItem(children=[Text(text="second")]),
+            ]),
+            Figure(path="img.png", caption="Cap", label="fig:1", width="0.5\\textwidth"),
+            Table(rows=[["a", "b"], ["c", "d"]], caption="Cap", alignment="ll"),
+            MathBlock(latex=r"\int x", numbered=True, label="eq:i"),
+            RawLatex(text=r"\verb|x|"),
         ],
     )
-    round_tripped = from_json(to_json(doc))
-    assert round_tripped == doc
+    assert from_json(to_json(doc)) == doc
 
 
-def test_unknown_inline_type_raises():
+def test_unknown_block_type_raises():
     import pytest
-    bad = '{"type":"Document","meta":{},"children":[{"type":"Paragraph","children":[{"type":"Sparkle"}]}]}'
+    bad = '{"type":"Document","meta":{},"children":[{"type":"Sparkle"}]}'
     with pytest.raises(ValueError, match="Sparkle"):
         from_json(bad)

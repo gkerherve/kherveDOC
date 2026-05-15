@@ -1,18 +1,16 @@
-"""Serializes a Document model to a LaTeX source string.
+"""Document model -> LaTeX source string.
 
-Pure functions, no I/O. One serializer per node type.
+Pure functions; one serializer per node type. No I/O.
 """
 from __future__ import annotations
 
 from .model import (
-    Document, Section, Paragraph, MathBlock, RawLatex,
-    Text, MathInline, Block, Inline,
+    Block, Citation, CrossRef, Document, Figure, Footnote, Inline, Link,
+    List as ListNode, ListItem, MathBlock, MathInline, Paragraph, RawLatex,
+    Section, Table, Text,
 )
 
 
-# Characters that have special meaning in LaTeX and must be escaped in text runs.
-# Backslash and braces are handled separately because their replacements contain
-# backslashes themselves and would otherwise be double-escaped.
 _LATEX_ESCAPES = {
     "\\": r"\textbackslash{}",
     "{": r"\{",
@@ -28,11 +26,7 @@ _LATEX_ESCAPES = {
 
 
 def escape_text(s: str) -> str:
-    # Process backslash first to avoid re-escaping the backslashes we introduce.
-    out = []
-    for ch in s:
-        out.append(_LATEX_ESCAPES.get(ch, ch))
-    return "".join(out)
+    return "".join(_LATEX_ESCAPES.get(ch, ch) for ch in s)
 
 
 _MARK_WRAPPERS = {
@@ -46,8 +40,7 @@ _MARK_WRAPPERS = {
     "strikethrough": (r"\sout{", "}"),
 }
 
-# Mark application order — outermost first. Nesting order is stable so output is
-# deterministic regardless of the order marks appear in the model.
+# Outermost-first; iteration reverses so first mark in this list wraps last.
 _MARK_ORDER = ["bold", "italic", "underline", "smallcaps",
                "subscript", "superscript", "strikethrough", "code"]
 
@@ -55,16 +48,23 @@ _MARK_ORDER = ["bold", "italic", "underline", "smallcaps",
 def serialize_inline(node: Inline) -> str:
     if isinstance(node, Text):
         s = escape_text(node.text)
-        # Apply in reverse priority so the first mark in _MARK_ORDER ends up
-        # as the outermost wrapper (deterministic, regardless of input order).
         for mark in reversed(_MARK_ORDER):
             if mark in node.marks:
                 open_, close = _MARK_WRAPPERS[mark]
                 s = f"{open_}{s}{close}"
         return s
     if isinstance(node, MathInline):
-        # The math body is raw LaTeX by design — do not escape.
         return f"${node.latex}$"
+    if isinstance(node, Link):
+        body = serialize_inlines(node.children) or escape_text(node.url)
+        return f"\\href{{{node.url}}}{{{body}}}"
+    if isinstance(node, Footnote):
+        return f"\\footnote{{{serialize_inlines(node.children)}}}"
+    if isinstance(node, Citation):
+        keys = ",".join(node.keys)
+        return f"\\{node.style}{{{keys}}}"
+    if isinstance(node, CrossRef):
+        return f"\\{node.kind}{{{node.label}}}"
     raise TypeError(f"Unknown inline node: {type(node).__name__}")
 
 
@@ -73,29 +73,80 @@ def serialize_inlines(nodes: list[Inline]) -> str:
 
 
 _SECTION_COMMANDS = {
-    1: "section",
-    2: "subsection",
-    3: "subsubsection",
-    4: "paragraph",
-    5: "subparagraph",
+    1: "section", 2: "subsection", 3: "subsubsection",
+    4: "paragraph", 5: "subparagraph",
 }
+
+
+def _maybe_label(label: str | None) -> str:
+    return f"\\label{{{label}}}\n" if label else ""
 
 
 def serialize_block(node: Block) -> str:
     if isinstance(node, Paragraph):
         return serialize_inlines(node.children) + "\n"
+
     if isinstance(node, Section):
         cmd = _SECTION_COMMANDS.get(max(1, min(5, node.level)), "section")
         star = "" if node.numbered else "*"
         body = serialize_inlines(node.children)
-        label = f"\\label{{{node.label}}}\n" if node.label else ""
-        return f"\\{cmd}{star}{{{body}}}\n{label}"
+        return f"\\{cmd}{star}{{{body}}}\n{_maybe_label(node.label)}"
+
     if isinstance(node, MathBlock):
         env = "equation" if node.numbered else "equation*"
-        label = f"\\label{{{node.label}}}\n" if (node.numbered and node.label) else ""
-        return f"\\begin{{{env}}}\n{label}{node.latex}\n\\end{{{env}}}\n"
+        lab = _maybe_label(node.label) if node.numbered else ""
+        return f"\\begin{{{env}}}\n{lab}{node.latex}\n\\end{{{env}}}\n"
+
+    if isinstance(node, ListNode):
+        env = "enumerate" if node.ordered else "itemize"
+        items = "".join(
+            f"  \\item {serialize_inlines(it.children)}\n" for it in node.items
+        )
+        return f"\\begin{{{env}}}\n{items}\\end{{{env}}}\n"
+
+    if isinstance(node, Figure):
+        # Use forward slashes in the path — LaTeX dislikes backslashes.
+        path = node.path.replace("\\", "/")
+        cap = escape_text(node.caption)
+        lab = _maybe_label(node.label) if node.label else ""
+        return (
+            "\\begin{figure}[h]\n"
+            "  \\centering\n"
+            f"  \\includegraphics[width={node.width}]{{{path}}}\n"
+            f"  \\caption{{{cap}}}\n"
+            f"  {lab}"
+            "\\end{figure}\n"
+        )
+
+    if isinstance(node, Table):
+        if not node.rows:
+            return ""
+        cols = max(len(r) for r in node.rows)
+        align = node.alignment.strip() or ("l" * cols)
+        # Pad short rows with empty cells.
+        body_rows: list[str] = []
+        for r in node.rows:
+            cells = [escape_text(c) for c in r] + [""] * (cols - len(r))
+            body_rows.append(" & ".join(cells) + r" \\")
+        body = "\n    ".join(body_rows)
+        cap = escape_text(node.caption)
+        lab = _maybe_label(node.label) if node.label else ""
+        return (
+            "\\begin{table}[h]\n"
+            "  \\centering\n"
+            f"  \\begin{{tabular}}{{{align}}}\n"
+            f"    \\hline\n"
+            f"    {body}\n"
+            f"    \\hline\n"
+            "  \\end{tabular}\n"
+            f"  \\caption{{{cap}}}\n"
+            f"  {lab}"
+            "\\end{table}\n"
+        )
+
     if isinstance(node, RawLatex):
         return node.text + ("\n" if not node.text.endswith("\n") else "")
+
     raise TypeError(f"Unknown block node: {type(node).__name__}")
 
 
@@ -104,22 +155,20 @@ def serialize_document(doc: Document) -> str:
     title = (doc.meta.title or "").strip()
     author = (doc.meta.author or "").strip()
 
-    # Only emit \title / \author / \maketitle when there is real content.
-    # Empty values plus hyperref can fail with "Missing $ inserted" because
-    # some packages try to typeset the empty metadata as math.
+    # Skip \title/\author entirely if both are empty — some packages break on
+    # "\maketitle" with empty metadata.
     title_block = ""
     if title or author:
         title_block += f"\\title{{{escape_text(title) or '~'}}}\n"
         title_block += f"\\author{{{escape_text(author) or '~'}}}\n"
-
-    body_parts: list[str] = []
-    for i, block in enumerate(doc.children):
-        body_parts.append(serialize_block(block))
-        if i < len(doc.children) - 1:
-            body_parts.append("\n")
-    body = "".join(body_parts)
-
     maketitle = "\\maketitle\n" if (title or author) else ""
+
+    parts: list[str] = []
+    for i, block in enumerate(doc.children):
+        parts.append(serialize_block(block))
+        if i < len(doc.children) - 1:
+            parts.append("\n")
+    body = "".join(parts)
 
     return (
         f"\\documentclass{{{doc.meta.documentclass}}}\n"

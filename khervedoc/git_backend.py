@@ -72,6 +72,43 @@ def commit_all(repo_dir: Path, message: str | None = None) -> str | None:
     return str(commit_oid)
 
 
+def push(repo_dir: Path, remote_name: str = "origin", branch: str = "main") -> bool:
+    """Push the current branch to the given remote. Returns True on success.
+
+    Uses libgit2 credentials helpers when available (SSH agent, Windows
+    credential manager). If no remote is configured or the push fails (auth,
+    network, etc.) returns False — the caller continues without raising.
+    """
+    if not _PYGIT2_OK:
+        return False
+    if not (repo_dir / ".git").exists():
+        return False
+    try:
+        repo = pygit2.Repository(str(repo_dir))
+        if remote_name not in [r.name for r in repo.remotes]:
+            return False
+        remote = repo.remotes[remote_name]
+        # Pick a refspec that pushes the current branch.
+        if repo.head_is_unborn:
+            return False
+        head_ref = repo.head.name  # e.g. "refs/heads/main"
+        refspec = f"{head_ref}:{head_ref}"
+        callbacks = pygit2.RemoteCallbacks(credentials=pygit2.KeypairFromAgent("git"))
+        try:
+            remote.push([refspec], callbacks=callbacks)
+            return True
+        except Exception:
+            # Retry without explicit credentials — libgit2 may resolve via
+            # the system's git credential helper on Windows.
+            try:
+                remote.push([refspec])
+                return True
+            except Exception:
+                return False
+    except Exception:
+        return False
+
+
 def history(repo_dir: Path, limit: int = 50) -> list[tuple[str, str, str]]:
     """Return [(short_oid, iso_time, message_first_line), ...] newest first."""
     if not _PYGIT2_OK or not (repo_dir / ".git").exists():

@@ -1,7 +1,7 @@
 """Document model — the single source of truth.
 
-Everything (editor, serializer, git layer) reads and writes this tree.
-JSON-serializable. No Qt or LaTeX knowledge here.
+JSON-serialisable, no Qt or LaTeX dependencies. Editor and serializer both
+read and write this tree.
 """
 from __future__ import annotations
 
@@ -13,6 +13,8 @@ from typing import Literal, Union
 Mark = Literal["bold", "italic", "underline", "code", "smallcaps",
                "subscript", "superscript", "strikethrough"]
 
+
+# ---------------- Inline nodes ----------------
 
 @dataclass
 class Text:
@@ -27,8 +29,37 @@ class MathInline:
     type: str = "MathInline"
 
 
-Inline = Union[Text, MathInline]
+@dataclass
+class Link:
+    url: str
+    children: list["Inline"] = field(default_factory=list)
+    type: str = "Link"
 
+
+@dataclass
+class Footnote:
+    children: list["Inline"] = field(default_factory=list)
+    type: str = "Footnote"
+
+
+@dataclass
+class Citation:
+    keys: list[str] = field(default_factory=list)
+    style: Literal["cite", "citep", "citet"] = "cite"
+    type: str = "Citation"
+
+
+@dataclass
+class CrossRef:
+    label: str = ""
+    kind: Literal["ref", "eqref", "pageref"] = "ref"
+    type: str = "CrossRef"
+
+
+Inline = Union[Text, MathInline, Link, Footnote, Citation, CrossRef]
+
+
+# ---------------- Block nodes ----------------
 
 @dataclass
 class Paragraph:
@@ -38,7 +69,7 @@ class Paragraph:
 
 @dataclass
 class Section:
-    level: int = 1                     # 1..5  (\section, \subsection, ...)
+    level: int = 1
     children: list[Inline] = field(default_factory=list)
     numbered: bool = True
     label: str | None = None
@@ -54,12 +85,48 @@ class MathBlock:
 
 
 @dataclass
+class ListItem:
+    children: list[Inline] = field(default_factory=list)
+    type: str = "ListItem"
+
+
+@dataclass
+class List:
+    ordered: bool = False
+    items: list[ListItem] = field(default_factory=list)
+    type: str = "List"
+
+
+@dataclass
+class Figure:
+    path: str = ""
+    caption: str = ""
+    label: str | None = None
+    width: str = "0.8\\textwidth"
+    type: str = "Figure"
+
+
+@dataclass
+class Table:
+    rows: list[list[str]] = field(default_factory=list)   # each cell = plain text
+    caption: str = ""
+    label: str | None = None
+    alignment: str = ""           # e.g. "lcr"; empty = auto (all left)
+    type: str = "Table"
+
+
+@dataclass
 class RawLatex:
     text: str
     type: str = "RawLatex"
 
 
-Block = Union[Paragraph, Section, MathBlock, RawLatex]
+Block = Union[Paragraph, Section, MathBlock, List, Figure, Table, RawLatex]
+
+
+# ---------------- Metadata + document ----------------
+
+DEFAULT_PACKAGES = ["amsmath", "graphicx"]
 
 
 @dataclass
@@ -67,7 +134,7 @@ class DocMeta:
     title: str = "Untitled"
     author: str = ""
     documentclass: str = "article"
-    packages: list[str] = field(default_factory=lambda: ["amsmath", "graphicx"])
+    packages: list[str] = field(default_factory=lambda: list(DEFAULT_PACKAGES))
 
 
 @dataclass
@@ -77,31 +144,35 @@ class Document:
     type: str = "Document"
 
 
-# ---------- JSON serialization ----------
+# ---------------- JSON serialisation ----------------
 
 def to_json(doc: Document) -> str:
     return json.dumps(asdict(doc), indent=2, ensure_ascii=False)
 
 
 def from_json(s: str) -> Document:
-    raw = json.loads(s)
-    return _build_document(raw)
+    return _build_document(json.loads(s))
 
 
-_INLINE_BUILDERS = {
-    "Text": lambda d: Text(text=d["text"], marks=list(d.get("marks", []))),
-    "MathInline": lambda d: MathInline(latex=d["latex"]),
-}
+def _build_inline(d: dict) -> Inline:
+    t = d["type"]
+    if t == "Text":
+        return Text(text=d["text"], marks=list(d.get("marks", [])))
+    if t == "MathInline":
+        return MathInline(latex=d["latex"])
+    if t == "Link":
+        return Link(url=d.get("url", ""), children=_build_inlines(d.get("children", [])))
+    if t == "Footnote":
+        return Footnote(children=_build_inlines(d.get("children", [])))
+    if t == "Citation":
+        return Citation(keys=list(d.get("keys", [])), style=d.get("style", "cite"))
+    if t == "CrossRef":
+        return CrossRef(label=d.get("label", ""), kind=d.get("kind", "ref"))
+    raise ValueError(f"Unknown inline node type: {t!r}")
 
 
 def _build_inlines(items: list[dict]) -> list[Inline]:
-    out: list[Inline] = []
-    for item in items:
-        builder = _INLINE_BUILDERS.get(item["type"])
-        if builder is None:
-            raise ValueError(f"Unknown inline node type: {item['type']!r}")
-        out.append(builder(item))
-    return out
+    return [_build_inline(i) for i in items]
 
 
 def _build_block(d: dict) -> Block:
@@ -121,6 +192,26 @@ def _build_block(d: dict) -> Block:
             numbered=d.get("numbered", False),
             label=d.get("label"),
         )
+    if t == "List":
+        return List(
+            ordered=d.get("ordered", False),
+            items=[ListItem(children=_build_inlines(it.get("children", [])))
+                   for it in d.get("items", [])],
+        )
+    if t == "Figure":
+        return Figure(
+            path=d.get("path", ""),
+            caption=d.get("caption", ""),
+            label=d.get("label"),
+            width=d.get("width", "0.8\\textwidth"),
+        )
+    if t == "Table":
+        return Table(
+            rows=[[str(c) for c in row] for row in d.get("rows", [])],
+            caption=d.get("caption", ""),
+            label=d.get("label"),
+            alignment=d.get("alignment", ""),
+        )
     if t == "RawLatex":
         return RawLatex(text=d["text"])
     raise ValueError(f"Unknown block node type: {t!r}")
@@ -132,7 +223,7 @@ def _build_document(d: dict) -> Document:
         title=meta_d.get("title", "Untitled"),
         author=meta_d.get("author", ""),
         documentclass=meta_d.get("documentclass", "article"),
-        packages=list(meta_d.get("packages", ["amsmath", "graphicx"])),
+        packages=list(meta_d.get("packages", list(DEFAULT_PACKAGES))),
     )
     return Document(
         children=[_build_block(b) for b in d.get("children", [])],
