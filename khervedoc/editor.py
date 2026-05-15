@@ -16,9 +16,21 @@ from PySide6.QtGui import (
     QTextCursor, QTextListFormat,
 )
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QTextEdit,
-    QVBoxLayout, QWidget,
+    QComboBox, QFrame, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
+    QTextEdit, QVBoxLayout, QWidget,
 )
+
+
+# Known LaTeX document classes the combo offers. Editable in the document
+# properties dialog, but the everyday choices live here.
+TEMPLATE_CHOICES = [
+    ("article", "Article — standard short papers, reports"),
+    ("report",  "Report — multi-chapter reports, theses"),
+    ("book",    "Book — chaptered books, long monographs"),
+    ("letter",  "Letter — formal letters with address blocks"),
+    ("beamer",  "Beamer — slide presentations"),
+    ("memoir",  "Memoir — flexible book/article hybrid"),
+]
 
 from .model import (
     Citation, CrossRef, Document, DocMeta, Figure, Footnote, Link,
@@ -128,46 +140,89 @@ class DocumentEditor(QWidget):
         super().__init__(parent)
         self._building = False
 
-        # Header strip — title + author, always visible at the top of the
-        # editor so users can edit the document metadata in place (these
-        # become \title / \author / \maketitle in the LaTeX output).
-        self._title_edit = QLineEdit(self)
+        # Title + author + template selector. The header sits at the top of
+        # the white "page" so the document metadata is editable in place.
+        self._title_edit = QLineEdit()
         self._title_edit.setPlaceholderText("Document title")
         title_font = QFont(); title_font.setPointSize(22); title_font.setBold(True)
         self._title_edit.setFont(title_font)
         self._title_edit.setStyleSheet(
-            "QLineEdit { border: none; background: transparent; padding: 4px 8px; }")
+            "QLineEdit { border: none; background: transparent; padding: 0; }")
 
-        self._author_edit = QLineEdit(self)
+        self._author_edit = QLineEdit()
         self._author_edit.setPlaceholderText("Author")
         author_font = QFont(); author_font.setPointSize(13); author_font.setItalic(True)
         self._author_edit.setFont(author_font)
         self._author_edit.setStyleSheet(
             "QLineEdit { border: none; background: transparent; "
-            "padding: 0 8px; color: #555; }")
+            "padding: 0; color: #555; }")
+
+        self._template_combo = QComboBox()
+        for cls, label in TEMPLATE_CHOICES:
+            self._template_combo.addItem(label, cls)
+        self._template_combo.setToolTip(
+            "LaTeX document class — controls page layout, sectioning and overall style.")
+        template_label = QLabel("Template:")
+        template_label.setStyleSheet("color: #555;")
 
         self._title_edit.textChanged.connect(self._on_meta_changed)
         self._author_edit.textChanged.connect(self._on_meta_changed)
+        self._template_combo.currentIndexChanged.connect(self._on_meta_changed)
 
-        header = QFrame(self)
+        # Header: meta column on the left, template selector on the right.
+        meta_col = QVBoxLayout()
+        meta_col.setSpacing(2)
+        meta_col.addWidget(self._title_edit)
+        meta_col.addWidget(self._author_edit)
+
+        tmpl_col = QVBoxLayout()
+        tmpl_col.setSpacing(2)
+        tmpl_col.addWidget(template_label)
+        tmpl_col.addWidget(self._template_combo)
+        tmpl_col.addStretch(1)
+
+        header = QFrame()
+        header.setObjectName("docHeader")
         header.setStyleSheet(
-            "QFrame { background: #fafbfc; border-bottom: 1px solid #d0d4d8; }")
-        header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(8, 8, 8, 8)
-        header_layout.setSpacing(2)
-        header_layout.addWidget(self._title_edit)
-        header_layout.addWidget(self._author_edit)
+            "#docHeader { background: white; border-bottom: 1px solid #e5e7eb; }")
+        header_h = QHBoxLayout(header)
+        header_h.setContentsMargins(60, 50, 60, 18)
+        header_h.addLayout(meta_col, 1)
+        header_h.addLayout(tmpl_col, 0)
 
-        self._edit = QTextEdit(self)
+        # The "page": white card holding the header strip and the editable
+        # text area. Wrapped in a horizontal layout with grey gutters so it
+        # looks like a sheet of paper sitting on a grey desk.
+        self._edit = QTextEdit()
         self._edit.setAcceptRichText(False)
-        f = QFont(); f.setPointSize(12)
+        self._edit.setFrameShape(QFrame.NoFrame)
+        f = QFont("Georgia"); f.setPointSize(12)
         self._edit.setFont(f)
+        # Inner document margin replicates the white-space inside a page.
+        self._edit.document().setDocumentMargin(60)
+        self._edit.setStyleSheet(
+            "QTextEdit { background: white; border: none; }")
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-        layout.addWidget(header)
-        layout.addWidget(self._edit, 1)
+        page = QFrame()
+        page.setObjectName("page")
+        page.setStyleSheet(
+            "#page { background: white; border: 1px solid #c8ccd1; }")
+        page.setMinimumWidth(700)
+        page.setMaximumWidth(950)
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.setSpacing(0)
+        page_layout.addWidget(header)
+        page_layout.addWidget(self._edit, 1)
+
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addStretch(1)
+        outer.addWidget(page, 0)
+        outer.addStretch(1)
+        # Grey desk behind the white page.
+        self.setAutoFillBackground(True)
+        self.setStyleSheet("DocumentEditor { background: #d0d4d8; }")
 
         self._debounce = QTimer(self)
         self._debounce.setSingleShot(True)
@@ -195,18 +250,28 @@ class DocumentEditor(QWidget):
     def _sync_header_from_meta(self) -> None:
         # Suppress signals while we set the text so we don't loop back into
         # _on_meta_changed and mark the document dirty during a load.
-        self._title_edit.blockSignals(True)
-        self._author_edit.blockSignals(True)
+        for w in (self._title_edit, self._author_edit, self._template_combo):
+            w.blockSignals(True)
         self._title_edit.setText(self._meta.title)
         self._author_edit.setText(self._meta.author)
-        self._title_edit.blockSignals(False)
-        self._author_edit.blockSignals(False)
+        # Match the combo to the meta's documentclass; if it's a custom class
+        # not in TEMPLATE_CHOICES, add it on the fly and select it.
+        idx = self._template_combo.findData(self._meta.documentclass)
+        if idx < 0:
+            self._template_combo.addItem(
+                f"{self._meta.documentclass} (custom)", self._meta.documentclass)
+            idx = self._template_combo.count() - 1
+        self._template_combo.setCurrentIndex(idx)
+        for w in (self._title_edit, self._author_edit, self._template_combo):
+            w.blockSignals(False)
 
     def _on_meta_changed(self) -> None:
         if self._building:
             return
         self._meta.title = self._title_edit.text()
         self._meta.author = self._author_edit.text()
+        self._meta.documentclass = self._template_combo.currentData() \
+            or self._meta.documentclass
         self._debounce.start()
 
     def set_document(self, doc: Document) -> None:
