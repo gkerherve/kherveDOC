@@ -144,6 +144,7 @@ class DocMeta:
     author: str = ""
     documentclass: str = "article"
     packages: list[str] = field(default_factory=lambda: list(DEFAULT_PACKAGES))
+    page_size: str = "A4"        # short code from khervedoc.page_sizes
 
 
 @dataclass
@@ -235,6 +236,7 @@ def _build_document(d: dict) -> Document:
         author=meta_d.get("author", ""),
         documentclass=meta_d.get("documentclass", "article"),
         packages=list(meta_d.get("packages", list(DEFAULT_PACKAGES))),
+        page_size=meta_d.get("page_size", "A4"),
     )
     return Document(
         children=[_build_block(b) for b in d.get("children", [])],

@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QToolBar, QVBoxLayout, QWidget,
 )
 
-from . import __version__, git_backend, icons, version_string
+from . import __version__, git_backend, icons, page_sizes, version_string
 from .compiler import CompileResult, compile_tex, tectonic_available
 from .editor import DocumentEditor, TEMPLATE_CHOICES
 from .latex_view import LatexView
@@ -351,6 +351,16 @@ class MainWindow(QMainWindow):
         self._template_combo.setToolTip("LaTeX document class")
         self._template_combo.currentIndexChanged.connect(self._on_template_changed)
         tb.addWidget(self._template_combo)
+
+        # Paper size combo (A4 / Letter / Legal).
+        self._pagesize_combo = QComboBox(self)
+        for p in page_sizes.ALL:
+            self._pagesize_combo.addItem(p.code, p.code)
+        self._pagesize_combo.setMinimumWidth(70)
+        self._pagesize_combo.setMaximumWidth(90)
+        self._pagesize_combo.setToolTip("Page size")
+        self._pagesize_combo.currentIndexChanged.connect(self._on_pagesize_changed)
+        tb.addWidget(self._pagesize_combo)
         tb.addSeparator()
 
         for act in (self.act_bold, self.act_italic, self.act_underline,
@@ -480,6 +490,13 @@ class MainWindow(QMainWindow):
         if meta.documentclass == cls: return
         meta.documentclass = cls
         self._editor.set_meta(meta)
+        self._kick_compile()
+
+    def _on_pagesize_changed(self, idx: int) -> None:
+        code = self._pagesize_combo.itemData(idx)
+        if not code: return
+        if self._editor.meta().page_size == code: return
+        self._editor.set_page_size(code)
         self._kick_compile()
 
     def _insert_link_with_hyperref(self) -> None:
@@ -612,6 +629,15 @@ class MainWindow(QMainWindow):
             self._template_combo.blockSignals(True)
             self._template_combo.setCurrentIndex(tidx)
             self._template_combo.blockSignals(False)
+
+        meta_page = e.meta().page_size
+        pcur = self._pagesize_combo.currentData()
+        if pcur != meta_page:
+            pidx = self._pagesize_combo.findData(meta_page)
+            if pidx >= 0:
+                self._pagesize_combo.blockSignals(True)
+                self._pagesize_combo.setCurrentIndex(pidx)
+                self._pagesize_combo.blockSignals(False)
 
 
 def _starter_document() -> Document:

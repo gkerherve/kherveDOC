@@ -17,9 +17,11 @@ from PySide6.QtGui import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QInputDialog, QScrollArea, QTextEdit, QVBoxLayout,
-    QWidget,
+    QFrame, QHBoxLayout, QInputDialog, QScrollArea, QVBoxLayout, QWidget,
 )
+
+from . import page_sizes
+from .paged_edit import PagedTextEdit
 
 
 # LaTeX document classes shown in the toolbar combo. Order = display order.
@@ -151,30 +153,29 @@ class DocumentEditor(QWidget):
         super().__init__(parent)
         self._building = False
 
-        # MS Word look: a white "page" card centered on a grey desk, with a
-        # single scrollbar pinned to the far right edge of the whole tab.
-        # The QTextEdit doesn't scroll itself — it grows to fit its content
-        # and the outer QScrollArea handles scrolling.
-        self._edit = QTextEdit()
+        # MS Word look: a white "page" card centered on a grey desk, sized
+        # to real A4/Letter/Legal paper at 96 DPI. The text flows as one
+        # editable surface but page-break lines mark the paginations Latex
+        # will produce in the PDF.
+        self._edit = PagedTextEdit()
         self._edit.setAcceptRichText(False)
         self._edit.setFrameShape(QFrame.NoFrame)
         f = QFont("Georgia"); f.setPointSize(12)
         self._edit.setFont(f)
-        self._edit.document().setDocumentMargin(72)   # ~1 inch of "page" padding
+        self._edit.document().setDocumentMargin(72)   # ~1 inch of inner padding
         self._edit.setStyleSheet("QTextEdit { background: white; border: none; }")
         self._edit.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._edit.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
-        page = QFrame()
-        page.setObjectName("page")
-        page.setStyleSheet(
+        self._page = QFrame()
+        self._page.setObjectName("page")
+        self._page.setStyleSheet(
             "#page { background: white; border: 1px solid #b8bcc1; }")
-        page.setMinimumWidth(720)
-        page.setMaximumWidth(900)
-        page_layout = QVBoxLayout(page)
+        page_layout = QVBoxLayout(self._page)
         page_layout.setContentsMargins(0, 0, 0, 0)
         page_layout.setSpacing(0)
         page_layout.addWidget(self._edit, 1)
+        self._apply_page_size(page_sizes.by_code(self._meta.page_size))
 
         desk = QWidget()
         desk.setObjectName("desk")
@@ -182,7 +183,7 @@ class DocumentEditor(QWidget):
         desk_layout = QHBoxLayout(desk)
         desk_layout.setContentsMargins(0, 24, 0, 32)
         desk_layout.addStretch(1)
-        desk_layout.addWidget(page, 0)
+        desk_layout.addWidget(self._page, 0)
         desk_layout.addStretch(1)
 
         self._scroll = QScrollArea(self)
@@ -220,8 +221,23 @@ class DocumentEditor(QWidget):
         return self._meta
 
     def set_meta(self, meta: DocMeta) -> None:
+        prev_size = self._meta.page_size if self._meta else None
         self._meta = meta
+        if meta.page_size != prev_size:
+            self._apply_page_size(page_sizes.by_code(meta.page_size))
         self._on_text_changed()
+
+    def set_page_size(self, code: str) -> None:
+        self._meta.page_size = code
+        self._apply_page_size(page_sizes.by_code(code))
+        self._on_text_changed()
+
+    def _apply_page_size(self, page: "page_sizes.PageSize") -> None:
+        self._page.setFixedWidth(page.width_px)
+        # Document pagination uses pixel coordinates matching the rendered
+        # size on the page card.
+        self._edit.set_page_size_px(page.width_px, page.height_px)
+        self._resize_to_document()
 
     def _resize_to_document(self, size=None) -> None:
         """Sync the QTextEdit's height to its document so the outer

@@ -156,7 +156,11 @@ def serialize_block(node: Block) -> str:
 
 
 def serialize_document(doc: Document) -> str:
-    packages = "\n".join(f"\\usepackage{{{p}}}" for p in doc.meta.packages)
+    from . import page_sizes
+    page = page_sizes.by_code(doc.meta.page_size)
+    geometry = f"\\usepackage[{page.geometry_option}]{{geometry}}"
+    packages = geometry + "\n" + "\n".join(
+        f"\\usepackage{{{p}}}" for p in doc.meta.packages)
 
     # A Title block in the document body takes precedence over meta.title —
     # this lets the user pick the "Title" style inside the editor and have
