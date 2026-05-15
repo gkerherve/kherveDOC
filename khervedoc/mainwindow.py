@@ -12,7 +12,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QLabel,
     QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit, QStatusBar, QTabWidget,
-    QToolBar, QVBoxLayout, QWidget,
+    QToolBar, QToolButton, QVBoxLayout, QWidget,
 )
 
 from . import __version__, git_backend, icons, page_sizes, version_string
@@ -112,6 +112,38 @@ class MainWindow(QMainWindow):
 
         self._status = QStatusBar(self)
         self.setStatusBar(self._status)
+
+        # Left side: full document path (or "Untitled" before first save).
+        self._path_label = QLabel("Untitled", self)
+        self._path_label.setStyleSheet("color: #444; padding: 0 6px;")
+        self._path_label.setMinimumWidth(200)
+        self._path_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self._status.addWidget(self._path_label, 1)   # stretch=1 → takes the space
+
+        # Right side, in order: zoom controls, then tectonic indicator.
+        self._zoom_out_btn = QToolButton(self)
+        self._zoom_out_btn.setIcon(icons.zoom_out())
+        self._zoom_out_btn.setToolTip("Zoom out")
+        self._zoom_out_btn.setAutoRaise(True)
+        self._zoom_out_btn.clicked.connect(lambda: self._step_zoom(-1))
+        self._status.addPermanentWidget(self._zoom_out_btn)
+
+        self._zoom_combo = QComboBox(self)
+        self._zoom_combo.setEditable(False)
+        for pct in (50, 75, 100, 125, 150, 200):
+            self._zoom_combo.addItem(f"{pct}%", pct)
+        self._zoom_combo.setCurrentIndex(2)  # 100%
+        self._zoom_combo.setMaximumWidth(72)
+        self._zoom_combo.currentIndexChanged.connect(self._on_zoom_combo_changed)
+        self._status.addPermanentWidget(self._zoom_combo)
+
+        self._zoom_in_btn = QToolButton(self)
+        self._zoom_in_btn.setIcon(icons.zoom_in())
+        self._zoom_in_btn.setToolTip("Zoom in")
+        self._zoom_in_btn.setAutoRaise(True)
+        self._zoom_in_btn.clicked.connect(lambda: self._step_zoom(+1))
+        self._status.addPermanentWidget(self._zoom_in_btn)
+
         self._tectonic_label = QLabel(
             "tectonic: OK" if tectonic_available() else "tectonic: NOT FOUND — preview disabled",
             self)
@@ -166,6 +198,26 @@ class MainWindow(QMainWindow):
                                       shortcut=QKeySequence.SelectAll, triggered=text.selectAll)
         self.act_clear_fmt = QAction("Clear &formatting", self,
                                      triggered=e.clear_formatting)
+
+        # Alignment (exclusive group — exactly one is checked at any time)
+        self.alignment_group = QActionGroup(self)
+        self.alignment_group.setExclusive(True)
+        self.act_align_left = QAction(icons.align_left(), "Align &left", self,
+                                      checkable=True,
+                                      triggered=lambda: e.apply_alignment("left"))
+        self.act_align_center = QAction(icons.align_center(), "Align &center", self,
+                                        checkable=True,
+                                        triggered=lambda: e.apply_alignment("center"))
+        self.act_align_right = QAction(icons.align_right(), "Align &right", self,
+                                       checkable=True,
+                                       triggered=lambda: e.apply_alignment("right"))
+        self.act_align_justify = QAction(icons.align_justify(), "&Justify", self,
+                                         checkable=True,
+                                         triggered=lambda: e.apply_alignment("justify"))
+        for a in (self.act_align_left, self.act_align_center,
+                  self.act_align_right, self.act_align_justify):
+            self.alignment_group.addAction(a)
+        self.act_align_left.setChecked(True)
 
         # Format
         self.act_bold = QAction(icons.bold(), "&Bold", self,
@@ -294,6 +346,10 @@ class MainWindow(QMainWindow):
         m_format.addAction(self.act_code); m_format.addAction(self.act_smallcaps)
         m_format.addAction(self.act_sub); m_format.addAction(self.act_super)
         m_format.addSeparator()
+        m_align = m_format.addMenu("Alignment")
+        m_align.addAction(self.act_align_left); m_align.addAction(self.act_align_center)
+        m_align.addAction(self.act_align_right); m_align.addAction(self.act_align_justify)
+        m_format.addSeparator()
         m_heading = m_format.addMenu("Paragraph style")
         m_heading.addAction(self.act_h_body)
         for a in self.heading_actions:
@@ -374,6 +430,10 @@ class MainWindow(QMainWindow):
                     self.act_sub, self.act_super):
             tb.addAction(act)
         tb.addSeparator()
+        for act in (self.act_align_left, self.act_align_center,
+                    self.act_align_right, self.act_align_justify):
+            tb.addAction(act)
+        tb.addSeparator()
         for act in (self.act_bullet, self.act_numbered):
             tb.addAction(act)
         tb.addSeparator()
@@ -395,6 +455,14 @@ class MainWindow(QMainWindow):
     def _update_title(self) -> None:
         name = self._current_path.name if self._current_path else "Untitled"
         self.setWindowTitle(f"kherveDOC {version_string()} — {name}")
+        # Status bar mirrors the full path so the user can see where the
+        # document lives on disk (and copy it via mouse selection).
+        if self._current_path is not None:
+            self._path_label.setText(str(self._current_path))
+            self._path_label.setToolTip(str(self._current_path))
+        else:
+            self._path_label.setText("Untitled — not saved yet")
+            self._path_label.setToolTip("")
 
     # ----- file actions -----
 
@@ -539,6 +607,18 @@ class MainWindow(QMainWindow):
         self._editor.set_meta(meta)
         self._kick_compile()
 
+    def _on_zoom_combo_changed(self, idx: int) -> None:
+        pct = self._zoom_combo.itemData(idx)
+        if pct:
+            self._editor.set_zoom_percent(int(pct))
+
+    def _step_zoom(self, direction: int) -> None:
+        """Walk through the preset zoom levels in the combo. direction=+1
+        or -1."""
+        idx = self._zoom_combo.currentIndex() + direction
+        idx = max(0, min(self._zoom_combo.count() - 1, idx))
+        self._zoom_combo.setCurrentIndex(idx)
+
     def _on_pagesize_changed(self, idx: int) -> None:
         code = self._pagesize_combo.itemData(idx)
         if not code: return
@@ -649,6 +729,12 @@ class MainWindow(QMainWindow):
         self.act_smallcaps.setChecked(e.is_mark_active("smallcaps"))
         self.act_sub.setChecked(e.is_mark_active("subscript"))
         self.act_super.setChecked(e.is_mark_active("superscript"))
+        align = e.current_alignment()
+        align_actions = {
+            "left": self.act_align_left, "center": self.act_align_center,
+            "right": self.act_align_right, "justify": self.act_align_justify,
+        }
+        align_actions.get(align, self.act_align_left).setChecked(True)
         level = e.current_heading_level()
         # heading_combo indices: 0=Body, 1=Title, 2..6=Heading 1..5
         if level == -1: idx = 1

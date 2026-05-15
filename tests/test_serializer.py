@@ -53,6 +53,31 @@ def test_crossref_serializes():
     assert serialize_inline(CrossRef(label="eq:1", kind="eqref")) == r"\eqref{eq:1}"
 
 
+def test_paragraph_left_is_unwrapped():
+    n = Paragraph(children=[Text(text="hello")], alignment="left")
+    assert serialize_block(n).strip() == "hello"
+
+
+def test_paragraph_justify_is_also_unwrapped():
+    # LaTeX defaults to fully justified — no wrapper needed.
+    n = Paragraph(children=[Text(text="hello")], alignment="justify")
+    assert r"\begin" not in serialize_block(n)
+
+
+def test_paragraph_center_uses_center_env():
+    n = Paragraph(children=[Text(text="hi")], alignment="center")
+    out = serialize_block(n)
+    assert r"\begin{center}" in out
+    assert r"\end{center}" in out
+
+
+def test_paragraph_right_uses_flushright_env():
+    n = Paragraph(children=[Text(text="hi")], alignment="right")
+    out = serialize_block(n)
+    assert r"\begin{flushright}" in out
+    assert r"\end{flushright}" in out
+
+
 def test_section_numbered_vs_starred():
     assert serialize_block(Section(level=1, children=[Text(text="X")])).startswith(r"\section{X}")
     assert serialize_block(

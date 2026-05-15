@@ -63,6 +63,15 @@ _RAW_PREFIX = "[RAW] "
 
 
 _HEADING_FONT_SIZES = {1: 22, 2: 18, 3: 15, 4: 13, 5: 12}
+
+# Bidirectional mapping for paragraph alignment.
+_QT_ALIGNMENT = {
+    "left": Qt.AlignLeft,
+    "center": Qt.AlignHCenter,
+    "right": Qt.AlignRight,
+    "justify": Qt.AlignJustify,
+}
+_ALIGNMENT_FROM_QT = {v: k for k, v in _QT_ALIGNMENT.items()}
 _TITLE_FONT_SIZE = 28
 
 
@@ -154,6 +163,10 @@ class DocumentEditor(QWidget):
         self._building = False
         # Initialise meta up front — _apply_page_size below reads it.
         self._meta = DocMeta()
+        # Zoom state: tracked so set_zoom_percent can compute deltas.
+        self._base_font_pt = 12
+        self._zoom_percent = 100
+        self._zoom_delta = 0
 
         # MS Word look: a white "page" card centered on a grey desk, sized
         # to real A4/Letter/Legal paper at 96 DPI. The text flows as one
@@ -233,10 +246,13 @@ class DocumentEditor(QWidget):
         self._on_text_changed()
 
     def _apply_page_size(self, page: "page_sizes.PageSize") -> None:
-        self._page.setFixedWidth(page.width_px)
-        # Document pagination uses pixel coordinates matching the rendered
-        # size on the page card.
-        self._edit.set_page_size_px(page.width_px, page.height_px)
+        # Honour the current zoom so switching page sizes while zoomed in
+        # doesn't snap the card back to 100%.
+        scale = self._zoom_percent / 100 if self._zoom_percent else 1.0
+        w = round(page.width_px * scale)
+        h = round(page.height_px * scale)
+        self._page.setFixedWidth(w)
+        self._edit.set_page_size_px(w, h)
         self._resize_to_document()
 
     def _resize_to_document(self, size=None) -> None:
@@ -304,7 +320,11 @@ class DocumentEditor(QWidget):
                 elif 1 <= state <= 5:
                     blocks.append(Section(level=state, children=self._inlines_from_block(block)))
                 else:
-                    blocks.append(Paragraph(children=self._inlines_from_block(block)))
+                    align = self._alignment_of(block)
+                    blocks.append(Paragraph(
+                        children=self._inlines_from_block(block),
+                        alignment=align,
+                    ))
             block = block.next()
         return Document(children=blocks, meta=self._meta)
 
@@ -324,6 +344,9 @@ class DocumentEditor(QWidget):
                 self._insert_inline(cursor, inline, base_format=cfmt)
         elif isinstance(block, Paragraph):
             cursor.block().setUserState(_STATE_PARAGRAPH)
+            bfmt = QTextBlockFormat()
+            bfmt.setAlignment(_QT_ALIGNMENT.get(block.alignment, Qt.AlignLeft))
+            cursor.setBlockFormat(bfmt)
             for inline in block.children:
                 self._insert_inline(cursor, inline)
         elif isinstance(block, MathBlock):
@@ -442,6 +465,15 @@ class DocumentEditor(QWidget):
             it += 1
         return out
 
+    def _alignment_of(self, block) -> str:
+        # QTextBlockFormat.alignment() returns a Qt.AlignmentFlag bitmask;
+        # mask to the horizontal portion before looking up.
+        horiz = block.blockFormat().alignment() & Qt.AlignHorizontal_Mask
+        for flag, name in _ALIGNMENT_FROM_QT.items():
+            if horiz == flag:
+                return name
+        return "left"
+
     def _figure_from_stub(self, text: str) -> Figure:
         body = text[len(_FIGURE_PREFIX):] if text.startswith(_FIGURE_PREFIX) else text
         parts = body.split("|")
@@ -481,6 +513,45 @@ class DocumentEditor(QWidget):
             fmt.setFont(f)
             block_cursor.setCharFormat(fmt)
         self._on_text_changed()
+
+    def apply_alignment(self, name: str) -> None:
+        """name ∈ {"left", "center", "right", "justify"}."""
+        flag = _QT_ALIGNMENT.get(name, Qt.AlignLeft)
+        cursor = self._edit.textCursor()
+        bfmt = cursor.blockFormat()
+        bfmt.setAlignment(flag)
+        cursor.setBlockFormat(bfmt)
+        self._on_text_changed()
+
+    def current_alignment(self) -> str:
+        return self._alignment_of(self._edit.textCursor().block())
+
+    # ----- zoom -----
+
+    def zoom_percent(self) -> int:
+        return self._zoom_percent
+
+    def set_zoom_percent(self, percent: int) -> None:
+        percent = max(25, min(400, int(percent)))
+        if percent == self._zoom_percent:
+            return
+        # QTextEdit.zoomIn(n) scales every font in the document by n points;
+        # to go to an absolute zoom we compute the delta from the base font.
+        target_delta = round(self._base_font_pt * (percent / 100 - 1))
+        diff = target_delta - self._zoom_delta
+        if diff > 0:
+            self._edit.zoomIn(diff)
+        elif diff < 0:
+            self._edit.zoomOut(-diff)
+        self._zoom_delta = target_delta
+        self._zoom_percent = percent
+        # Page card grows/shrinks with zoom so the visible paper looks right.
+        page = page_sizes.by_code(self._meta.page_size)
+        scaled_w = round(page.width_px * percent / 100)
+        scaled_h = round(page.height_px * percent / 100)
+        self._page.setFixedWidth(scaled_w)
+        self._edit.set_page_size_px(scaled_w, scaled_h)
+        self._resize_to_document()
 
     def toggle_mark(self, mark: str) -> None:
         fmt = QTextCharFormat()
