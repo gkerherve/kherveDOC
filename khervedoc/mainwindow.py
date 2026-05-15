@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 from . import __version__, git_backend, icons, page_sizes, version_string
 from .compiler import CompileResult, compile_tex, tectonic_available
 from .editor import DocumentEditor, TEMPLATE_CHOICES
+from . import importers
 from .latex_view import LatexView
 from .model import (
     Document, DocMeta, Paragraph, Section, Text, Title, from_json, to_json,
@@ -142,6 +143,8 @@ class MainWindow(QMainWindow):
         self.act_save_as = QAction("Save &As...", self,
                                    shortcut=QKeySequence.SaveAs, triggered=self._save_as)
         self.act_close_doc = QAction("&Close document", self, triggered=self._new)
+        self.act_import_tex = QAction("Import .&tex...", self, triggered=self._import_tex)
+        self.act_import_docx = QAction("Import .&docx...", self, triggered=self._import_docx)
         self.act_export_tex = QAction("Export .&tex...", self, triggered=self._export_tex)
         self.act_export_pdf = QAction(icons.export_pdf(), "Export .&pdf...", self,
                                       triggered=self._export_pdf)
@@ -266,6 +269,9 @@ class MainWindow(QMainWindow):
         m_file.addAction(self.act_save_as)
         m_file.addAction(self.act_close_doc)
         m_file.addSeparator()
+        m_import = m_file.addMenu("&Import")
+        m_import.addAction(self.act_import_tex)
+        m_import.addAction(self.act_import_docx)
         m_export = m_file.addMenu("&Export")
         m_export.addAction(self.act_export_tex)
         m_export.addAction(self.act_export_pdf)
@@ -452,6 +458,47 @@ class MainWindow(QMainWindow):
                 self._status.showMessage("Saved (no changes to commit)", 4000)
         else:
             self._status.showMessage("Saved (pygit2 unavailable)", 4000)
+
+    def _import_tex(self) -> None:
+        path_s, _ = QFileDialog.getOpenFileName(
+            self, "Import LaTeX", "", "LaTeX (*.tex);;All files (*)")
+        if not path_s: return
+        path = Path(path_s)
+        try:
+            doc = importers.import_tex(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            QMessageBox.critical(self, "Import failed", str(exc))
+            return
+        self._current_path = None
+        self._editor.set_document(doc)
+        self.setWindowTitle(f"kherveDOC {version_string()} — {path.stem} (imported)")
+        self._status.showMessage(f"Imported {path.name} — Save As to keep it", 6000)
+
+    def _import_docx(self) -> None:
+        if not importers.docx_available():
+            QMessageBox.warning(
+                self, "python-docx missing",
+                "python-docx is not installed. Run "
+                "<code>pip install python-docx</code> to enable .docx import.")
+            return
+        path_s, _ = QFileDialog.getOpenFileName(
+            self, "Import Word document", "", "Word (*.docx);;All files (*)")
+        if not path_s: return
+        path = Path(path_s)
+        # Embedded images get written next to the eventual save location.
+        # Until the user picks one, drop them in the temp build dir.
+        image_dir = self._build_dir / f"{path.stem}_images"
+        try:
+            doc = importers.import_docx(path, image_dir)
+        except Exception as exc:
+            QMessageBox.critical(self, "Import failed", str(exc))
+            return
+        self._current_path = None
+        self._editor.set_document(doc)
+        self.setWindowTitle(f"kherveDOC {version_string()} — {path.stem} (imported)")
+        n_imgs = len(list(image_dir.glob("image_*"))) if image_dir.exists() else 0
+        self._status.showMessage(
+            f"Imported {path.name} ({n_imgs} image(s) extracted to {image_dir})", 8000)
 
     def _export_tex(self) -> None:
         path_s, _ = QFileDialog.getSaveFileName(
