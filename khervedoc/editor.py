@@ -334,10 +334,6 @@ class DocumentEditor(QWidget):
                 text = block.text()
                 if state == _STATE_MATH_BLOCK:
                     blocks.append(MathBlock(latex=text))
-                elif state == _STATE_TITLE:
-                    blocks.append(Title(children=self._inlines_from_block(block)))
-                elif state == _STATE_AUTHOR:
-                    blocks.append(Author(children=self._inlines_from_block(block)))
                 elif state == _STATE_FIGURE:
                     blocks.append(self._figure_from_stub(text))
                 elif state == _STATE_TABLE:
@@ -345,14 +341,15 @@ class DocumentEditor(QWidget):
                 elif state == _STATE_RAW:
                     raw = text[len(_RAW_PREFIX):] if text.startswith(_RAW_PREFIX) else text
                     blocks.append(RawLatex(text=raw))
-                elif 1 <= state <= 5:
-                    blocks.append(Section(level=state, children=self._inlines_from_block(block)))
                 else:
-                    align = self._alignment_of(block)
-                    blocks.append(Paragraph(
-                        children=self._inlines_from_block(block),
-                        alignment=align,
-                    ))
+                    # Text blocks: determine the paragraph style from how
+                    # the block CURRENTLY looks, not the stored state.
+                    # When a user presses Enter after a heading the new
+                    # block inherits the heading's font but its state
+                    # stays unset (-1), and vice versa for manual format
+                    # changes. Trusting the visible formatting keeps the
+                    # PDF in sync with what the user sees on screen.
+                    blocks.append(self._classify_text_block(block))
             block = block.next()
         return Document(children=blocks, meta=self._meta)
 
@@ -498,6 +495,64 @@ class DocumentEditor(QWidget):
                     out.append(Text(text=text, marks=marks))
             it += 1
         return out
+
+    def _classify_text_block(self, block):
+        """Build the right Block model for `block` based on what it LOOKS
+        like in the editor right now: alignment, font weight, font size,
+        italic. The stored userState is used as a tie-breaker only.
+
+        Heuristics tuned to the styles applied by apply_heading():
+          * Title      = centered, bold, ≥ ~24pt (base size, pre-zoom)
+          * Author     = centered, italic, ~14pt
+          * Heading N  = bold, point size within ~3pt of the canonical size
+          * Paragraph  = anything else, alignment preserved
+        """
+        state = block.userState()
+        align_flag = block.blockFormat().alignment() & Qt.AlignHorizontal_Mask
+        align_name = _ALIGNMENT_FROM_QT.get(align_flag, "left")
+        children = self._inlines_from_block(block)
+
+        # Empty block: no fragments to inspect — fall back to state.
+        it = block.begin()
+        if it.atEnd():
+            if state == _STATE_TITLE: return Title(children=children)
+            if state == _STATE_AUTHOR: return Author(children=children)
+            if 1 <= state <= 5:
+                return Section(level=state, children=children)
+            return Paragraph(children=children, alignment=align_name)
+
+        fmt = it.fragment().charFormat()
+        f = fmt.font()
+        size = f.pointSizeF()
+        bold = f.bold()
+        italic = f.italic()
+        # Normalise by zoom so heading detection survives the user dragging
+        # the zoom slider.
+        zoom = self._zoom_percent / 100 if self._zoom_percent else 1.0
+        base = size / zoom if zoom > 0 else size
+
+        # Title: large + bold + centered (with state hint relaxes the size threshold).
+        if align_flag == Qt.AlignHCenter and bold and (base >= 24 or state == _STATE_TITLE):
+            return Title(children=children)
+
+        # Author: centered, italic, small-ish.
+        if align_flag == Qt.AlignHCenter and italic and (base <= 17 or state == _STATE_AUTHOR):
+            return Author(children=children)
+
+        # Heading: bold + size near one of the canonical heading sizes.
+        if bold and base >= 12:
+            best_level: int | None = None
+            best_diff = 99.0
+            for level, expected in _HEADING_FONT_SIZES.items():
+                d = abs(base - expected)
+                if d < best_diff:
+                    best_diff = d; best_level = level
+            # 3pt tolerance — generous enough to absorb minor user-typed
+            # changes without misclassifying body text.
+            if best_level is not None and best_diff < 3:
+                return Section(level=best_level, children=children)
+
+        return Paragraph(children=children, alignment=align_name)
 
     def _alignment_of(self, block) -> str:
         # QTextBlockFormat.alignment() returns a Qt.AlignmentFlag bitmask;

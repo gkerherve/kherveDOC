@@ -82,16 +82,20 @@ def _maybe_label(label: str | None) -> str:
     return f"\\label{{{label}}}\n" if label else ""
 
 
-_ALIGN_ENVS = {"center": "center", "right": "flushright", "left": "flushleft"}
+_ALIGN_ENVS = {"left": "flushleft", "center": "center", "right": "flushright"}
 
 
 def serialize_block(node: Block) -> str:
     if isinstance(node, Paragraph):
         body = serialize_inlines(node.children)
-        if node.alignment in ("center", "right"):
+        # LaTeX defaults to fully-justified text. If the editor shows the
+        # paragraph as left/center/right-aligned we need to wrap it so the
+        # PDF looks the same — otherwise "left" in the editor would render
+        # as justified (with both edges flush) in the PDF.
+        if node.alignment in _ALIGN_ENVS:
             env = _ALIGN_ENVS[node.alignment]
             return f"\\begin{{{env}}}\n{body}\n\\end{{{env}}}\n"
-        # "left" and "justify" both use LaTeX's natural justify default.
+        # "justify" is LaTeX's natural default — no wrapper needed.
         return body + "\n"
 
     if isinstance(node, Section):
