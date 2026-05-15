@@ -134,7 +134,16 @@ class Title:
     type: str = "Title"
 
 
-Block = Union[Paragraph, Section, MathBlock, List, Figure, Table, RawLatex, Title]
+@dataclass
+class Author:
+    """Document author paragraph — like Word's "Author" / "Subtitle" style.
+    First Author block's content drives \\author{...} in the preamble; the
+    same \\maketitle that the Title block already emits will use it."""
+    children: list[Inline] = field(default_factory=list)
+    type: str = "Author"
+
+
+Block = Union[Paragraph, Section, MathBlock, List, Figure, Table, RawLatex, Title, Author]
 
 
 # ---------------- Metadata + document ----------------
@@ -233,6 +242,8 @@ def _build_block(d: dict) -> Block:
         return RawLatex(text=d["text"])
     if t == "Title":
         return Title(children=_build_inlines(d.get("children", [])))
+    if t == "Author":
+        return Author(children=_build_inlines(d.get("children", [])))
     raise ValueError(f"Unknown block node type: {t!r}")
 
 

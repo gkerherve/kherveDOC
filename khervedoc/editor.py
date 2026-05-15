@@ -28,7 +28,7 @@ from .paged_edit import PagedTextEdit
 TEMPLATE_CHOICES = ["article", "report", "book", "letter", "beamer", "memoir"]
 
 from .model import (
-    Citation, CrossRef, Document, DocMeta, Figure, Footnote, Link,
+    Author, Citation, CrossRef, Document, DocMeta, Figure, Footnote, Link,
     List as ListNode, ListItem, MathBlock, MathInline, Paragraph, RawLatex,
     Section, Table, Text, Title,
 )
@@ -37,6 +37,7 @@ from .model import (
 # ---- per-block user state encoding ----
 _STATE_PARAGRAPH = 0
 _STATE_TITLE = 7        # Word-style "Title" paragraph; emits \maketitle
+_STATE_AUTHOR = 8       # Author of the document; pulled into \author{} preamble
 _STATE_MATH_BLOCK = 99
 _STATE_FIGURE = 100
 _STATE_TABLE = 101
@@ -96,7 +97,23 @@ def _title_char_format() -> QTextCharFormat:
 def _title_block_format() -> QTextBlockFormat:
     bfmt = QTextBlockFormat()
     bfmt.setAlignment(Qt.AlignHCenter)
-    bfmt.setTopMargin(8); bfmt.setBottomMargin(20)
+    bfmt.setTopMargin(8); bfmt.setBottomMargin(8)
+    return bfmt
+
+
+def _author_char_format() -> QTextCharFormat:
+    fmt = QTextCharFormat()
+    f = QFont()
+    f.setItalic(True); f.setPointSize(14)
+    fmt.setFont(f)
+    fmt.setForeground(QColor("#555"))
+    return fmt
+
+
+def _author_block_format() -> QTextBlockFormat:
+    bfmt = QTextBlockFormat()
+    bfmt.setAlignment(Qt.AlignHCenter)
+    bfmt.setTopMargin(0); bfmt.setBottomMargin(24)
     return bfmt
 
 
@@ -319,6 +336,8 @@ class DocumentEditor(QWidget):
                     blocks.append(MathBlock(latex=text))
                 elif state == _STATE_TITLE:
                     blocks.append(Title(children=self._inlines_from_block(block)))
+                elif state == _STATE_AUTHOR:
+                    blocks.append(Author(children=self._inlines_from_block(block)))
                 elif state == _STATE_FIGURE:
                     blocks.append(self._figure_from_stub(text))
                 elif state == _STATE_TABLE:
@@ -345,6 +364,12 @@ class DocumentEditor(QWidget):
             cursor.block().setUserState(_STATE_TITLE)
             for inline in block.children:
                 self._insert_inline(cursor, inline, base_format=_title_char_format())
+            return
+        if isinstance(block, Author):
+            cursor.setBlockFormat(_author_block_format())
+            cursor.block().setUserState(_STATE_AUTHOR)
+            for inline in block.children:
+                self._insert_inline(cursor, inline, base_format=_author_char_format())
             return
         if isinstance(block, Section):
             cursor.block().setUserState(block.level)
@@ -502,7 +527,7 @@ class DocumentEditor(QWidget):
     # ---------- formatting actions (called by mainwindow) ----------
 
     def apply_heading(self, level: int) -> None:
-        """level: -1 = Title, 0 = Body, 1..5 = Heading 1..5."""
+        """level: -1 = Title, -2 = Author, 0 = Body, 1..5 = Heading 1..5."""
         cursor = self._edit.textCursor()
         block = cursor.block()
         block_cursor = QTextCursor(block)
@@ -511,6 +536,10 @@ class DocumentEditor(QWidget):
             block.setUserState(_STATE_TITLE)
             QTextCursor(block).setBlockFormat(_title_block_format())
             block_cursor.mergeCharFormat(_title_char_format())
+        elif level == -2:
+            block.setUserState(_STATE_AUTHOR)
+            QTextCursor(block).setBlockFormat(_author_block_format())
+            block_cursor.mergeCharFormat(_author_char_format())
         elif level >= 1:
             block.setUserState(level)
             QTextCursor(block).setBlockFormat(QTextBlockFormat())
@@ -544,17 +573,49 @@ class DocumentEditor(QWidget):
         percent = max(25, min(400, int(percent)))
         if percent == self._zoom_percent:
             return
-        # QTextEdit.zoomIn(n) scales every font in the document by n points;
-        # to go to an absolute zoom we compute the delta from the base font.
-        target_delta = round(self._base_font_pt * (percent / 100 - 1))
-        diff = target_delta - self._zoom_delta
-        if diff > 0:
-            self._edit.zoomIn(diff)
-        elif diff < 0:
-            self._edit.zoomOut(-diff)
-        self._zoom_delta = target_delta
+        # QTextEdit.zoomIn only scales the WIDGET's default font, which has
+        # no effect on text that carries an explicit character-format point
+        # size (every heading, every Title, every formatted run). To make
+        # zoom actually grow the text on screen we walk every fragment and
+        # rescale its point size by the ratio of new-to-old zoom.
+        prev_factor = self._zoom_percent / 100 if self._zoom_percent else 1.0
+        new_factor = percent / 100
+        ratio = new_factor / prev_factor
+
+        self._building = True   # suppress textChanged → debounced recompile
+        try:
+            doc = self._edit.document()
+            block = doc.firstBlock()
+            while block.isValid():
+                it = block.begin()
+                while not it.atEnd():
+                    frag = it.fragment()
+                    if frag.isValid():
+                        fmt = frag.charFormat()
+                        f = fmt.font()
+                        size = f.pointSizeF()
+                        if size > 0:
+                            f.setPointSizeF(size * ratio)
+                            fmt.setFont(f)
+                            c = QTextCursor(doc)
+                            c.setPosition(frag.position())
+                            c.setPosition(frag.position() + frag.length(),
+                                          QTextCursor.KeepAnchor)
+                            c.mergeCharFormat(fmt)
+                    it += 1
+                block = block.next()
+            # Scale the widget's default font too so freshly-typed text uses
+            # the same scale as the surrounding content.
+            wf = self._edit.font()
+            if wf.pointSizeF() > 0:
+                wf.setPointSizeF(wf.pointSizeF() * ratio)
+                self._edit.setFont(wf)
+        finally:
+            self._building = False
+
         self._zoom_percent = percent
-        # Page card grows/shrinks with zoom so the visible paper looks right.
+        # Page card grows/shrinks proportionally so paper proportions are
+        # preserved and the rescaled text still fits the visible page width.
         page = page_sizes.by_code(self._meta.page_size)
         scaled_w = round(page.width_px * percent / 100)
         scaled_h = round(page.height_px * percent / 100)
@@ -715,12 +776,14 @@ class DocumentEditor(QWidget):
         c.block().setUserState(_STATE_PARAGRAPH)
 
     def current_heading_level(self) -> int:
-        """Returns -1 = Title, 0 = Body, 1..5 = Heading, -2 = non-text block."""
+        """Returns -1 = Title, -2 = Author, 0 = Body, 1..5 = Heading,
+        -99 = non-text block (math/figure/table)."""
         state = self._edit.textCursor().block().userState()
         if state == _STATE_TITLE: return -1
+        if state == _STATE_AUTHOR: return -2
         if 1 <= state <= 5: return state
         if state == _STATE_PARAGRAPH: return 0
-        return -2
+        return -99
 
     def is_mark_active(self, mark: str) -> bool:
         f = self._edit.currentFont()

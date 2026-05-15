@@ -11,8 +11,8 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QLabel,
-    QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit, QStatusBar, QTabWidget,
-    QToolBar, QToolButton, QVBoxLayout, QWidget,
+    QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit, QSlider, QStatusBar,
+    QTabWidget, QToolBar, QToolButton, QVBoxLayout, QWidget,
 )
 
 from . import __version__, git_backend, icons, page_sizes, version_string
@@ -21,7 +21,8 @@ from .editor import DocumentEditor, TEMPLATE_CHOICES
 from . import importers
 from .latex_view import LatexView
 from .model import (
-    Document, DocMeta, Paragraph, Section, Text, Title, from_json, to_json,
+    Author, Document, DocMeta, Paragraph, Section, Text, Title,
+    from_json, to_json,
 )
 from .preview import PdfPreview
 from .serializer import serialize_document
@@ -120,29 +121,40 @@ class MainWindow(QMainWindow):
         self._path_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self._status.addWidget(self._path_label, 1)   # stretch=1 → takes the space
 
-        # Right side, in order: zoom controls, then tectonic indicator.
+        # Right side, in order: zoom-out icon, slider, zoom-in icon, percent
+        # readout, then the tectonic indicator. Matches Word's bottom-bar
+        # zoom layout: drag the slider to scale live; click + / - to step.
         self._zoom_out_btn = QToolButton(self)
         self._zoom_out_btn.setIcon(icons.zoom_out())
         self._zoom_out_btn.setToolTip("Zoom out")
         self._zoom_out_btn.setAutoRaise(True)
-        self._zoom_out_btn.clicked.connect(lambda: self._step_zoom(-1))
+        self._zoom_out_btn.clicked.connect(lambda: self._nudge_zoom(-10))
         self._status.addPermanentWidget(self._zoom_out_btn)
 
-        self._zoom_combo = QComboBox(self)
-        self._zoom_combo.setEditable(False)
-        for pct in (50, 75, 100, 125, 150, 200):
-            self._zoom_combo.addItem(f"{pct}%", pct)
-        self._zoom_combo.setCurrentIndex(2)  # 100%
-        self._zoom_combo.setMaximumWidth(72)
-        self._zoom_combo.currentIndexChanged.connect(self._on_zoom_combo_changed)
-        self._status.addPermanentWidget(self._zoom_combo)
+        self._zoom_slider = QSlider(Qt.Horizontal, self)
+        self._zoom_slider.setRange(25, 300)
+        self._zoom_slider.setValue(100)
+        self._zoom_slider.setMinimumWidth(140)
+        self._zoom_slider.setMaximumWidth(220)
+        self._zoom_slider.setSingleStep(10)
+        self._zoom_slider.setPageStep(25)
+        self._zoom_slider.setTickPosition(QSlider.TicksBelow)
+        self._zoom_slider.setTickInterval(25)
+        self._zoom_slider.valueChanged.connect(self._on_zoom_slider_changed)
+        self._status.addPermanentWidget(self._zoom_slider)
 
         self._zoom_in_btn = QToolButton(self)
         self._zoom_in_btn.setIcon(icons.zoom_in())
         self._zoom_in_btn.setToolTip("Zoom in")
         self._zoom_in_btn.setAutoRaise(True)
-        self._zoom_in_btn.clicked.connect(lambda: self._step_zoom(+1))
+        self._zoom_in_btn.clicked.connect(lambda: self._nudge_zoom(+10))
         self._status.addPermanentWidget(self._zoom_in_btn)
+
+        self._zoom_label = QLabel("100%", self)
+        self._zoom_label.setMinimumWidth(42)
+        self._zoom_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self._zoom_label.setStyleSheet("padding-right: 6px; color: #444;")
+        self._status.addPermanentWidget(self._zoom_label)
 
         self._tectonic_label = QLabel(
             "tectonic: OK" if tectonic_available() else "tectonic: NOT FOUND — preview disabled",
@@ -397,6 +409,7 @@ class MainWindow(QMainWindow):
         # Order matches Word's paragraph-style picker.
         self._heading_combo.addItem("Body text", 0)
         self._heading_combo.addItem("Title", -1)
+        self._heading_combo.addItem("Author", -2)
         for level in range(1, 6):
             self._heading_combo.addItem(f"Heading {level}", level)
         self._heading_combo.setMinimumWidth(120)
@@ -611,18 +624,19 @@ class MainWindow(QMainWindow):
         self._editor.set_meta(meta)
         self._kick_compile()
 
-    def _on_zoom_combo_changed(self, idx: int) -> None:
-        pct = self._zoom_combo.itemData(idx)
-        if pct:
-            self._editor.set_zoom_percent(int(pct))
-            self._preview.set_zoom_percent(int(pct))
+    def _on_zoom_slider_changed(self, pct: int) -> None:
+        # Snap to 5%-multiples so drag movements feel less twitchy.
+        snapped = max(25, min(300, 5 * round(pct / 5)))
+        if snapped != pct:
+            self._zoom_slider.blockSignals(True)
+            self._zoom_slider.setValue(snapped)
+            self._zoom_slider.blockSignals(False)
+        self._zoom_label.setText(f"{snapped}%")
+        self._editor.set_zoom_percent(snapped)
+        self._preview.set_zoom_percent(snapped)
 
-    def _step_zoom(self, direction: int) -> None:
-        """Walk through the preset zoom levels in the combo. direction=+1
-        or -1."""
-        idx = self._zoom_combo.currentIndex() + direction
-        idx = max(0, min(self._zoom_combo.count() - 1, idx))
-        self._zoom_combo.setCurrentIndex(idx)
+    def _nudge_zoom(self, delta: int) -> None:
+        self._zoom_slider.setValue(self._zoom_slider.value() + delta)
 
     def _on_pagesize_changed(self, idx: int) -> None:
         code = self._pagesize_combo.itemData(idx)
@@ -741,9 +755,10 @@ class MainWindow(QMainWindow):
         }
         align_actions.get(align, self.act_align_left).setChecked(True)
         level = e.current_heading_level()
-        # heading_combo indices: 0=Body, 1=Title, 2..6=Heading 1..5
+        # heading_combo indices: 0=Body, 1=Title, 2=Author, 3..7=Heading 1..5
         if level == -1: idx = 1
-        elif 1 <= level <= 5: idx = level + 1
+        elif level == -2: idx = 2
+        elif 1 <= level <= 5: idx = level + 2
         elif level == 0: idx = 0
         else: idx = 0
         if self._heading_combo.currentIndex() != idx:
@@ -783,6 +798,7 @@ def _starter_document() -> Document:
         meta=DocMeta(title="", author=""),
         children=[
             Title(children=[Text(text="My document")]),
+            Author(children=[Text(text="Your name")]),
             Section(level=1, children=[Text(text="Introduction")]),
             Paragraph(children=[
                 Text(text="Type here. Use the paragraph-style picker to choose "),

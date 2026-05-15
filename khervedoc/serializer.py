@@ -5,9 +5,9 @@ Pure functions; one serializer per node type. No I/O.
 from __future__ import annotations
 
 from .model import (
-    Block, Citation, CrossRef, Document, Figure, Footnote, Inline, Link,
-    List as ListNode, ListItem, MathBlock, MathInline, Paragraph, RawLatex,
-    Section, Table, Text, Title,
+    Author, Block, Citation, CrossRef, Document, Figure, Footnote, Inline,
+    Link, List as ListNode, ListItem, MathBlock, MathInline, Paragraph,
+    RawLatex, Section, Table, Text, Title,
 )
 
 
@@ -160,6 +160,11 @@ def serialize_block(node: Block) -> str:
         # the preamble by serialize_document.
         return "\\maketitle\n"
 
+    if isinstance(node, Author):
+        # Author blocks are pulled into the preamble; they don't render in
+        # the body. \maketitle (emitted by the Title block) will print them.
+        return ""
+
     raise TypeError(f"Unknown block node: {type(node).__name__}")
 
 
@@ -175,14 +180,17 @@ def serialize_document(doc: Document) -> str:
     # the document title flow naturally into the LaTeX output.
     inline_title: str | None = None
     has_title_block = False
+    inline_author: str | None = None
     for block in doc.children:
-        if isinstance(block, Title):
+        if isinstance(block, Title) and inline_title is None:
             inline_title = serialize_inlines(block.children)
             has_title_block = True
-            break
+        elif isinstance(block, Author) and inline_author is None:
+            inline_author = serialize_inlines(block.children)
     title_text = inline_title if inline_title is not None else (
         escape_text((doc.meta.title or "").strip()))
-    author_text = escape_text((doc.meta.author or "").strip())
+    author_text = inline_author if inline_author is not None else (
+        escape_text((doc.meta.author or "").strip()))
 
     has_metadata = bool(title_text or author_text)
     preamble_meta = ""

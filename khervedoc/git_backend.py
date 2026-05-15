@@ -24,15 +24,54 @@ def is_available() -> bool:
     return _PYGIT2_OK
 
 
+def _find_enclosing_repo(repo_dir: Path) -> Path | None:
+    """Walk up the directory tree; if any ancestor has a .git, return that
+    ancestor. Used to detect when a save would create a nested repo inside
+    an existing one (which was the source of the rogue "master"-branch
+    auto-commit history)."""
+    cur = repo_dir.resolve()
+    while cur != cur.parent:
+        if (cur / ".git").exists():
+            return cur
+        cur = cur.parent
+    return None
+
+
 def init_repo(repo_dir: Path) -> bool:
-    """Initialise a git repo in `repo_dir` if one doesn't already exist."""
+    """Initialise a git repo in `repo_dir` if one doesn't already exist.
+
+    - If `repo_dir` is already a repo, return True (no-op).
+    - If `repo_dir` is INSIDE another git repo, use that parent repo
+      instead of nesting — saves there should commit to the enclosing
+      repo's current branch, not a new "master" branch under a hidden
+      `.git` directory.
+    - Otherwise initialise a fresh repo with HEAD pointing to
+      `refs/heads/dev`, matching the project's branching convention.
+    """
     if not _PYGIT2_OK:
         return False
     repo_dir.mkdir(parents=True, exist_ok=True)
     if (repo_dir / ".git").exists():
         return True
+    if _find_enclosing_repo(repo_dir) is not None:
+        # Don't create a nested repo. Caller's commit_all will still work
+        # because it walks up from repo_dir to find the enclosing .git.
+        return True
     pygit2.init_repository(str(repo_dir), bare=False)
+    # libgit2 defaults the unborn HEAD to refs/heads/master; rewrite it
+    # so the very first commit lands on `dev` instead.
+    head_file = repo_dir / ".git" / "HEAD"
+    head_file.write_text("ref: refs/heads/dev\n", encoding="utf-8")
     return True
+
+
+def _repo_for(repo_dir: Path) -> "pygit2.Repository | None":
+    """Return the pygit2.Repository governing `repo_dir`, walking up to
+    find an enclosing one if `repo_dir` itself isn't a repo root."""
+    if (repo_dir / ".git").exists():
+        return pygit2.Repository(str(repo_dir))
+    enclosing = _find_enclosing_repo(repo_dir)
+    return pygit2.Repository(str(enclosing)) if enclosing else None
 
 
 def _signature(repo: "pygit2.Repository | None" = None) -> "pygit2.Signature":
@@ -60,10 +99,11 @@ def commit_all(repo_dir: Path, message: str | None = None) -> str | None:
     """
     if not _PYGIT2_OK:
         return None
-    if not (repo_dir / ".git").exists():
-        init_repo(repo_dir)
+    init_repo(repo_dir)
 
-    repo = pygit2.Repository(str(repo_dir))
+    repo = _repo_for(repo_dir)
+    if repo is None:
+        return None
     index = repo.index
     index.add_all()
     index.write()

@@ -1,5 +1,5 @@
 from khervedoc.model import (
-    Citation, CrossRef, Document, DocMeta, Figure, Footnote, Link,
+    Author, Citation, CrossRef, Document, DocMeta, Figure, Footnote, Link,
     List as ListNode, ListItem, MathBlock, MathInline, Paragraph, RawLatex,
     Section, Table, Text, Title,
 )
@@ -173,6 +173,31 @@ def test_title_block_with_inline_marks():
         ])])
     out = serialize_document(doc)
     assert r"\title{Bold \textit{title}}" in out
+
+
+def test_author_block_drives_author_in_preamble():
+    doc = Document(
+        meta=DocMeta(title="", author=""),
+        children=[
+            Title(children=[Text(text="T")]),
+            Author(children=[Text(text="Jane Doe")]),
+            Paragraph(children=[Text(text="body")]),
+        ],
+    )
+    out = serialize_document(doc)
+    assert r"\author{Jane Doe}" in out
+    # The Author block itself produces no body output (Title handles \maketitle).
+    body_start = out.index(r"\begin{document}")
+    body = out[body_start:]
+    assert "Jane Doe" not in body
+
+
+def test_author_block_overrides_meta_author():
+    doc = Document(
+        meta=DocMeta(title="", author="Old Author"),
+        children=[Author(children=[Text(text="New Author")])],
+    )
+    assert r"\author{New Author}" in serialize_document(doc)
 
 
 def test_meta_title_fallback_when_no_title_block():
