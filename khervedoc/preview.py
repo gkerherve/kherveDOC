@@ -4,17 +4,20 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtGui import QColor, QImage, QPixmap
 from PySide6.QtWidgets import (
-    QLabel, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
+    QGraphicsDropShadowEffect, QLabel, QScrollArea, QSizePolicy,
+    QVBoxLayout, QWidget,
 )
 
 from .compiler import render_pdf_pages
 
-# Base DPI used to rasterise each page. The zoom factor multiplies this so
-# 100% zoom looks crisp on most monitors; >100% raises DPI for sharper
-# zoomed-in viewing, <100% drops DPI to keep the redraw cheap.
-_BASE_DPI = 144
+# Base DPI used to rasterise each page at 100% zoom. 96 makes an A4 page
+# 794x1122 px, which fits in the preview pane on a typical 1080p display
+# without forcing horizontal scrolling. Users wanting a sharper view can
+# zoom up via the status-bar slider — set_zoom_percent re-rasterises at
+# the matching DPI.
+_BASE_DPI = 96
 
 
 class PdfPreview(QWidget):
@@ -92,11 +95,34 @@ class PdfPreview(QWidget):
             label.setPixmap(QPixmap.fromImage(img))
             label.setAlignment(Qt.AlignHCenter)
             label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-            label.setStyleSheet("background: white; border: 1px solid #888;")
+            label.setStyleSheet("background: white; border: 1px solid #b8bcc1;")
+            # Drop shadow so each page reads as a sheet of paper on the desk
+            # instead of a flat rectangle drifting in grey space.
+            shadow = QGraphicsDropShadowEffect(label)
+            shadow.setBlurRadius(18)
+            shadow.setOffset(0, 3)
+            shadow.setColor(QColor(0, 0, 0, 110))
+            label.setGraphicsEffect(shadow)
             self._inner_layout.insertWidget(self._inner_layout.count() - 1, label)
+        # Tell the user what they're looking at — page count, paper size from
+        # the first page's dimensions in inches, and the active zoom.
+        first = pages[0]
+        in_w = first.width / max(1, _BASE_DPI * self._zoom_percent / 100)
+        in_h = first.height / max(1, _BASE_DPI * self._zoom_percent / 100)
+        paper = self._guess_paper_name(in_w, in_h)
         self._status.setText(
             f"{len(pages)} page(s) — {self._current_pdf.name}  "
-            f"@ {self._zoom_percent}%")
+            f"— {paper}  @ {self._zoom_percent}%")
+
+    @staticmethod
+    def _guess_paper_name(width_in: float, height_in: float) -> str:
+        """Map physical dimensions back to a friendly paper name. Tolerance
+        of 0.05 inches absorbs small rounding from the rasteriser."""
+        def near(a, b): return abs(a - b) < 0.1
+        if near(width_in, 8.27) and near(height_in, 11.69): return "A4"
+        if near(width_in, 8.5) and near(height_in, 11.0):   return "Letter"
+        if near(width_in, 8.5) and near(height_in, 14.0):   return "Legal"
+        return f"{width_in:.1f}\" × {height_in:.1f}\""
 
     def _clear_pages(self) -> None:
         while self._inner_layout.count() > 1:
