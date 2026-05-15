@@ -10,6 +10,9 @@ LaTeX from the property.
 """
 from __future__ import annotations
 
+import tempfile
+from pathlib import Path
+
 from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtGui import (
     QAction, QColor, QFont, QKeySequence, QTextBlockFormat, QTextCharFormat,
@@ -245,6 +248,13 @@ class DocumentEditor(QWidget):
 
         self._edit.textChanged.connect(self._on_text_changed)
 
+        # Per-session image scratch dir. Pasted clipboard images and dropped
+        # image files land here; the figure stub points at the saved path.
+        # save_kdocz will bundle them into the archive on Save As .kdocz.
+        self._images_dir = Path(tempfile.mkdtemp(prefix="khervedoc-imgs-"))
+        self._edit.set_images_dir(self._images_dir)
+        self._edit.imageReceived.connect(self._on_image_received)
+
     # ---------- public ----------
 
     @property
@@ -394,14 +404,16 @@ class DocumentEditor(QWidget):
             lfmt = QTextListFormat()
             lfmt.setStyle(QTextListFormat.ListDecimal if block.ordered
                           else QTextListFormat.ListDisc)
-            first_item = True
+            # Capture the QTextList from createList(); cursor.currentList()
+            # returns None right after an insertBlock, which crashed the
+            # previous implementation on every list with more than one item.
+            text_list = None
             for item in block.items:
-                if first_item:
-                    cursor.createList(lfmt)
-                    first_item = False
+                if text_list is None:
+                    text_list = cursor.createList(lfmt)
                 else:
                     cursor.insertBlock(QTextBlockFormat(), QTextCharFormat())
-                    cursor.currentList().add(cursor.block())
+                    text_list.add(cursor.block())
                 cursor.block().setUserState(_STATE_PARAGRAPH)
                 for inline in item.children:
                     self._insert_inline(cursor, inline)
@@ -818,6 +830,19 @@ class DocumentEditor(QWidget):
         if not ok: return
         self._edit.textCursor().insertText(
             f"<{kind}:{label}>", _crossref_format(f"{label}|{kind}"))
+
+    def _on_image_received(self, path: str) -> None:
+        """Slot for PagedTextEdit.imageReceived. Drops a Figure block at
+        the cursor pointing at the freshly-saved image."""
+        c = self._edit.textCursor()
+        c.insertBlock(QTextBlockFormat(), QTextCharFormat())
+        c.block().setUserState(_STATE_FIGURE)
+        c.setBlockFormat(_stub_block_format())
+        stub = f"{_FIGURE_PREFIX}{path}||" + "|0.6\\textwidth"
+        c.insertText(stub, _stub_char_format())
+        c.insertBlock(QTextBlockFormat(), QTextCharFormat())
+        c.block().setUserState(_STATE_PARAGRAPH)
+        self._on_text_changed()
 
     def insert_figure(self) -> None:
         path, ok = QInputDialog.getText(self, "Insert figure", "Image path:")

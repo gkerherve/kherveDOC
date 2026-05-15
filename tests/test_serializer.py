@@ -94,6 +94,21 @@ def test_math_block_envs():
     assert r"\begin{equation*}" in out_unnum
 
 
+def test_multi_item_list_serializes_every_item():
+    # Regression: rendering a List with N>1 items used to crash in the
+    # editor because cursor.currentList() returned None after insertBlock.
+    # The serializer side never had the bug, but the test guards the model
+    # path that the (now fixed) editor flow re-builds.
+    n = ListNode(ordered=False, items=[
+        ListItem(children=[Text(text="alpha")]),
+        ListItem(children=[Text(text="beta")]),
+        ListItem(children=[Text(text="gamma")]),
+    ])
+    out = serialize_block(n)
+    for word in ("alpha", "beta", "gamma"):
+        assert f"\\item {word}" in out
+
+
 def test_list_unordered_uses_itemize():
     n = ListNode(ordered=False, items=[
         ListItem(children=[Text(text="one")]),
