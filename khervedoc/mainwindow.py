@@ -11,12 +11,13 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
-    QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
-    QMessageBox, QPlainTextEdit, QSlider, QSpinBox, QStatusBar, QTabWidget,
-    QToolBar, QToolButton, QVBoxLayout, QWidget,
+    QFileDialog, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout, QLabel,
+    QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton,
+    QScrollArea, QSlider, QSpinBox, QStatusBar, QTabWidget, QToolBar,
+    QToolButton, QVBoxLayout, QWidget,
 )
 
-from . import __version__, git_backend, icons, kdocz, page_sizes, version_string
+from . import __version__, git_backend, icons, kdocz, page_sizes, symbols, version_string
 from .compiler import CompileResult, compile_tex, tectonic_available
 from .editor import DocumentEditor, TEMPLATE_CHOICES
 from . import importers
@@ -182,6 +183,59 @@ class DocSettingsDialog(QDialog):
 
 # Back-compat alias for the older name used elsewhere in this file.
 DocPropertiesDialog = DocSettingsDialog
+
+
+class SymbolPickerDialog(QDialog):
+    """A grid of common LaTeX symbols grouped by category. Clicking a
+    button emits the symbol's LaTeX form (e.g. \\alpha) — the caller
+    wraps it in math mode if appropriate.
+    """
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setWindowTitle("Insert symbol")
+        self.resize(620, 540)
+        self._chosen: str | None = None
+
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        inner = QWidget()
+        outer = QVBoxLayout(inner)
+        outer.setSpacing(12)
+
+        for group_name, items in symbols.SYMBOL_GROUPS:
+            box = QGroupBox(group_name)
+            grid = QGridLayout(box)
+            grid.setSpacing(4)
+            cols = 8
+            for i, (latex, glyph) in enumerate(items):
+                btn = QPushButton(glyph)
+                btn.setToolTip(latex)
+                btn.setMinimumWidth(56)
+                btn.setMinimumHeight(34)
+                btn.setStyleSheet("font-size: 14pt;")
+                btn.clicked.connect(
+                    lambda checked=False, tex=latex: self._pick(tex))
+                grid.addWidget(btn, i // cols, i % cols)
+            outer.addWidget(box)
+
+        scroll.setWidget(inner)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Cancel)
+        buttons.rejected.connect(self.reject)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel(
+            "Click any symbol to insert it. Hover for the LaTeX command."))
+        layout.addWidget(scroll, 1)
+        layout.addWidget(buttons)
+
+    def _pick(self, latex: str) -> None:
+        self._chosen = latex
+        self.accept()
+
+    def chosen(self) -> str | None:
+        return self._chosen
 
 
 # ---------- main window ----------
@@ -415,6 +469,9 @@ class MainWindow(QMainWindow):
         self.act_table = QAction(icons.table(), "&Table...", self,
                                  triggered=e.insert_table)
         self.act_raw = QAction("Raw LaTeX...", self, triggered=e.insert_raw_latex)
+        self.act_symbol = QAction("&Symbol...", self,
+                                  shortcut=QKeySequence("Ctrl+Shift+S"),
+                                  triggered=self._insert_symbol)
         self.act_pagebreak = QAction(icons.page_break(), "Page break", self,
                                      triggered=e.insert_page_break)
         self.act_hrule = QAction(icons.horizontal_rule(), "Horizontal rule", self,
@@ -491,6 +548,7 @@ class MainWindow(QMainWindow):
 
         m_insert = mb.addMenu("&Insert")
         m_insert.addAction(self.act_math_inline); m_insert.addAction(self.act_math_block)
+        m_insert.addAction(self.act_symbol)
         m_insert.addSeparator()
         m_insert.addAction(self.act_bullet); m_insert.addAction(self.act_numbered)
         m_insert.addSeparator()
@@ -589,7 +647,7 @@ class MainWindow(QMainWindow):
         for act in (self.act_bullet, self.act_numbered):
             tb.addAction(act)
         tb.addSeparator()
-        for act in (self.act_math_inline, self.act_math_block):
+        for act in (self.act_math_inline, self.act_math_block, self.act_symbol):
             tb.addAction(act)
         tb.addSeparator()
         for act in (self.act_link, self.act_footnote, self.act_citation,
@@ -815,6 +873,14 @@ class MainWindow(QMainWindow):
         if self._editor.meta().page_size == code: return
         self._editor.set_page_size(code)
         self._kick_compile()
+
+    def _insert_symbol(self) -> None:
+        dlg = SymbolPickerDialog(self)
+        if dlg.exec() == QDialog.Accepted and dlg.chosen():
+            # Wrap the picked LaTeX in inline math so the symbol renders
+            # the way the user expects. The existing insert-inline-math
+            # logic handles the editor representation and serialization.
+            self._editor.insert_inline_math_with(dlg.chosen())
 
     def _insert_link_with_hyperref(self) -> None:
         # Ensure hyperref is in the package list before inserting.

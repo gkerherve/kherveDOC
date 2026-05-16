@@ -568,6 +568,19 @@ class DocumentEditor(QWidget):
             it += 1
         return out
 
+    @staticmethod
+    def _strip_implicit_marks(children: list, marks: list[str]) -> list:
+        """Remove marks that are *implied* by the surrounding paragraph
+        style (e.g. Headings are bold by definition, so a Heading's child
+        Text shouldn't also carry a "bold" mark — otherwise the serializer
+        would wrap it in `\\textbf{...}` and the next reparse would see
+        literal LaTeX text).
+        """
+        for c in children:
+            if isinstance(c, Text) and c.marks:
+                c.marks = [m for m in c.marks if m not in marks]
+        return children
+
     def _classify_text_block(self, block):
         """Build the right Block model for `block` based on what it LOOKS
         like in the editor right now: alignment, font weight, font size,
@@ -587,8 +600,11 @@ class DocumentEditor(QWidget):
         # State-driven dispatch for paragraph styles that aren't visually
         # distinguishable from Body (Abstract / Keywords share the body
         # font and only differ by indentation/italic).
-        if state == _STATE_ABSTRACT: return Abstract(children=children)
-        if state == _STATE_KEYWORDS: return Keywords(children=children)
+        if state == _STATE_ABSTRACT:
+            return Abstract(children=children)
+        if state == _STATE_KEYWORDS:
+            # Italic is implied by the Keywords style.
+            return Keywords(children=self._strip_implicit_marks(children, ["italic"]))
 
         # Empty block: no fragments to inspect — fall back to state.
         it = block.begin()
@@ -598,6 +614,11 @@ class DocumentEditor(QWidget):
             if 1 <= state <= 5:
                 return Section(level=state, children=children)
             return Paragraph(children=children, alignment=align_name)
+
+        # Note: bold/italic that come from the *style itself* are stripped
+        # below; user-applied bold/italic ON TOP of the style is still kept
+        # because it would have been recorded in the QTextCharFormat as
+        # explicit weight / italic above the style's defaults.
 
         fmt = it.fragment().charFormat()
         f = fmt.font()
@@ -611,11 +632,11 @@ class DocumentEditor(QWidget):
 
         # Title: large + bold + centered (with state hint relaxes the size threshold).
         if align_flag == Qt.AlignHCenter and bold and (base >= 24 or state == _STATE_TITLE):
-            return Title(children=children)
+            return Title(children=self._strip_implicit_marks(children, ["bold"]))
 
         # Author: centered, italic, small-ish.
         if align_flag == Qt.AlignHCenter and italic and (base <= 17 or state == _STATE_AUTHOR):
-            return Author(children=children)
+            return Author(children=self._strip_implicit_marks(children, ["italic"]))
 
         # Heading: bold + size near one of the canonical heading sizes.
         if bold and base >= 12:
@@ -628,7 +649,8 @@ class DocumentEditor(QWidget):
             # 3pt tolerance — generous enough to absorb minor user-typed
             # changes without misclassifying body text.
             if best_level is not None and best_diff < 3:
-                return Section(level=best_level, children=children)
+                return Section(level=best_level,
+                               children=self._strip_implicit_marks(children, ["bold"]))
 
         return Paragraph(children=children, alignment=align_name)
 
@@ -850,7 +872,15 @@ class DocumentEditor(QWidget):
     def insert_inline_math(self) -> None:
         latex, ok = QInputDialog.getText(self, "Insert inline math", "LaTeX:")
         if ok and latex:
-            self._edit.textCursor().insertText(latex, _math_inline_format(latex))
+            self.insert_inline_math_with(latex)
+
+    def insert_inline_math_with(self, latex: str) -> None:
+        """Insert the given LaTeX as inline math without prompting. Used
+        by the symbol picker so a click on a glyph drops the symbol in
+        immediately."""
+        if not latex:
+            return
+        self._edit.textCursor().insertText(latex, _math_inline_format(latex))
 
     def insert_math_block(self) -> None:
         latex, ok = QInputDialog.getMultiLineText(self, "Insert math block", "LaTeX:")

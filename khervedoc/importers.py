@@ -106,6 +106,12 @@ _BLOCK_DISPATCH = [
     ("keyword",         re.compile(r"\\begin\{keyword(?:s)?\}(.*?)\\end\{keyword(?:s)?\}", re.DOTALL)),
     # Bibliography preserved verbatim so the references round-trip intact.
     ("bibliography",    re.compile(r"\\begin\{thebibliography\}\{[^}]*\}(.*?)\\end\{thebibliography\}", re.DOTALL)),
+    # Alignment envs — emitted by our own serializer for left/center/right
+    # paragraphs, so the round-trip path needs to recognise them or it
+    # would wrap them in RawLatex via the unknown-env fallback.
+    ("flushleft",       re.compile(r"\\begin\{flushleft\}(.*?)\\end\{flushleft\}", re.DOTALL)),
+    ("flushright",      re.compile(r"\\begin\{flushright\}(.*?)\\end\{flushright\}", re.DOTALL)),
+    ("center",          re.compile(r"\\begin\{center\}(.*?)\\end\{center\}", re.DOTALL)),
     # Sections / titles.
     ("section",         _SECTION_RE),
     ("maketitle",       re.compile(r"\\maketitle\b")),
@@ -409,6 +415,17 @@ def _dispatch(kind: str, m: re.Match) -> object:
                 for p in parts if p.strip()]
     if kind == "bibliography":
         return RawLatex(text=m.group(0))
+    if kind in ("flushleft", "flushright", "center"):
+        # Treat the env body as paragraphs that all share the alignment
+        # the env enforces. Parse the inside recursively in case it
+        # contains lists, math, etc.
+        align_name = {"flushleft": "left", "flushright": "right",
+                      "center": "center"}[kind]
+        sub_blocks = _parse_blocks(m.group(1))
+        for sub in sub_blocks:
+            if isinstance(sub, Paragraph):
+                sub.alignment = align_name
+        return sub_blocks
     if kind == "unknown_env":
         env_name = m.group(1)
         # Some envs are pure wrappers we want to strip entirely
@@ -546,9 +563,18 @@ def import_tex(tex_source: str) -> Document:
     children = _parse_blocks(body)
 
     # If the source had \title{...} but no Title block was reconstructed,
-    # prepend one so the editor shows it under the Title style.
-    if meta.title and not any(isinstance(b, Title) for b in children):
-        children.insert(0, Title(children=[Text(text=meta.title)]))
+    # prepend one. Parse the title text as inlines so any nested macros
+    # (\textbf, \emph, \texttt etc.) decode into proper marks instead of
+    # surviving as literal LaTeX in the Text fragment.
+    if title_text and not any(isinstance(b, Title) for b in children):
+        title_inlines = _parse_inlines(title_text) or [Text(text=title_text)]
+        # Title style is bold by definition — strip the bold mark from any
+        # inline run so the next serialization round-trip doesn't double-
+        # wrap with \textbf and leave literal characters behind.
+        for c in title_inlines:
+            if isinstance(c, Text) and "bold" in c.marks:
+                c.marks = [m for m in c.marks if m != "bold"]
+        children.insert(0, Title(children=title_inlines))
         meta.title = ""
 
     return Document(meta=meta, children=children)

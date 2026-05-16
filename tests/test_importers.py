@@ -245,6 +245,55 @@ def test_figure_caption_with_inline_macros_preserved():
     assert "Result for" in figs[0].caption and r"\textbf" in figs[0].caption
 
 
+def test_flushleft_env_produces_left_aligned_paragraphs():
+    src = r"""\documentclass{article}\begin{document}
+\begin{flushleft}
+Hello world.
+\end{flushleft}
+\end{document}"""
+    doc = _round_trip(src)
+    paras = [b for b in doc.children if isinstance(b, Paragraph)]
+    assert len(paras) == 1
+    assert paras[0].alignment == "left"
+
+
+def test_center_env_produces_centered_paragraphs():
+    src = r"""\documentclass{article}\begin{document}
+\begin{center}
+Heading-ish text.
+\end{center}
+\end{document}"""
+    doc = _round_trip(src)
+    paras = [b for b in doc.children if isinstance(b, Paragraph)]
+    assert paras[0].alignment == "center"
+
+
+def test_flushright_env_produces_right_aligned_paragraphs():
+    src = r"""\documentclass{article}\begin{document}
+\begin{flushright}
+Aligned right.
+\end{flushright}
+\end{document}"""
+    doc = _round_trip(src)
+    paras = [b for b in doc.children if isinstance(b, Paragraph)]
+    assert paras[0].alignment == "right"
+
+
+def test_title_with_inline_textbf_is_parsed_to_marks_not_left_as_literal():
+    # When the serializer round-trips a Title block whose text had an
+    # inline emphasised run, the next reparse must convert the \textbf{}
+    # back into a mark instead of leaving the raw LaTeX in the title.
+    src = r"\documentclass{article}\title{Hello \emph{World}}\begin{document}body\end{document}"
+    doc = _round_trip(src)
+    title = next((b for b in doc.children if isinstance(b, Title)), None)
+    assert title is not None
+    flat = "".join(c.text for c in title.children if isinstance(c, Text))
+    # The literal "\emph{" or "\textbf{" must NOT be in the Title text.
+    assert "\\emph" not in flat
+    assert "\\textbf" not in flat
+    assert "Hello" in flat and "World" in flat
+
+
 def test_strips_percent_line_comments():
     src = r"""\documentclass{article}\begin{document}
 %% ============================================
