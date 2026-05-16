@@ -67,6 +67,11 @@ _P_CROSSREF = QTextCharFormat.UserProperty + 5  # value = "label|kind"
 _FIGURE_PREFIX = "[FIGURE] "
 _TABLE_PREFIX = "[TABLE] "
 _RAW_PREFIX = "[RAW] "
+_CODE_PREFIX = "[CODE] "       # lstlisting / verbatim RawLatex
+_BIB_PREFIX = "[BIBLIOGRAPHY] "  # thebibliography RawLatex
+# Every prefix the readback might encounter — listed once so old saves
+# using earlier prefixes still load cleanly.
+_RAW_PREFIXES = (_CODE_PREFIX, _BIB_PREFIX, _RAW_PREFIX)
 # Qt splits text into separate QTextBlocks at every '\n'. For block-text
 # fields that NEED to carry literal newlines (multi-line lstlisting and
 # verbatim envs, multi-row tables) we substitute U+2028 (Unicode "Line
@@ -214,10 +219,55 @@ def _crossref_format(label_kind: str) -> QTextCharFormat:
 
 
 def _stub_block_format() -> QTextBlockFormat:
+    # Generic stub backdrop — kept as a fallback for code paths that
+    # don't yet differentiate by content type. Per-type variants below
+    # give each kind of block a distinct visual hint.
     bfmt = QTextBlockFormat()
     bfmt.setTopMargin(6); bfmt.setBottomMargin(6)
     bfmt.setBackground(QColor("#f5f5f7"))
     return bfmt
+
+
+def _figure_block_format() -> QTextBlockFormat:
+    bfmt = QTextBlockFormat()
+    bfmt.setTopMargin(6); bfmt.setBottomMargin(6)
+    bfmt.setBackground(QColor("#e8f5e9"))   # pale green — "media"
+    return bfmt
+
+
+def _table_block_format() -> QTextBlockFormat:
+    bfmt = QTextBlockFormat()
+    bfmt.setTopMargin(6); bfmt.setBottomMargin(6)
+    bfmt.setBackground(QColor("#fff3e0"))   # pale orange — "tabular data"
+    return bfmt
+
+
+def _code_block_format() -> QTextBlockFormat:
+    bfmt = QTextBlockFormat()
+    bfmt.setTopMargin(6); bfmt.setBottomMargin(6)
+    bfmt.setBackground(QColor("#eef2f7"))   # pale slate — "code"
+    return bfmt
+
+
+def _bibliography_block_format() -> QTextBlockFormat:
+    bfmt = QTextBlockFormat()
+    bfmt.setTopMargin(6); bfmt.setBottomMargin(6)
+    bfmt.setBackground(QColor("#f3e5f5"))   # pale purple — "references"
+    return bfmt
+
+
+def _raw_block_format() -> QTextBlockFormat:
+    bfmt = QTextBlockFormat()
+    bfmt.setTopMargin(6); bfmt.setBottomMargin(6)
+    bfmt.setBackground(QColor("#ffebee"))   # pale red — "raw LaTeX, careful"
+    return bfmt
+
+
+def _typed_stub_char_format(color_hex: str) -> QTextCharFormat:
+    fmt = QTextCharFormat()
+    f = QFont("Consolas"); f.setStyleHint(QFont.Monospace); f.setPointSize(10)
+    fmt.setFont(f); fmt.setForeground(QColor(color_hex))
+    return fmt
 
 
 class DocumentEditor(QWidget):
@@ -409,7 +459,13 @@ class DocumentEditor(QWidget):
                 elif state == _STATE_TABLE:
                     blocks.append(self._table_from_stub(text))
                 elif state == _STATE_RAW:
-                    raw = text[len(_RAW_PREFIX):] if text.startswith(_RAW_PREFIX) else text
+                    # Strip whichever prefix is present; supports
+                    # documents saved before the typed prefixes existed.
+                    raw = text
+                    for prefix in _RAW_PREFIXES:
+                        if raw.startswith(prefix):
+                            raw = raw[len(prefix):]
+                            break
                     # Restore the real newlines we substituted on render
                     # so the LaTeX serializer emits a well-formed verbatim
                     # / lstlisting / etc. environment.
@@ -488,13 +544,13 @@ class DocumentEditor(QWidget):
                     self._insert_inline(cursor, inline)
         elif isinstance(block, Figure):
             cursor.block().setUserState(_STATE_FIGURE)
-            cursor.setBlockFormat(_stub_block_format())
+            cursor.setBlockFormat(_figure_block_format())
             label = block.label or ""
             stub = f"{_FIGURE_PREFIX}{block.path}|{block.caption}|{label}|{block.width}"
-            cursor.insertText(stub, _stub_char_format())
+            cursor.insertText(stub, _typed_stub_char_format("#2e7d32"))
         elif isinstance(block, Table):
             cursor.block().setUserState(_STATE_TABLE)
-            cursor.setBlockFormat(_stub_block_format())
+            cursor.setBlockFormat(_table_block_format())
             label = block.label or ""
             # rows separated by U+2028 (LINE SEPARATOR) instead of '\n' so
             # the entire stub stays in one QTextBlock — '\n' would split
@@ -502,15 +558,26 @@ class DocumentEditor(QWidget):
             # only see the first row.
             rows_tsv = _LINE_SEP.join("\t".join(r) for r in block.rows)
             stub = f"{_TABLE_PREFIX}{rows_tsv}||{block.caption}|{label}|{block.alignment}"
-            cursor.insertText(stub, _stub_char_format())
+            cursor.insertText(stub, _typed_stub_char_format("#e65100"))
         elif isinstance(block, RawLatex):
+            # Pick the visual style from the content so code listings,
+            # bibliography blocks and generic raw LaTeX are each
+            # immediately recognisable.
             cursor.block().setUserState(_STATE_RAW)
-            cursor.setBlockFormat(_stub_block_format())
-            # Multi-line verbatim / lstlisting envs: substitute U+2028
-            # for '\n' so Qt keeps every line in the same block. The
-            # _STATE_RAW reader in get_document undoes the substitution.
-            visible = block.text.replace("\n", _LINE_SEP)
-            cursor.insertText(_RAW_PREFIX + visible, _stub_char_format())
+            text = block.text
+            if "\\begin{lstlisting}" in text or "\\begin{verbatim}" in text:
+                cursor.setBlockFormat(_code_block_format())
+                prefix, color = _CODE_PREFIX, "#1a3a8c"      # slate / blue
+            elif "\\begin{thebibliography}" in text:
+                cursor.setBlockFormat(_bibliography_block_format())
+                prefix, color = _BIB_PREFIX, "#6a1b9a"       # purple
+            else:
+                cursor.setBlockFormat(_raw_block_format())
+                prefix, color = _RAW_PREFIX, "#b71c1c"       # red
+            # Multi-line content: substitute U+2028 for '\n' so Qt keeps
+            # every line in the same block; the readback undoes it.
+            visible = text.replace("\n", _LINE_SEP)
+            cursor.insertText(prefix + visible, _typed_stub_char_format(color))
 
     # ---------- inline rendering ----------
 
@@ -975,9 +1042,9 @@ class DocumentEditor(QWidget):
         c = self._edit.textCursor()
         c.insertBlock(QTextBlockFormat(), QTextCharFormat())
         c.block().setUserState(_STATE_FIGURE)
-        c.setBlockFormat(_stub_block_format())
+        c.setBlockFormat(_figure_block_format())
         stub = f"{_FIGURE_PREFIX}{path}||" + "|0.6\\textwidth"
-        c.insertText(stub, _stub_char_format())
+        c.insertText(stub, _typed_stub_char_format("#2e7d32"))
         c.insertBlock(QTextBlockFormat(), QTextCharFormat())
         c.block().setUserState(_STATE_PARAGRAPH)
         self._on_text_changed()
@@ -990,9 +1057,9 @@ class DocumentEditor(QWidget):
         c = self._edit.textCursor()
         c.insertBlock()
         c.block().setUserState(_STATE_FIGURE)
-        c.setBlockFormat(_stub_block_format())
+        c.setBlockFormat(_figure_block_format())
         c.insertText(f"{_FIGURE_PREFIX}{path}|{cap}|{label}|0.8\\textwidth",
-                     _stub_char_format())
+                     _typed_stub_char_format("#2e7d32"))
         c.insertBlock(QTextBlockFormat(), QTextCharFormat())
         c.block().setUserState(_STATE_PARAGRAPH)
 
@@ -1002,12 +1069,15 @@ class DocumentEditor(QWidget):
         cols, ok = QInputDialog.getInt(self, "Insert table", "Columns:", 3, 1, 20)
         if not ok: return
         cap, _ = QInputDialog.getText(self, "Caption", "Caption:")
-        empty_rows = "\n".join("\t".join(["cell"] * cols) for _ in range(rows))
+        # Row separator must be U+2028 (LINE_SEP) so the whole stub lives
+        # in one QTextBlock; '\n' would split it into separate paragraphs.
+        empty_rows = _LINE_SEP.join("\t".join(["cell"] * cols) for _ in range(rows))
         c = self._edit.textCursor()
         c.insertBlock()
         c.block().setUserState(_STATE_TABLE)
-        c.setBlockFormat(_stub_block_format())
-        c.insertText(f"{_TABLE_PREFIX}{empty_rows}||{cap}||", _stub_char_format())
+        c.setBlockFormat(_table_block_format())
+        c.insertText(f"{_TABLE_PREFIX}{empty_rows}||{cap}||",
+                     _typed_stub_char_format("#e65100"))
         c.insertBlock(QTextBlockFormat(), QTextCharFormat())
         c.block().setUserState(_STATE_PARAGRAPH)
 
@@ -1015,32 +1085,45 @@ class DocumentEditor(QWidget):
         text, ok = QInputDialog.getMultiLineText(self, "Insert raw LaTeX",
                                                  "LaTeX (verbatim):")
         if not ok or not text.strip(): return
+        self._insert_raw_block(text)
+
+    def insert_code_block(self) -> None:
+        """Insert a syntax-highlighted code listing (lstlisting) at the
+        cursor. Wraps the user's content in \\begin{lstlisting}...
+        \\end{lstlisting}; relies on the listings package + user's
+        \\lstset configuration for frame / line numbers / colours."""
+        text, ok = QInputDialog.getMultiLineText(
+            self, "Insert code block", "Code:")
+        if not ok or not text.strip(): return
+        body = text.rstrip("\n")
+        wrapped = f"\\begin{{lstlisting}}\n{body}\n\\end{{lstlisting}}"
+        self._insert_raw_block(wrapped)
+
+    def _insert_raw_block(self, latex: str) -> None:
+        """Shared helper: drop a RawLatex block at the cursor with the
+        right per-type colour based on the content."""
         c = self._edit.textCursor()
         c.insertBlock()
         c.block().setUserState(_STATE_RAW)
-        c.setBlockFormat(_stub_block_format())
-        c.insertText(_RAW_PREFIX + text, _stub_char_format())
+        if "\\begin{lstlisting}" in latex or "\\begin{verbatim}" in latex:
+            c.setBlockFormat(_code_block_format())
+            prefix, color = _CODE_PREFIX, "#1a3a8c"
+        elif "\\begin{thebibliography}" in latex:
+            c.setBlockFormat(_bibliography_block_format())
+            prefix, color = _BIB_PREFIX, "#6a1b9a"
+        else:
+            c.setBlockFormat(_raw_block_format())
+            prefix, color = _RAW_PREFIX, "#b71c1c"
+        visible = latex.replace("\n", _LINE_SEP)
+        c.insertText(prefix + visible, _typed_stub_char_format(color))
         c.insertBlock(QTextBlockFormat(), QTextCharFormat())
         c.block().setUserState(_STATE_PARAGRAPH)
 
     def insert_page_break(self) -> None:
-        # Implemented as RawLatex \newpage.
-        c = self._edit.textCursor()
-        c.insertBlock()
-        c.block().setUserState(_STATE_RAW)
-        c.setBlockFormat(_stub_block_format())
-        c.insertText(_RAW_PREFIX + r"\newpage", _stub_char_format())
-        c.insertBlock(QTextBlockFormat(), QTextCharFormat())
-        c.block().setUserState(_STATE_PARAGRAPH)
+        self._insert_raw_block(r"\newpage")
 
     def insert_horizontal_rule(self) -> None:
-        c = self._edit.textCursor()
-        c.insertBlock()
-        c.block().setUserState(_STATE_RAW)
-        c.setBlockFormat(_stub_block_format())
-        c.insertText(_RAW_PREFIX + r"\hrulefill", _stub_char_format())
-        c.insertBlock(QTextBlockFormat(), QTextCharFormat())
-        c.block().setUserState(_STATE_PARAGRAPH)
+        self._insert_raw_block(r"\hrulefill")
 
     def current_heading_level(self) -> int:
         """Returns -1 = Title, -2 = Author, -3 = Abstract, -4 = Keywords,

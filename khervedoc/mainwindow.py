@@ -527,6 +527,8 @@ class MainWindow(QMainWindow):
         self.act_table = QAction(icons.table(), "&Table...", self,
                                  triggered=e.insert_table)
         self.act_raw = QAction("Raw LaTeX...", self, triggered=e.insert_raw_latex)
+        self.act_code_block = QAction("&Code block...", self,
+                                      triggered=e.insert_code_block)
         self.act_symbol = QAction(icons.symbol(), "&Symbol...", self,
                                   shortcut=QKeySequence("Ctrl+Shift+S"),
                                   triggered=self._insert_symbol)
@@ -630,6 +632,7 @@ class MainWindow(QMainWindow):
         m_insert.addAction(self.act_figure); m_insert.addAction(self.act_table)
         m_insert.addSeparator()
         m_insert.addAction(self.act_pagebreak); m_insert.addAction(self.act_hrule)
+        m_insert.addAction(self.act_code_block)
         m_insert.addAction(self.act_raw)
 
         m_view = mb.addMenu("&View")
