@@ -624,8 +624,7 @@ class DocumentEditor(QWidget):
                 self._THUMB_MAX_WIDTH, self._THUMB_MAX_HEIGHT,
                 Qt.KeepAspectRatio, Qt.SmoothTransformation)
         url = QUrl.fromLocalFile(str(resolved))
-        self._edit.document().addResource(
-            self._edit.document().ImageResource, url, img)
+        self._edit.document().addResource(2, url, img)  # 2 = ImageResource
         cursor.insertText("\n")
         img_fmt = QTextImageFormat()
         img_fmt.setName(url.toString())
