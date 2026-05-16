@@ -209,10 +209,12 @@ class DocMeta:
     # Indent the first line of each paragraph? Most modern docs prefer no
     # indent with extra paragraph spacing; LaTeX's default is the opposite.
     paragraph_indent: bool = True
-    # When true, pass `twocolumn` to \documentclass so the whole document
-    # flows in two columns. Independent from in-flow \begin{multicols}{2}
-    # regions, which the user inserts via Insert > Multi-column region.
-    two_column: bool = False
+    # Whole-document column count: 1 (single), 2 (uses LaTeX's standard
+    # `twocolumn` class option), or 3 (wraps the body in multicols{3}
+    # because no documentclass natively supports 3 columns).
+    # Independent from in-flow \begin{multicols}{N} regions, which the
+    # user inserts via Insert > Multi-column region.
+    column_count: int = 1
     # Verbatim LaTeX to drop inside \begin{frontmatter} (Elsevier classes)
     # alongside the model-driven title / author / abstract / keyword envs.
     # Captures \author[opts]{... \corref{...}}, \ead, \cortext, \affiliation
@@ -335,7 +337,11 @@ def _build_document(d: dict) -> Document:
         body_font_family=str(meta_d.get("body_font_family", "default")),
         line_spacing=float(meta_d.get("line_spacing", 1.0)),
         paragraph_indent=bool(meta_d.get("paragraph_indent", True)),
-        two_column=bool(meta_d.get("two_column", False)),
+        # Back-compat: v0.17 stored a boolean `two_column`; v0.18+ stores
+        # `column_count`. Honour the legacy field when loading older docs.
+        column_count=int(meta_d.get(
+            "column_count",
+            2 if bool(meta_d.get("two_column", False)) else 1)),
         frontmatter_extras=str(meta_d.get("frontmatter_extras", "")),
         preamble_extras=str(meta_d.get("preamble_extras", "")),
     )

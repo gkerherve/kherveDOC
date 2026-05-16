@@ -403,7 +403,7 @@ def test_set_title_emits_maketitle():
 
 
 def test_two_column_adds_twocolumn_class_option():
-    doc = Document(meta=DocMeta(two_column=True),
+    doc = Document(meta=DocMeta(column_count=2),
                    children=[Paragraph(children=[Text(text="hi")])])
     out = serialize_document(doc)
     # Class options are comma-joined and include twocolumn alongside size.
@@ -419,11 +419,30 @@ def test_two_column_default_off():
 
 def test_two_column_works_with_elsarticle():
     doc = Document(meta=DocMeta(documentclass="elsarticle",
-                                two_column=True),
+                                column_count=2),
                    children=[Paragraph(children=[Text(text="hi")])])
     out = serialize_document(doc)
     assert "twocolumn" in out.splitlines()[0]
     assert "{elsarticle}" in out.splitlines()[0]
+
+
+def test_three_columns_wraps_body_in_multicols():
+    """LaTeX has no `threecolumn` class option, so the serializer wraps
+    the body in \\begin{multicols}{3}...\\end{multicols} instead."""
+    doc = Document(meta=DocMeta(column_count=3),
+                   children=[Paragraph(children=[Text(text="hi")])])
+    out = serialize_document(doc)
+    assert "twocolumn" not in out.splitlines()[0]
+    assert "\\begin{multicols}{3}" in out
+    assert "\\end{multicols}" in out
+
+
+def test_one_column_no_wrap_no_class_option():
+    doc = Document(meta=DocMeta(column_count=1),
+                   children=[Paragraph(children=[Text(text="hi")])])
+    out = serialize_document(doc)
+    assert "twocolumn" not in out.splitlines()[0]
+    assert "\\begin{multicols}" not in out
 
 
 def test_kstroke_macro_provided_in_preamble():

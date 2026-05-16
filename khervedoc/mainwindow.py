@@ -144,9 +144,13 @@ class DocSettingsDialog(QDialog):
         self._m_bottom = _margin_spin(meta.margin_bottom_cm)
         self._m_left = _margin_spin(meta.margin_left_cm)
         self._m_right = _margin_spin(meta.margin_right_cm)
-        self._two_column = QCheckBox(
-            "Two-column document (whole document flows in two columns)")
-        self._two_column.setChecked(meta.two_column)
+        self._columns = QComboBox()
+        for n in (1, 2, 3):
+            label = {1: "1 column (single)", 2: "2 columns",
+                     3: "3 columns"}[n]
+            self._columns.addItem(label, n)
+        idx = self._columns.findData(int(getattr(meta, "column_count", 1) or 1))
+        if idx >= 0: self._columns.setCurrentIndex(idx)
 
         w = QWidget()
         form = QFormLayout(w)
@@ -156,9 +160,9 @@ class DocSettingsDialog(QDialog):
         form.addRow("Left:", self._m_left)
         form.addRow("Right:", self._m_right)
         form.addRow(QLabel("<b>Columns</b>"))
-        form.addRow("", self._two_column)
+        form.addRow("Whole document:", self._columns)
         form.addRow(QLabel(
-            "<i>For a two-column region inside an otherwise one-column<br>"
+            "<i>For a multi-column region inside an otherwise one-column<br>"
             "document, use Insert &rarr; Multi-column region instead.</i>"))
         return w
 
@@ -192,7 +196,7 @@ class DocSettingsDialog(QDialog):
             body_font_family=str(self._font_family.currentData() or "default"),
             line_spacing=self._line_spacing.value(),
             paragraph_indent=self._para_indent.isChecked(),
-            two_column=self._two_column.isChecked(),
+            column_count=int(self._columns.currentData() or 1),
             frontmatter_extras=self._orig_meta.frontmatter_extras,
             preamble_extras=self._orig_meta.preamble_extras,
         )
@@ -485,6 +489,24 @@ class MainWindow(QMainWindow):
             self.alignment_group.addAction(a)
         self.act_align_left.setChecked(True)
 
+        # Document-wide column count — exclusive group with 1/2/3 columns.
+        # Lambdas capture the value so each trigger sets the same field
+        # via the shared _set_column_count helper.
+        self.columns_group = QActionGroup(self)
+        self.columns_group.setExclusive(True)
+        self.act_cols_1 = QAction(icons.one_column(), "&1 column", self,
+                                  checkable=True,
+                                  triggered=lambda: self._set_column_count(1))
+        self.act_cols_2 = QAction(icons.two_columns(), "&2 columns", self,
+                                  checkable=True,
+                                  triggered=lambda: self._set_column_count(2))
+        self.act_cols_3 = QAction(icons.three_columns(), "&3 columns", self,
+                                  checkable=True,
+                                  triggered=lambda: self._set_column_count(3))
+        for a in (self.act_cols_1, self.act_cols_2, self.act_cols_3):
+            self.columns_group.addAction(a)
+        self.act_cols_1.setChecked(True)
+
         # Format
         self.act_bold = QAction(icons.bold(), "&Bold", self,
                                 shortcut=QKeySequence.Bold, checkable=True,
@@ -742,6 +764,9 @@ class MainWindow(QMainWindow):
                     self.act_align_right, self.act_align_justify):
             tb.addAction(act)
         tb.addSeparator()
+        for act in (self.act_cols_1, self.act_cols_2, self.act_cols_3):
+            tb.addAction(act)
+        tb.addSeparator()
         for act in (self.act_bullet, self.act_numbered):
             tb.addAction(act)
         tb.addSeparator()
@@ -943,6 +968,28 @@ class MainWindow(QMainWindow):
         if dlg.exec() == QDialog.Accepted:
             self._editor.set_meta(dlg.result_meta())
             self._kick_compile()
+
+    def _set_column_count(self, n: int) -> None:
+        """Toolbar handler: update meta.column_count and re-preview.
+        Skips the round-trip when the value hasn't actually changed
+        (e.g. clicking the already-checked button)."""
+        meta = self._editor.meta()
+        if getattr(meta, "column_count", 1) == n:
+            return
+        meta.column_count = n
+        self._editor.set_meta(meta)
+        self._kick_compile()
+
+    def _sync_column_toolbar(self) -> None:
+        """Tick the toolbar button that matches meta.column_count. Called
+        on doc load so opening a 2-column doc shows the 2-column button
+        as checked without firing a redundant recompile."""
+        n = int(getattr(self._editor.meta(), "column_count", 1) or 1)
+        target = {1: self.act_cols_1, 2: self.act_cols_2,
+                  3: self.act_cols_3}.get(n, self.act_cols_1)
+        target.blockSignals(True)
+        target.setChecked(True)
+        target.blockSignals(False)
 
     def _on_template_changed(self, idx: int) -> None:
         cls = self._template_combo.itemData(idx)
@@ -1162,6 +1209,7 @@ class MainWindow(QMainWindow):
             "right": self.act_align_right, "justify": self.act_align_justify,
         }
         align_actions.get(align, self.act_align_left).setChecked(True)
+        self._sync_column_toolbar()
         level = e.current_heading_level()
         # heading_combo indices: 0=Body, 1=Title, 2=Author, 3=Abstract,
         # 4=Keywords, 5..9=Heading 1..5

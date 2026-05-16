@@ -217,9 +217,16 @@ def _body_font_pt_class_option(pt: int) -> str:
 def _class_options(m) -> str:
     """Comma-joined documentclass options: font size, twocolumn, etc."""
     opts = [_body_font_pt_class_option(m.body_font_pt)]
-    if getattr(m, "two_column", False):
+    if getattr(m, "column_count", 1) == 2:
         opts.append("twocolumn")
     return ",".join(opts)
+
+
+def _wrap_multicols(body: str, n: int) -> str:
+    """Wrap the body in \\begin{multicols}{n}...\\end{multicols}. Used
+    for column counts that the documentclass can't express natively
+    (i.e. 3+, since LaTeX's `twocolumn` only does 2)."""
+    return f"\\begin{{multicols}}{{{n}}}\n{body}\\end{{multicols}}\n"
 
 
 # kherveDOC-provided macros. \providecommand (not \newcommand) so that
@@ -360,6 +367,8 @@ def serialize_document(doc: Document) -> str:
             if i < len(body_blocks) - 1:
                 body_parts.append("\n")
         body = "".join(body_parts)
+        if getattr(m, "column_count", 1) >= 3:
+            body = _wrap_multicols(body, m.column_count)
 
         return (
             f"\\documentclass[{_class_options(m)}]"
@@ -416,6 +425,8 @@ def serialize_document(doc: Document) -> str:
     if has_metadata and not has_title_block and not emitted_maketitle:
         parts.insert(0, "\\maketitle\n")
     body = "".join(parts)
+    if getattr(m, "column_count", 1) >= 3:
+        body = _wrap_multicols(body, m.column_count)
 
     return (
         f"\\documentclass[{_class_options(m)}]"

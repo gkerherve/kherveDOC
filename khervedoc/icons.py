@@ -379,6 +379,44 @@ def align_justify() -> QIcon:
     return _alignment_icon([(6, 3, 21), (11, 3, 21), (16, 3, 21), (21, 3, 21)])
 
 
+def _columns_icon(n: int) -> QIcon:
+    """Draw a page outline divided into N equal columns. Used for the
+    1-/2-/3-column toolbar toggle so users can flip between layouts
+    at a glance."""
+    px, p = _new_canvas()
+    p.setPen(QPen(_FG, 1.6, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    p.setBrush(Qt.NoBrush)
+    outer = QRect(3, 3, 18, 18)
+    p.drawRect(outer)
+    if n >= 2:
+        # Internal column separators. Each column is `outer.width()/n` wide.
+        col_w = outer.width() / n
+        # Short horizontal stripes inside each column hint at text lines.
+        p.setPen(QPen(_ACCENT, 1.4, Qt.SolidLine, Qt.RoundCap))
+        for c in range(n):
+            x0 = outer.left() + int(col_w * c) + 2
+            x1 = outer.left() + int(col_w * (c + 1)) - 2
+            for dy in (7, 11, 15, 19):
+                p.drawLine(x0, dy - 1, x1, dy - 1)
+        # Vertical separators on top.
+        p.setPen(QPen(_FG, 1.2, Qt.DashLine))
+        for c in range(1, n):
+            x = outer.left() + int(col_w * c)
+            p.drawLine(x, outer.top() + 2, x, outer.bottom() - 2)
+    else:
+        # Single column: show the page with text lines all the way across.
+        p.setPen(QPen(_ACCENT, 1.4, Qt.SolidLine, Qt.RoundCap))
+        for dy in (7, 11, 15, 19):
+            p.drawLine(outer.left() + 2, dy - 1, outer.right() - 2, dy - 1)
+    p.end()
+    return QIcon(px)
+
+
+def one_column() -> QIcon:   return _columns_icon(1)
+def two_columns() -> QIcon:  return _columns_icon(2)
+def three_columns() -> QIcon: return _columns_icon(3)
+
+
 def zoom_in() -> QIcon:
     px, p = _new_canvas()
     p.setPen(QPen(_FG, 1.8, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
