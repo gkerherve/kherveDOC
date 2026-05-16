@@ -92,6 +92,9 @@ def _extract_preamble_extras(src: str) -> str:
     preamble = _strip_balanced_command(preamble, "title")
     preamble = _strip_balanced_command(preamble, "author")
     preamble = _strip_balanced_command(preamble, "journal")
+    # Strip \Kstroke definitions — the serializer always emits its own.
+    preamble = re.sub(
+        r"\\(?:provide|renew|new)command\{?\\Kstroke\}?.*", "", preamble)
     # Collapse runs of blank lines.
     preamble = re.sub(r"\n\s*\n+", "\n", preamble)
     return preamble.strip()
@@ -702,7 +705,7 @@ def import_tex(tex_source: str) -> Document:
     author_text = _extract_braced(tex_source, "author")
     geom_m = _GEOMETRY_RE.search(tex_source)
     packages = [p for p in _PACKAGE_RE.findall(tex_source)
-                if p not in ("geometry",)]
+                if p not in ("geometry", "setspace")]
 
     page_size = "A4"
     if geom_m:

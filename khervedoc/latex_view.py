@@ -71,7 +71,7 @@ class LatexView(QWidget):
         self._suppress_signal = False
         self._debounce = QTimer(self)
         self._debounce.setSingleShot(True)
-        self._debounce.setInterval(650)
+        self._debounce.setInterval(1500)
         self._debounce.timeout.connect(self._emit_edited)
         self._edit.textChanged.connect(self._on_text_changed)
 

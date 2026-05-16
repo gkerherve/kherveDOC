@@ -926,6 +926,7 @@ class MainWindow(QMainWindow):
             return
         self._current_path = path
         self._import_source_dir = None  # current_path supersedes any prior import
+        self._sync_editor_source_dir()
         self._editor.set_document(doc)
         self._update_title()
         self._remember_recent(path)
@@ -997,6 +998,7 @@ class MainWindow(QMainWindow):
         # paths (e.g. Images/foo.png next to main.tex) resolve when we
         # compile the preview in a temp build dir.
         self._import_source_dir = path.parent
+        self._sync_editor_source_dir()
         self._editor.set_document(doc)
         self.setWindowTitle(f"kherveDOC {version_string()} — {path.stem} (imported)")
         self._status.showMessage(f"Imported {path.name} — Save As to keep it", 6000)
@@ -1022,6 +1024,7 @@ class MainWindow(QMainWindow):
             return
         self._current_path = None
         self._import_source_dir = None  # docx images are extracted into build_dir
+        self._sync_editor_source_dir()
         self._editor.set_document(doc)
         self.setWindowTitle(f"kherveDOC {version_string()} — {path.stem} (imported)")
         n_imgs = len(list(image_dir.glob("image_*"))) if image_dir.exists() else 0
@@ -1253,6 +1256,9 @@ class MainWindow(QMainWindow):
             return self._current_path.parent
         return self._import_source_dir
 
+    def _sync_editor_source_dir(self) -> None:
+        self._editor.set_source_dir(self._resolved_source_dir())
+
     def _kick_compile(self) -> None:
         if not tectonic_available():
             self._preview.show_message(
@@ -1262,7 +1268,8 @@ class MainWindow(QMainWindow):
             self._pending_recompile = True
             return
         tex = serialize_document(self._editor.get_document())
-        self._latex_view.set_source(tex)
+        if not self._suppress_latex_update:
+            self._latex_view.set_source(tex)
         source_dir = self._resolved_source_dir()
         self._compile_worker = _CompileWorker(tex, self._build_dir, source_dir)
         self._compile_worker.finished_with.connect(self._on_compile_done)

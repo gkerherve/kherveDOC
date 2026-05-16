@@ -6,10 +6,62 @@ rasterize the resulting PDF into QImage-ready pixel buffers.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+
+# \includegraphics[opts]{path} — capture the opts (optional, balanced
+# brackets at depth 1) and the path (no nested braces). Tectonic resolves
+# the path relative to the .tex file's directory, not via TEXINPUTS or
+# cwd, so we rewrite relative paths to absolute against source_dir before
+# writing the .tex into the temp build dir.
+_INCLUDEGRAPHICS_RE = re.compile(
+    r"\\includegraphics(\*?)(\[[^\]]*\])?\{([^}]+)\}")
+
+
+def _rewrite_includegraphics(tex_source: str, source_dir: Path | None) -> str:
+    r"""Resolve every `\includegraphics{path}` so the .tex compiles from a
+    temp build dir. Three cases:
+
+    - absolute existing path:   left untouched (works as-is)
+    - relative path that exists under `source_dir`: rewritten to the
+      absolute resolved path (forward slashes for LaTeX)
+    - path that doesn't exist:  replaced with a framed placeholder
+      box so the compile keeps going and the PDF shows the user where
+      the missing image WOULD have been. Without this, tectonic's
+      xdvipdfmx stage halts with "Image inclusion failed" — `-Z
+      continue-on-errors` only catches TeX-level errors.
+    """
+    def _placeholder(path: str) -> str:
+        # \fbox of a small note. Wrap in \texttt so it's clearly a
+        # diagnostic message rather than typeset content.
+        # Escape LaTeX special chars in the path so it renders.
+        safe = (path.replace("\\", "/")
+                    .replace("_", r"\_")
+                    .replace("#", r"\#")
+                    .replace("%", r"\%")
+                    .replace("&", r"\&"))
+        return (r"\fbox{\texttt{\small [missing image: " + safe + r"]}}")
+
+    def _sub(m: re.Match) -> str:
+        star, opts, path = m.group(1), m.group(2) or "", m.group(3)
+        p = Path(path)
+        if p.is_absolute():
+            if p.exists():
+                return m.group(0)
+            return _placeholder(path)
+        if source_dir is None:
+            return _placeholder(path)
+        resolved = (source_dir / path).resolve()
+        if not resolved.exists():
+            return _placeholder(path)
+        abs_path = str(resolved).replace("\\", "/")
+        return f"\\includegraphics{star}{opts}{{{abs_path}}}"
+
+    return _INCLUDEGRAPHICS_RE.sub(_sub, tex_source)
 
 
 def _find_tectonic() -> str | None:

@@ -13,10 +13,10 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, Qt, Signal
+from PySide6.QtCore import QTimer, QUrl, Qt, Signal
 from PySide6.QtGui import (
-    QAction, QColor, QFont, QKeySequence, QTextBlockFormat, QTextCharFormat,
-    QTextCursor, QTextListFormat,
+    QAction, QColor, QFont, QImage, QKeySequence, QTextBlockFormat,
+    QTextCharFormat, QTextCursor, QTextImageFormat, QTextListFormat,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -371,12 +371,16 @@ class DocumentEditor(QWidget):
         self._images_dir = Path(tempfile.mkdtemp(prefix="khervedoc-imgs-"))
         self._edit.set_images_dir(self._images_dir)
         self._edit.imageReceived.connect(self._on_image_received)
+        self._source_dir: Path | None = None
 
     # ---------- public ----------
 
     @property
     def text_edit(self) -> QTextEdit:
         return self._edit
+
+    def set_source_dir(self, path: Path | None) -> None:
+        self._source_dir = path
 
     def meta(self) -> DocMeta:
         return self._meta
@@ -569,6 +573,7 @@ class DocumentEditor(QWidget):
             label = block.label or ""
             stub = f"{_FIGURE_PREFIX}{block.path}|{block.caption}|{label}|{block.width}"
             cursor.insertText(stub, _typed_stub_char_format("#2e7d32"))
+            self._insert_figure_thumbnail(cursor, block.path)
         elif isinstance(block, Table):
             cursor.block().setUserState(_STATE_TABLE)
             cursor.setBlockFormat(_table_block_format())
@@ -599,6 +604,52 @@ class DocumentEditor(QWidget):
             # every line in the same block; the readback undoes it.
             visible = text.replace("\n", _LINE_SEP)
             cursor.insertText(prefix + visible, _typed_stub_char_format(color))
+
+    # ---------- figure thumbnail ----------
+
+    _THUMB_MAX_WIDTH = 320
+    _THUMB_MAX_HEIGHT = 200
+
+    def _insert_figure_thumbnail(self, cursor: QTextCursor, img_path: str) -> None:
+        """Try to load the image and insert a scaled thumbnail below the stub."""
+        resolved = self._resolve_image_path(img_path)
+        if resolved is None:
+            return
+        img = QImage(str(resolved))
+        if img.isNull():
+            return
+        # Scale to thumbnail size preserving aspect ratio.
+        if img.width() > self._THUMB_MAX_WIDTH or img.height() > self._THUMB_MAX_HEIGHT:
+            img = img.scaled(
+                self._THUMB_MAX_WIDTH, self._THUMB_MAX_HEIGHT,
+                Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        url = QUrl.fromLocalFile(str(resolved))
+        self._edit.document().addResource(
+            self._edit.document().ImageResource, url, img)
+        cursor.insertText("\n")
+        img_fmt = QTextImageFormat()
+        img_fmt.setName(url.toString())
+        img_fmt.setWidth(img.width())
+        img_fmt.setHeight(img.height())
+        cursor.insertImage(img_fmt)
+
+    def _resolve_image_path(self, img_path: str) -> Path | None:
+        """Resolve a figure path to an absolute file, checking common bases."""
+        if not img_path:
+            return None
+        p = Path(img_path)
+        if p.is_absolute() and p.exists():
+            return p
+        # Try relative to source dir.
+        if self._source_dir:
+            candidate = self._source_dir / p
+            if candidate.exists():
+                return candidate
+        # Try relative to images scratch dir.
+        candidate = self._images_dir / p
+        if candidate.exists():
+            return candidate
+        return None
 
     # ---------- inline rendering ----------
 
@@ -780,6 +831,8 @@ class DocumentEditor(QWidget):
 
     def _figure_from_stub(self, text: str) -> Figure:
         body = text[len(_FIGURE_PREFIX):] if text.startswith(_FIGURE_PREFIX) else text
+        # Strip trailing image object char (U+FFFC) and newline from thumbnail.
+        body = body.rstrip("\n\ufffc")
         parts = body.split("|")
         while len(parts) < 4: parts.append("")
         return Figure(path=parts[0], caption=parts[1], label=parts[2] or None,
@@ -1082,6 +1135,7 @@ class DocumentEditor(QWidget):
         c.setBlockFormat(_figure_block_format())
         stub = f"{_FIGURE_PREFIX}{path}||" + "|0.6\\textwidth"
         c.insertText(stub, _typed_stub_char_format("#2e7d32"))
+        self._insert_figure_thumbnail(c, path)
         c.insertBlock(QTextBlockFormat(), QTextCharFormat())
         c.block().setUserState(_STATE_PARAGRAPH)
         self._on_text_changed()
