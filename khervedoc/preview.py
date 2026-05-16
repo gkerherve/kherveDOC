@@ -1,45 +1,36 @@
-"""PDF preview pane — vertical scroll of rasterised pages with live zoom."""
+"""PDF preview pane backed by Qt's own QPdfView.
+
+Previously we rasterised every page to a QImage and wrapped each one in
+a QLabel; that always looked flat because it was, literally, a PNG on a
+grey background. QPdfView renders the actual PDF — with proper page
+shadows, smooth scrolling, anti-aliased text — and integrates with the
+status-bar zoom slider via setZoomFactor.
+"""
 from __future__ import annotations
 
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QImage, QPixmap
-from PySide6.QtWidgets import (
-    QGraphicsDropShadowEffect, QLabel, QScrollArea, QSizePolicy,
-    QVBoxLayout, QWidget,
-)
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
-from .compiler import render_pdf_pages
 
-# Base DPI used to rasterise each page at 100% zoom. 96 makes an A4 page
-# 794x1122 px, which fits in the preview pane on a typical 1080p display
-# without forcing horizontal scrolling. Users wanting a sharper view can
-# zoom up via the status-bar slider — set_zoom_percent re-rasterises at
-# the matching DPI.
-_BASE_DPI = 96
+try:
+    from PySide6.QtPdf import QPdfDocument
+    from PySide6.QtPdfWidgets import QPdfView
+    _QTPDF_AVAILABLE = True
+except ImportError:                           # pragma: no cover
+    QPdfDocument = None                       # type: ignore
+    QPdfView = None                           # type: ignore
+    _QTPDF_AVAILABLE = False
 
 
 class PdfPreview(QWidget):
+    """Embedded PDF viewer with a status header and live zoom."""
+
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-
         self._zoom_percent = 100
         self._current_pdf: Path | None = None
-
-        self._scroll = QScrollArea(self)
-        self._scroll.setWidgetResizable(True)
-        self._scroll.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
-        self._scroll.setStyleSheet(
-            "QScrollArea { background: #d0d4d8; border: none; }")
-
-        self._inner = QWidget()
-        self._inner.setStyleSheet("background: #d0d4d8;")
-        self._inner_layout = QVBoxLayout(self._inner)
-        self._inner_layout.setContentsMargins(20, 20, 20, 20)
-        self._inner_layout.setSpacing(16)
-        self._inner_layout.addStretch(1)
-        self._scroll.setWidget(self._inner)
 
         self._status = QLabel("No preview yet — start typing to compile.", self)
         self._status.setStyleSheet(
@@ -47,86 +38,86 @@ class PdfPreview(QWidget):
             "border-bottom: 1px solid #c0c0c0;")
         self._status.setAlignment(Qt.AlignCenter)
 
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.addWidget(self._status)
-        outer.addWidget(self._scroll, 1)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self._status)
 
-    # ----- public -----
+        if _QTPDF_AVAILABLE:
+            self._doc = QPdfDocument(self)
+            self._view = QPdfView(self)
+            self._view.setDocument(self._doc)
+            self._view.setPageMode(QPdfView.PageMode.MultiPage)
+            self._view.setZoomMode(QPdfView.ZoomMode.Custom)
+            self._view.setZoomFactor(1.0)
+            # Page spacing — the gap rendered between consecutive pages
+            # in MultiPage mode. Qt's default is 3 px which is too tight
+            # to read as "next sheet of paper".
+            self._view.setPageSpacing(18)
+            layout.addWidget(self._view, 1)
+        else:
+            # Defensive fallback message. PySide6 6.4+ ships QtPdf with
+            # the Essentials install, so this branch shouldn't trigger in
+            # practice — but if someone strips down their wheel we tell
+            # them what to install rather than crashing.
+            self._view = None
+            fallback = QLabel(
+                "PDF preview needs QtPdf / QtPdfWidgets.\n"
+                "Try:  pip install --upgrade PySide6 PySide6-Addons", self)
+            fallback.setAlignment(Qt.AlignCenter)
+            fallback.setWordWrap(True)
+            layout.addWidget(fallback, 1)
+
+    # ----- public API (unchanged contract with MainWindow) -----
 
     def show_message(self, msg: str) -> None:
         self._status.setText(msg)
-        self._clear_pages()
+        if _QTPDF_AVAILABLE and self._view is not None:
+            # Close any document so the viewer area goes blank rather
+            # than leaving stale pages behind a compile-error message.
+            self._doc.close()
+            self._current_pdf = None
 
     def show_pdf(self, pdf_path: Path) -> None:
-        self._current_pdf = pdf_path
-        self._render_at_current_zoom()
+        if not _QTPDF_AVAILABLE or self._view is None:
+            return
+        self._current_pdf = Path(pdf_path)
+        self._doc.close()
+        self._doc.load(str(pdf_path))
+        # Honour the current zoom; QPdfView resets to its own default
+        # after a load, which would override the slider position.
+        self._view.setZoomFactor(self._zoom_percent / 100.0)
+        self._update_status()
 
     def set_zoom_percent(self, percent: int) -> None:
-        percent = max(25, min(400, int(percent)))
-        if percent == self._zoom_percent:
-            return
-        self._zoom_percent = percent
-        if self._current_pdf is not None:
-            self._render_at_current_zoom()
+        self._zoom_percent = max(25, min(400, int(percent)))
+        if _QTPDF_AVAILABLE and self._view is not None:
+            self._view.setZoomMode(QPdfView.ZoomMode.Custom)
+            self._view.setZoomFactor(self._zoom_percent / 100.0)
+            self._update_status()
 
     def zoom_percent(self) -> int:
         return self._zoom_percent
 
     # ----- internals -----
 
-    def _render_at_current_zoom(self) -> None:
-        if self._current_pdf is None:
+    def _update_status(self) -> None:
+        if not _QTPDF_AVAILABLE or self._view is None or self._current_pdf is None:
             return
-        dpi = max(36, round(_BASE_DPI * self._zoom_percent / 100))
-        try:
-            pages = render_pdf_pages(self._current_pdf, dpi=dpi)
-        except Exception as exc:
-            self.show_message(f"Preview error: {exc}")
-            return
-        if not pages:
-            self.show_message("Compiled PDF has no pages.")
-            return
-        self._clear_pages()
-        for page in pages:
-            img = QImage(page.rgb, page.width, page.height, page.stride,
-                         QImage.Format_RGB888).copy()
-            label = QLabel(self._inner)
-            label.setPixmap(QPixmap.fromImage(img))
-            label.setAlignment(Qt.AlignHCenter)
-            label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-            label.setStyleSheet("background: white; border: 1px solid #b8bcc1;")
-            # Drop shadow so each page reads as a sheet of paper on the desk
-            # instead of a flat rectangle drifting in grey space.
-            shadow = QGraphicsDropShadowEffect(label)
-            shadow.setBlurRadius(18)
-            shadow.setOffset(0, 3)
-            shadow.setColor(QColor(0, 0, 0, 110))
-            label.setGraphicsEffect(shadow)
-            self._inner_layout.insertWidget(self._inner_layout.count() - 1, label)
-        # Tell the user what they're looking at — page count, paper size from
-        # the first page's dimensions in inches, and the active zoom.
-        first = pages[0]
-        in_w = first.width / max(1, _BASE_DPI * self._zoom_percent / 100)
-        in_h = first.height / max(1, _BASE_DPI * self._zoom_percent / 100)
-        paper = self._guess_paper_name(in_w, in_h)
+        n = self._doc.pageCount()
+        paper = "?"
+        if n > 0:
+            size_pt = self._doc.pagePointSize(0)
+            w_in = size_pt.width() / 72.0
+            h_in = size_pt.height() / 72.0
+            paper = self._guess_paper_name(w_in, h_in)
         self._status.setText(
-            f"{len(pages)} page(s) — {self._current_pdf.name}  "
-            f"— {paper}  @ {self._zoom_percent}%")
+            f"{n} page(s) — {self._current_pdf.name} — {paper} "
+            f"@ {self._zoom_percent}%")
 
     @staticmethod
-    def _guess_paper_name(width_in: float, height_in: float) -> str:
-        """Map physical dimensions back to a friendly paper name. Tolerance
-        of 0.05 inches absorbs small rounding from the rasteriser."""
+    def _guess_paper_name(w_in: float, h_in: float) -> str:
         def near(a, b): return abs(a - b) < 0.1
-        if near(width_in, 8.27) and near(height_in, 11.69): return "A4"
-        if near(width_in, 8.5) and near(height_in, 11.0):   return "Letter"
-        if near(width_in, 8.5) and near(height_in, 14.0):   return "Legal"
-        return f"{width_in:.1f}\" × {height_in:.1f}\""
-
-    def _clear_pages(self) -> None:
-        while self._inner_layout.count() > 1:
-            item = self._inner_layout.takeAt(0)
-            w = item.widget()
-            if w is not None:
-                w.deleteLater()
+        if near(w_in, 8.27) and near(h_in, 11.69): return "A4"
+        if near(w_in, 8.5) and near(h_in, 11.0):   return "Letter"
+        if near(w_in, 8.5) and near(h_in, 14.0):   return "Legal"
+        return f"{w_in:.1f}\" × {h_in:.1f}\""
