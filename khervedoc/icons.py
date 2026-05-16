@@ -401,6 +401,26 @@ def symbol() -> QIcon:
     return QIcon(px)
 
 
+def equation_builder() -> QIcon:
+    """Stylised fraction (x over y inside square brackets) for the
+    equation-builder palette button."""
+    px, p = _new_canvas()
+    p.setRenderHint(QPainter.Antialiasing, True)
+    # Square brackets framing the fraction.
+    p.setPen(QPen(_ACCENT, 1.6, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    p.drawLine(4, 5, 4, 19); p.drawLine(4, 5, 6, 5); p.drawLine(4, 19, 6, 19)
+    p.drawLine(20, 5, 20, 19); p.drawLine(20, 5, 18, 5); p.drawLine(20, 19, 18, 19)
+    # Numerator / denominator characters.
+    f = QFont("Cambria Math"); f.setPointSize(8); f.setItalic(True)
+    p.setFont(f); p.setPen(_FG)
+    p.drawText(QRect(6, 3, 12, 10), Qt.AlignCenter, "x")
+    p.drawText(QRect(6, 13, 12, 10), Qt.AlignCenter, "y")
+    # Fraction bar.
+    p.setPen(QPen(_FG, 1.4)); p.drawLine(7, 12, 17, 12)
+    p.end()
+    return QIcon(px)
+
+
 def zoom_out() -> QIcon:
     px, p = _new_canvas()
     p.setPen(QPen(_FG, 1.8, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))

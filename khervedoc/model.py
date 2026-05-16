@@ -195,6 +195,11 @@ class DocMeta:
     # Indent the first line of each paragraph? Most modern docs prefer no
     # indent with extra paragraph spacing; LaTeX's default is the opposite.
     paragraph_indent: bool = True
+    # Verbatim LaTeX to drop inside \begin{frontmatter} (Elsevier classes)
+    # alongside the model-driven title / author / abstract / keyword envs.
+    # Captures \author[opts]{... \corref{...}}, \ead, \cortext, \affiliation
+    # and similar commands the model doesn't natively represent.
+    frontmatter_extras: str = ""
 
 
 @dataclass
@@ -304,6 +309,7 @@ def _build_document(d: dict) -> Document:
         body_font_family=str(meta_d.get("body_font_family", "default")),
         line_spacing=float(meta_d.get("line_spacing", 1.0)),
         paragraph_indent=bool(meta_d.get("paragraph_indent", True)),
+        frontmatter_extras=str(meta_d.get("frontmatter_extras", "")),
     )
     return Document(
         children=[_build_block(b) for b in d.get("children", [])],

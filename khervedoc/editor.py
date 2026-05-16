@@ -911,12 +911,20 @@ class DocumentEditor(QWidget):
     def insert_math_block(self) -> None:
         latex, ok = QInputDialog.getMultiLineText(self, "Insert math block", "LaTeX:")
         if ok and latex.strip():
-            c = self._edit.textCursor()
-            c.insertBlock()
-            c.block().setUserState(_STATE_MATH_BLOCK)
-            c.setBlockFormat(QTextBlockFormat())
-            c.insertText(latex, _math_block_char_format())
-            c.insertBlock(); c.block().setUserState(_STATE_PARAGRAPH)
+            self.insert_math_block_with(latex)
+
+    def insert_math_block_with(self, latex: str) -> None:
+        """Insert a display math block at the cursor without prompting.
+        Used by the equation builder so multi-line templates drop in
+        directly."""
+        if not latex.strip():
+            return
+        c = self._edit.textCursor()
+        c.insertBlock()
+        c.block().setUserState(_STATE_MATH_BLOCK)
+        c.setBlockFormat(QTextBlockFormat())
+        c.insertText(latex, _math_block_char_format())
+        c.insertBlock(); c.block().setUserState(_STATE_PARAGRAPH)
 
     def insert_bullet_list(self) -> None:
         self._edit.textCursor().createList(QTextListFormat.ListDisc)

@@ -29,6 +29,65 @@ _SECTION_RE = re.compile(
     r"\\(section|subsection|subsubsection|paragraph|subparagraph)(\*?)\{([^}]*)\}")
 
 
+_FRONTMATTER_BLOCK_RE = re.compile(
+    r"\\begin\{frontmatter\}(.*?)\\end\{frontmatter\}", re.DOTALL)
+
+
+def _strip_balanced_command(src: str, command: str) -> str:
+    r"""Remove every occurrence of `\command[opt]{arg}` from `src`, handling
+    balanced braces inside the argument so a nested macro doesn't terminate
+    the match early."""
+    pattern = re.compile(r"\\" + re.escape(command) + r"\b")
+    out: list[str] = []
+    pos = 0
+    while True:
+        m = pattern.search(src, pos)
+        if not m:
+            out.append(src[pos:])
+            return "".join(out)
+        out.append(src[pos:m.start()])
+        p = m.end()
+        # Skip optional brackets.
+        while p < len(src) and src[p] == "[":
+            depth = 1; j = p + 1
+            while j < len(src) and depth > 0:
+                if src[j] == "[": depth += 1
+                elif src[j] == "]": depth -= 1
+                j += 1
+            p = j
+        # Skip balanced { ... } argument if present.
+        if p < len(src) and src[p] == "{":
+            _, p = _consume_braced(src, p)
+        pos = p
+
+
+def _extract_frontmatter_extras(src: str) -> str:
+    r"""Return whatever lives inside \begin{frontmatter} that the model
+    doesn't already represent (so it can be re-emitted verbatim for
+    Elsevier-style document classes).
+
+    Strips:
+      - the body \title{...}                (model carries this)
+      - \begin{abstract}...\end{abstract}   (Abstract blocks)
+      - \begin{keyword}...\end{keyword}     (Keywords blocks)
+    Keeps:
+      - The full \author[opts]{...\corref{...}} expression
+      - \ead, \cortext, \affiliation, \fntext, anything else
+    """
+    fm = _FRONTMATTER_BLOCK_RE.search(src)
+    if not fm:
+        return ""
+    body = fm.group(1)
+    body = _strip_balanced_command(body, "title")
+    body = re.sub(r"\\begin\{abstract\}.*?\\end\{abstract\}",
+                  "", body, flags=re.DOTALL)
+    body = re.sub(r"\\begin\{keyword(?:s)?\}.*?\\end\{keyword(?:s)?\}",
+                  "", body, flags=re.DOTALL)
+    # Collapse runs of blank lines that the strip leaves behind.
+    body = re.sub(r"\n\s*\n+", "\n", body)
+    return body.strip()
+
+
 def _strip_tex_comments(src: str) -> str:
     """Drop LaTeX comments: `%` through end-of-line, except for `\\%`."""
     return re.sub(r"(?<!\\)%[^\n]*", "", src)
@@ -558,12 +617,23 @@ def import_tex(tex_source: str) -> Document:
                               "", author_text).strip()
     else:
         author_clean = ""
+    doc_class = docclass_m.group(1) if docclass_m else "article"
+    # For Elsevier classes we keep \author[opts]{...\corref{...}},
+    # \ead, \cortext, \affiliation etc. as raw LaTeX in frontmatter_extras
+    # so the round-trip reproduces the journal's title-block layout
+    # (author superscript, affiliation line, "Corresponding author"
+    # footnote) instead of dropping these as unknown macros.
+    if doc_class.lower().startswith("elsarticle"):
+        frontmatter_extras = _extract_frontmatter_extras(tex_source)
+    else:
+        frontmatter_extras = ""
     meta = DocMeta(
         title=(title_text or "").strip(),
         author=author_clean,
-        documentclass=docclass_m.group(1) if docclass_m else "article",
+        documentclass=doc_class,
         packages=packages or ["amsmath", "graphicx"],
         page_size=page_size,
+        frontmatter_extras=frontmatter_extras,
     )
 
     body_m = _BODY_RE.search(tex_source)

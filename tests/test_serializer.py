@@ -294,6 +294,38 @@ def test_elsarticle_wraps_metadata_in_frontmatter():
     assert r"\maketitle" not in out
 
 
+def test_elsarticle_frontmatter_extras_emitted():
+    doc = Document(
+        meta=DocMeta(
+            documentclass="elsarticle",
+            title="", author="",
+            frontmatter_extras=(
+                r"\author[ic]{Gwilherm Kerherve\corref{cor1}}" "\n"
+                r"\ead{g.kerherve@imperial.ac.uk}" "\n"
+                r"\cortext[cor1]{Corresponding author}" "\n"
+                r"\affiliation[ic]{organization={Imperial College London}}"
+            ),
+        ),
+        children=[
+            Title(children=[Text(text="My title")]),
+            Abstract(children=[Text(text="Body.")]),
+        ],
+    )
+    out = serialize_document(doc)
+    fm_start = out.index(r"\begin{frontmatter}")
+    fm_end = out.index(r"\end{frontmatter}")
+    front = out[fm_start:fm_end]
+    # The raw \author with options + \corref survives intact.
+    assert r"\author[ic]{Gwilherm Kerherve\corref{cor1}}" in front
+    assert r"\ead{g.kerherve@imperial.ac.uk}" in front
+    assert r"\cortext[cor1]{Corresponding author}" in front
+    assert r"\affiliation[ic]" in front
+    # Title is also there exactly once.
+    assert front.count(r"\title{My title}") == 1
+    # And NOT a duplicate plain \author{} since extras already had one.
+    assert front.count(r"\author{") == 0
+
+
 def test_article_class_still_uses_preamble_title_and_maketitle():
     doc = Document(
         meta=DocMeta(documentclass="article"),

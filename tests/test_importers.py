@@ -398,6 +398,32 @@ XPS \sep PHI \sep Python
     assert r"XPS \sep PHI \sep Python" in out
 
 
+def test_elsarticle_imports_frontmatter_extras_into_meta():
+    src = r"""\documentclass{elsarticle}
+\begin{document}
+\begin{frontmatter}
+\title{Hello}
+\author[ic]{Gwilherm Kerherve\corref{cor1}}
+\ead{me@example.com}
+\cortext[cor1]{Corresponding author}
+\affiliation[ic]{organization={Imperial}}
+\begin{abstract}
+Short.
+\end{abstract}
+\end{frontmatter}
+body
+\end{document}"""
+    doc = _round_trip(src)
+    assert doc.meta.documentclass.startswith("elsarticle")
+    extras = doc.meta.frontmatter_extras
+    assert r"\author[ic]{Gwilherm Kerherve\corref{cor1}}" in extras
+    assert r"\ead{me@example.com}" in extras
+    assert r"\cortext[cor1]{Corresponding author}" in extras
+    assert r"\affiliation[ic]" in extras
+    # Title was extracted out of extras (it lives in the Title block instead).
+    assert r"\title{" not in extras
+
+
 def test_frontmatter_wrapper_is_flattened():
     src = r"""\documentclass{elsarticle}\begin{document}
 \begin{frontmatter}

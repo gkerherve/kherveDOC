@@ -17,7 +17,10 @@ from PySide6.QtWidgets import (
     QToolButton, QVBoxLayout, QWidget,
 )
 
-from . import __version__, git_backend, icons, kdocz, page_sizes, symbols, version_string
+from . import (
+    __version__, equations, git_backend, icons, kdocz, page_sizes,
+    symbols, version_string,
+)
 from .compiler import CompileResult, compile_tex, tectonic_available
 from .editor import DocumentEditor, TEMPLATE_CHOICES
 from . import importers
@@ -240,6 +243,57 @@ class SymbolPickerWindow(QWidget):
 # Back-compat: older code references the dialog name. The window also
 # satisfies the rest of MainWindow's plumbing.
 SymbolPickerDialog = SymbolPickerWindow
+
+
+class EquationBuilderWindow(QWidget):
+    """Floating palette of templated math constructs.
+
+    Clicking a tile drops the template's LaTeX form at the current
+    cursor, wrapped in inline math. Templates use a U+25A1 placeholder
+    (□) so the user can immediately spot the slots they need to fill in.
+    """
+
+    templatePicked = Signal(str)
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.Tool | Qt.WindowStaysOnTopHint)
+        self.setWindowTitle("Equation builder")
+        self.resize(520, 540)
+
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        inner = QWidget()
+        outer = QVBoxLayout(inner)
+        outer.setSpacing(8)
+        outer.setContentsMargins(6, 6, 6, 6)
+
+        for group_name, items in equations.EQUATION_GROUPS:
+            label = QLabel(f"<b>{group_name}</b>")
+            label.setStyleSheet("color: #444; padding-top: 4px;")
+            outer.addWidget(label)
+            grid = QGridLayout()
+            grid.setSpacing(2)
+            cols = 6
+            for i, (latex, preview) in enumerate(items):
+                btn = QPushButton(preview)
+                btn.setToolTip(latex)
+                btn.setMinimumHeight(30)
+                btn.setStyleSheet(
+                    "QPushButton { font-size: 10pt; padding: 2px 6px; "
+                    "text-align: center; }")
+                btn.clicked.connect(
+                    lambda checked=False, tex=latex: self.templatePicked.emit(tex))
+                grid.addWidget(btn, i // cols, i % cols)
+            outer.addLayout(grid)
+
+        outer.addStretch(1)
+        scroll.setWidget(inner)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(scroll)
 
 
 # ---------- main window ----------
@@ -476,6 +530,10 @@ class MainWindow(QMainWindow):
         self.act_symbol = QAction(icons.symbol(), "&Symbol...", self,
                                   shortcut=QKeySequence("Ctrl+Shift+S"),
                                   triggered=self._insert_symbol)
+        self.act_equation_builder = QAction(
+            icons.equation_builder(), "&Equation builder...", self,
+            shortcut=QKeySequence("Ctrl+Shift+E"),
+            triggered=self._insert_equation_template)
         # Quick-applies the corresponding paragraph style to the current
         # block. Same effect as picking it from the heading combo, but
         # surfaced in the Insert menu and toolbar so it's discoverable
@@ -560,7 +618,7 @@ class MainWindow(QMainWindow):
 
         m_insert = mb.addMenu("&Insert")
         m_insert.addAction(self.act_math_inline); m_insert.addAction(self.act_math_block)
-        m_insert.addAction(self.act_symbol)
+        m_insert.addAction(self.act_symbol); m_insert.addAction(self.act_equation_builder)
         m_insert.addSeparator()
         m_insert.addAction(self.act_abstract); m_insert.addAction(self.act_keywords)
         m_insert.addSeparator()
@@ -661,7 +719,8 @@ class MainWindow(QMainWindow):
         for act in (self.act_bullet, self.act_numbered):
             tb.addAction(act)
         tb.addSeparator()
-        for act in (self.act_math_inline, self.act_math_block, self.act_symbol):
+        for act in (self.act_math_inline, self.act_math_block, self.act_symbol,
+                    self.act_equation_builder):
             tb.addAction(act)
         tb.addSeparator()
         for act in (self.act_link, self.act_footnote, self.act_citation,
@@ -899,6 +958,25 @@ class MainWindow(QMainWindow):
         self._symbol_window.show()
         self._symbol_window.raise_()
         self._symbol_window.activateWindow()
+
+    def _insert_equation_template(self) -> None:
+        """Open the floating equation-builder palette. Picks drop the
+        template at the cursor — multi-line templates go in as math
+        blocks; everything else as inline math."""
+        if not hasattr(self, "_equation_window") or self._equation_window is None:
+            self._equation_window = EquationBuilderWindow(self)
+            self._equation_window.templatePicked.connect(self._apply_equation_template)
+        self._equation_window.show()
+        self._equation_window.raise_()
+        self._equation_window.activateWindow()
+
+    def _apply_equation_template(self, latex: str) -> None:
+        # Templates that contain a \begin{...} get their own math block
+        # (display math). Single-line templates are inserted inline.
+        if "\\begin{" in latex:
+            self._editor.insert_math_block_with(latex)
+        else:
+            self._editor.insert_inline_math_with(latex)
 
     def _insert_link_with_hyperref(self) -> None:
         # Ensure hyperref is in the package list before inserting.

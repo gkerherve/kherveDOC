@@ -4,6 +4,8 @@ Pure functions; one serializer per node type. No I/O.
 """
 from __future__ import annotations
 
+import re
+
 from .model import (
     Abstract, Author, Block, Citation, CrossRef, Document, Figure, Footnote,
     Inline, Keywords, Link, List as ListNode, ListItem, MathBlock, MathInline,
@@ -292,8 +294,15 @@ def serialize_document(doc: Document) -> str:
         front_parts: list[str] = []
         if title_text:
             front_parts.append(f"\\title{{{title_text}}}")
-        if author_text:
+        # If the imported source had its own \author[opts]{...\corref{...}},
+        # that lives verbatim in meta.frontmatter_extras and we mustn't emit
+        # a second plain \author{...} alongside it.
+        extras = (m.frontmatter_extras or "").strip()
+        extras_has_author = bool(re.search(r"\\author\b", extras))
+        if author_text and not extras_has_author:
             front_parts.append(f"\\author{{{author_text}}}")
+        if extras:
+            front_parts.append(extras)
         if abstract_blocks:
             paras = [serialize_inlines(b.children) for b in abstract_blocks]
             joined = "\n\n".join(p for p in paras if p)
