@@ -10,11 +10,12 @@ from PySide6.QtGui import (
     QAction, QActionGroup, QGuiApplication, QKeySequence,
 )
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
-    QFileDialog, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout, QLabel,
-    QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton,
-    QScrollArea, QSlider, QSpinBox, QStatusBar, QTabWidget, QToolBar,
-    QToolButton, QVBoxLayout, QWidget,
+    QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
+    QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox,
+    QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox,
+    QPlainTextEdit, QPushButton, QScrollArea, QSlider, QSpinBox,
+    QSplitter, QStatusBar, QTabWidget, QToolBar, QToolButton,
+    QVBoxLayout, QWidget,
 )
 
 from . import (
@@ -369,7 +370,17 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(self._editor, "Formatted")
         self._tabs.addTab(self._latex_view, "LaTeX")
         self._tabs.addTab(self._preview, "PDF")
-        self.setCentralWidget(self._tabs)
+
+        # Splitter: left = tabs, right = PDF panel (hidden until toggled).
+        self._splitter = QSplitter(Qt.Horizontal, self)
+        self._splitter.addWidget(self._tabs)
+        self._pdf_side_panel = PdfPreview(self)
+        self._pdf_side_panel.hide()
+        self._splitter.addWidget(self._pdf_side_panel)
+        self._splitter.setStretchFactor(0, 3)
+        self._splitter.setStretchFactor(1, 2)
+        self.setCentralWidget(self._splitter)
+        self._side_by_side = False
 
         self._status = QStatusBar(self)
         self.setStatusBar(self._status)
@@ -435,6 +446,10 @@ class MainWindow(QMainWindow):
         # text with its re-serialization (which would clobber the user's
         # in-progress edit).
         self._suppress_latex_update = False
+
+        # Apply persisted theme.
+        if self._settings.value("theme_dark", False, type=bool):
+            self._toggle_theme(True)
 
         self._editor.set_document(_starter_document())
         self._update_title()
@@ -620,6 +635,13 @@ class MainWindow(QMainWindow):
         self.act_view_pdf = QAction("Show &PDF tab", self,
                                     shortcut=QKeySequence("Ctrl+3"),
                                     triggered=lambda: self._tabs.setCurrentIndex(2))
+        self.act_side_by_side = QAction("PDF &side panel", self,
+                                        shortcut=QKeySequence("Ctrl+4"),
+                                        checkable=True, triggered=self._toggle_side_by_side)
+        self.act_dark_theme = QAction("&Dark theme", self,
+                                      checkable=True, triggered=self._toggle_theme)
+        self.act_dark_theme.setChecked(
+            self._settings.value("theme_dark", False, type=bool))
 
         # History
         self.act_commit_now = QAction(icons.commit(), "Commit && push now", self,
@@ -703,6 +725,10 @@ class MainWindow(QMainWindow):
         m_view.addAction(self.act_view_formatted)
         m_view.addAction(self.act_view_latex)
         m_view.addAction(self.act_view_pdf)
+        m_view.addSeparator()
+        m_view.addAction(self.act_side_by_side)
+        m_view.addSeparator()
+        m_view.addAction(self.act_dark_theme)
 
         m_history = mb.addMenu("&History")
         m_history.addAction(self.act_commit_now)
@@ -886,6 +912,18 @@ class MainWindow(QMainWindow):
             w._refresh_window_menu()
 
     def closeEvent(self, event) -> None:
+        # Persist document-default preferences so new documents start
+        # with the user's preferred font size, family, margins etc.
+        meta = self._editor.meta()
+        self._settings.setValue("default/body_font_pt", meta.body_font_pt)
+        self._settings.setValue("default/body_font_family", meta.body_font_family)
+        self._settings.setValue("default/line_spacing", meta.line_spacing)
+        self._settings.setValue("default/paragraph_indent", meta.paragraph_indent)
+        self._settings.setValue("default/margin_top_cm", meta.margin_top_cm)
+        self._settings.setValue("default/margin_bottom_cm", meta.margin_bottom_cm)
+        self._settings.setValue("default/margin_left_cm", meta.margin_left_cm)
+        self._settings.setValue("default/margin_right_cm", meta.margin_right_cm)
+        self._settings.setValue("default/page_size", meta.page_size)
         # Remove ourselves from the live-windows registry so the Window
         # menus on other windows refresh, and so the process can exit
         # once the last window closes (Qt does this automatically once
@@ -1121,6 +1159,43 @@ class MainWindow(QMainWindow):
         self._editor.set_page_size(code)
         self._kick_compile()
 
+    def _toggle_side_by_side(self, checked: bool) -> None:
+        self._side_by_side = checked
+        if checked:
+            self._pdf_side_panel.show()
+            # Push current PDF state to the side panel.
+            self._kick_compile()
+        else:
+            self._pdf_side_panel.hide()
+
+    def _toggle_theme(self, dark: bool) -> None:
+        from .__main__ import apply_theme
+        app = QApplication.instance()
+        apply_theme(app, dark)
+        self._settings.setValue("theme_dark", dark)
+        self._latex_view.set_dark(dark)
+        # Update the editor page styling for dark mode.
+        if dark:
+            self._editor.text_edit.setStyleSheet(
+                "QTextEdit { background: #2d2d2d; color: #d4d4d4; border: none; }")
+            page = self._editor.findChild(QWidget, "page")
+            if page:
+                page.setStyleSheet(
+                    "#page { background: #2d2d2d; border: 1px solid #555; }")
+            desk = self._editor.findChild(QWidget, "desk")
+            if desk:
+                desk.setStyleSheet("#desk { background: #1a1a1a; }")
+        else:
+            self._editor.text_edit.setStyleSheet(
+                "QTextEdit { background: white; border: none; }")
+            page = self._editor.findChild(QWidget, "page")
+            if page:
+                page.setStyleSheet(
+                    "#page { background: white; border: 1px solid #b8bcc1; }")
+            desk = self._editor.findChild(QWidget, "desk")
+            if desk:
+                desk.setStyleSheet("#desk { background: #d0d4d8; }")
+
     def _insert_symbol(self) -> None:
         # Lazy-create the palette once, then re-show on subsequent clicks.
         # Keeps it alongside the editor (Qt.Tool window) so users can
@@ -1278,9 +1353,13 @@ class MainWindow(QMainWindow):
         self._status.clearMessage()
         if result.ok and result.pdf_path is not None:
             self._preview.show_pdf(result.pdf_path)
+            if self._side_by_side:
+                self._pdf_side_panel.show_pdf(result.pdf_path)
         else:
             tail = "\n".join(result.log.splitlines()[-10:]) if result.log else ""
             self._preview.show_message(f"{result.error}\n\n{tail}")
+            if self._side_by_side:
+                self._pdf_side_panel.show_message(f"{result.error}\n\n{tail}")
         self._compile_worker = None
         if self._pending_recompile:
             self._pending_recompile = False
@@ -1348,8 +1427,21 @@ class MainWindow(QMainWindow):
 
 
 def _starter_document() -> Document:
+    s = QSettings("kherveDOC", "kherveDOC")
+    meta = DocMeta(
+        title="", author="",
+        body_font_pt=int(s.value("default/body_font_pt", 12, type=int)),
+        body_font_family=str(s.value("default/body_font_family", "default")),
+        line_spacing=float(s.value("default/line_spacing", 1.0, type=float)),
+        paragraph_indent=s.value("default/paragraph_indent", True, type=bool),
+        margin_top_cm=float(s.value("default/margin_top_cm", 2.5, type=float)),
+        margin_bottom_cm=float(s.value("default/margin_bottom_cm", 2.5, type=float)),
+        margin_left_cm=float(s.value("default/margin_left_cm", 2.5, type=float)),
+        margin_right_cm=float(s.value("default/margin_right_cm", 2.5, type=float)),
+        page_size=str(s.value("default/page_size", "A4")),
+    )
     return Document(
-        meta=DocMeta(title="", author=""),
+        meta=meta,
         children=[
             Title(children=[Text(text="My document")]),
             Author(children=[Text(text="Your name")]),
