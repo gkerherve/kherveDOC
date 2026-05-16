@@ -532,6 +532,8 @@ class MainWindow(QMainWindow):
         self._heading_combo.addItem("Body text", 0)
         self._heading_combo.addItem("Title", -1)
         self._heading_combo.addItem("Author", -2)
+        self._heading_combo.addItem("Abstract", -3)
+        self._heading_combo.addItem("Keywords", -4)
         for level in range(1, 6):
             self._heading_combo.addItem(f"Heading {level}", level)
         self._heading_combo.setMinimumWidth(120)
@@ -948,10 +950,13 @@ class MainWindow(QMainWindow):
         }
         align_actions.get(align, self.act_align_left).setChecked(True)
         level = e.current_heading_level()
-        # heading_combo indices: 0=Body, 1=Title, 2=Author, 3..7=Heading 1..5
+        # heading_combo indices: 0=Body, 1=Title, 2=Author, 3=Abstract,
+        # 4=Keywords, 5..9=Heading 1..5
         if level == -1: idx = 1
         elif level == -2: idx = 2
-        elif 1 <= level <= 5: idx = level + 2
+        elif level == -3: idx = 3
+        elif level == -4: idx = 4
+        elif 1 <= level <= 5: idx = level + 4
         elif level == 0: idx = 0
         else: idx = 0
         if self._heading_combo.currentIndex() != idx:

@@ -3,8 +3,9 @@ generating a meaningful .docx fixture costs more than the test is worth."""
 
 from khervedoc.importers import import_tex
 from khervedoc.model import (
-    Citation, CrossRef, Figure, Footnote, Link, List as ListNode, MathBlock,
-    MathInline, Paragraph, RawLatex, Section, Table, Text, Title,
+    Abstract, Citation, CrossRef, Figure, Footnote, Keywords, Link,
+    List as ListNode, MathBlock, MathInline, Paragraph, RawLatex, Section,
+    Table, Text, Title,
 )
 
 
@@ -310,41 +311,39 @@ A reference.
     assert any(r"\bibitem{key}" in r.text for r in raws)
 
 
-def test_abstract_becomes_section_plus_body():
+def test_abstract_becomes_abstract_blocks():
     src = r"""\documentclass{article}\begin{document}
 \begin{abstract}
 Short summary of the work.
+
+A second paragraph with more detail.
 \end{abstract}
 \section{Intro}
 body
 \end{document}"""
     doc = _round_trip(src)
-    sections = [b for b in doc.children if isinstance(b, Section)]
-    # First section should be "Abstract", starred.
-    assert sections[0].numbered is False
-    assert any(isinstance(c, Text) and c.text == "Abstract"
-               for c in sections[0].children)
-    # The summary paragraph that follows the Abstract heading.
-    para_texts = " ".join(
-        c.text for b in doc.children if isinstance(b, Paragraph)
-        for c in b.children if isinstance(c, Text))
-    assert "Short summary" in para_texts
+    abstracts = [b for b in doc.children if isinstance(b, Abstract)]
+    assert len(abstracts) == 2   # one per paragraph in the source env
+    text0 = " ".join(c.text for c in abstracts[0].children if isinstance(c, Text))
+    assert "Short summary" in text0
+    text1 = " ".join(c.text for c in abstracts[1].children if isinstance(c, Text))
+    assert "second paragraph" in text1
 
 
-def test_keyword_environment_becomes_section_with_sep_dots():
+def test_keyword_environment_becomes_keywords_blocks():
     src = r"""\documentclass{article}\begin{document}
 \begin{keyword}
 XPS \sep PHI \sep Python
 \end{keyword}
 \end{document}"""
     doc = _round_trip(src)
-    sections = [b for b in doc.children if isinstance(b, Section)]
-    assert any(isinstance(c, Text) and c.text == "Keywords"
-               for c in sections[0].children)
-    para = next(b for b in doc.children if isinstance(b, Paragraph))
-    text = "".join(c.text for c in para.children if isinstance(c, Text))
-    assert "·" in text
-    assert "XPS" in text and "Python" in text
+    kws = [b for b in doc.children if isinstance(b, Keywords)]
+    # Three keyword groups split on \sep.
+    assert len(kws) == 3
+    flat = [" ".join(c.text for c in k.children if isinstance(c, Text)) for k in kws]
+    assert "XPS" in flat[0]
+    assert "PHI" in flat[1]
+    assert "Python" in flat[2]
 
 
 def test_frontmatter_wrapper_is_flattened():
@@ -371,10 +370,11 @@ content
         c.text for b in doc.children if isinstance(b, Paragraph)
         for c in b.children if isinstance(c, Text))
     assert "frontmatter" not in all_text
-    # The Abstract section should have been extracted from inside.
-    sections = [b for b in doc.children if isinstance(b, Section)]
-    assert any(isinstance(c, Text) and c.text == "Abstract"
-               for s in sections for c in s.children)
+    # The Abstract should have been extracted as an Abstract block.
+    abstracts = [b for b in doc.children if isinstance(b, Abstract)]
+    assert len(abstracts) >= 1
+    flat = " ".join(c.text for a in abstracts for c in a.children if isinstance(c, Text))
+    assert "Summary" in flat
 
 
 def test_unknown_macro_with_braced_arg_does_not_leak_args():

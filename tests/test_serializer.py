@@ -1,7 +1,7 @@
 from khervedoc.model import (
-    Author, Citation, CrossRef, Document, DocMeta, Figure, Footnote, Link,
-    List as ListNode, ListItem, MathBlock, MathInline, Paragraph, RawLatex,
-    Section, Table, Text, Title,
+    Abstract, Author, Citation, CrossRef, Document, DocMeta, Figure, Footnote,
+    Keywords, Link, List as ListNode, ListItem, MathBlock, MathInline,
+    Paragraph, RawLatex, Section, Table, Text, Title,
 )
 from khervedoc.serializer import (
     escape_text, serialize_block, serialize_document, serialize_inline,
@@ -223,6 +223,36 @@ def test_meta_title_fallback_when_no_title_block():
     out = serialize_document(doc)
     assert r"\title{From meta}" in out
     assert r"\maketitle" in out
+
+
+def test_consecutive_abstract_blocks_merge_into_one_env():
+    doc = Document(
+        meta=DocMeta(),
+        children=[
+            Abstract(children=[Text(text="First paragraph.")]),
+            Abstract(children=[Text(text="Second paragraph.")]),
+            Paragraph(children=[Text(text="body")]),
+        ],
+    )
+    out = serialize_document(doc)
+    # Exactly one abstract env, even though there are two Abstract blocks.
+    assert out.count(r"\begin{abstract}") == 1
+    assert out.count(r"\end{abstract}") == 1
+    assert "First paragraph." in out and "Second paragraph." in out
+
+
+def test_keywords_blocks_join_with_sep():
+    doc = Document(
+        meta=DocMeta(),
+        children=[
+            Keywords(children=[Text(text="XPS")]),
+            Keywords(children=[Text(text="PHI")]),
+            Keywords(children=[Text(text="Python")]),
+        ],
+    )
+    out = serialize_document(doc)
+    assert out.count(r"\begin{keyword}") == 1
+    assert r"XPS \sep PHI \sep Python" in out
 
 
 def test_geometry_package_emitted_for_a4_by_default():

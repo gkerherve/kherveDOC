@@ -143,7 +143,28 @@ class Author:
     type: str = "Author"
 
 
-Block = Union[Paragraph, Section, MathBlock, List, Figure, Table, RawLatex, Title, Author]
+@dataclass
+class Abstract:
+    """One paragraph of the document's Abstract. Consecutive Abstract
+    blocks are merged into a single \\begin{abstract}...\\end{abstract}
+    environment on serialization, so multi-paragraph abstracts work
+    without each paragraph getting its own env."""
+    children: list[Inline] = field(default_factory=list)
+    type: str = "Abstract"
+
+
+@dataclass
+class Keywords:
+    """One keyword line. Consecutive Keywords blocks are merged into a
+    single \\begin{keyword}...\\end{keyword} env. Inside that env the
+    serialiser uses \\sep between keyword groups so Elsevier-style
+    journals format correctly."""
+    children: list[Inline] = field(default_factory=list)
+    type: str = "Keywords"
+
+
+Block = Union[Paragraph, Section, MathBlock, List, Figure, Table, RawLatex,
+              Title, Author, Abstract, Keywords]
 
 
 # ---------------- Metadata + document ----------------
@@ -260,6 +281,10 @@ def _build_block(d: dict) -> Block:
         return Title(children=_build_inlines(d.get("children", [])))
     if t == "Author":
         return Author(children=_build_inlines(d.get("children", [])))
+    if t == "Abstract":
+        return Abstract(children=_build_inlines(d.get("children", [])))
+    if t == "Keywords":
+        return Keywords(children=_build_inlines(d.get("children", [])))
     raise ValueError(f"Unknown block node type: {t!r}")
 
 

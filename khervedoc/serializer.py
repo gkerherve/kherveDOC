@@ -5,9 +5,9 @@ Pure functions; one serializer per node type. No I/O.
 from __future__ import annotations
 
 from .model import (
-    Author, Block, Citation, CrossRef, Document, Figure, Footnote, Inline,
-    Link, List as ListNode, ListItem, MathBlock, MathInline, Paragraph,
-    RawLatex, Section, Table, Text, Title,
+    Abstract, Author, Block, Citation, CrossRef, Document, Figure, Footnote,
+    Inline, Keywords, Link, List as ListNode, ListItem, MathBlock, MathInline,
+    Paragraph, RawLatex, Section, Table, Text, Title,
 )
 
 
@@ -169,6 +169,19 @@ def serialize_block(node: Block) -> str:
         # the body. \maketitle (emitted by the Title block) will print them.
         return ""
 
+    if isinstance(node, Abstract):
+        # Defensive single-block path. serialize_document collects
+        # consecutive Abstract blocks before reaching here, so this only
+        # fires if a caller invokes serialize_block on a lone Abstract.
+        return (f"\\begin{{abstract}}\n"
+                f"{serialize_inlines(node.children)}\n"
+                f"\\end{{abstract}}\n")
+
+    if isinstance(node, Keywords):
+        return (f"\\begin{{keyword}}\n"
+                f"{serialize_inlines(node.children)}\n"
+                f"\\end{{keyword}}\n")
+
     raise TypeError(f"Unknown block node: {type(node).__name__}")
 
 
@@ -241,12 +254,42 @@ def serialize_document(doc: Document) -> str:
 
     parts: list[str] = []
     emitted_maketitle = False
-    for i, block in enumerate(doc.children):
+    children = doc.children
+    n = len(children)
+    i = 0
+    while i < n:
+        block = children[i]
+        # Group consecutive Abstract blocks into a single \begin{abstract}
+        # environment with paragraph breaks between, so a multi-paragraph
+        # abstract doesn't produce multiple env wrappers.
+        if isinstance(block, Abstract):
+            paras: list[str] = []
+            while i < n and isinstance(children[i], Abstract):
+                paras.append(serialize_inlines(children[i].children))
+                i += 1
+            joined = "\n\n".join(p for p in paras if p)
+            parts.append(f"\\begin{{abstract}}\n{joined}\n\\end{{abstract}}\n")
+            if i < n: parts.append("\n")
+            continue
+        # Keywords: join consecutive Keywords blocks with \sep between
+        # them (matches the Elsevier convention).
+        if isinstance(block, Keywords):
+            groups: list[str] = []
+            while i < n and isinstance(children[i], Keywords):
+                line = serialize_inlines(children[i].children).strip()
+                if line: groups.append(line)
+                i += 1
+            joined = " \\sep ".join(groups)
+            parts.append(f"\\begin{{keyword}}\n{joined}\n\\end{{keyword}}\n")
+            if i < n: parts.append("\n")
+            continue
+
         rendered = serialize_block(block)
         if isinstance(block, Title):
             emitted_maketitle = True
         parts.append(rendered)
-        if i < len(doc.children) - 1:
+        i += 1
+        if i < n:
             parts.append("\n")
 
     # If meta.title is set but no Title block exists in the body, fall back

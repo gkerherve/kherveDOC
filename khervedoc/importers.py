@@ -15,9 +15,9 @@ import shutil
 from pathlib import Path
 
 from .model import (
-    Author, Citation, CrossRef, Document, DocMeta, Figure, Footnote, Link,
-    List as ListNode, ListItem, MathBlock, MathInline, Paragraph, RawLatex,
-    Section, Table, Text, Title,
+    Abstract, Author, Citation, CrossRef, Document, DocMeta, Figure, Footnote,
+    Keywords, Link, List as ListNode, ListItem, MathBlock, MathInline,
+    Paragraph, RawLatex, Section, Table, Text, Title,
 )
 
 
@@ -392,15 +392,21 @@ def _dispatch(kind: str, m: re.Match) -> object:
         # Preserve the full matched env (including any [caption=...]).
         return RawLatex(text=m.group(0))
     if kind == "abstract":
-        return [Section(level=1, numbered=False,
-                        children=[Text(text="Abstract")]),
-                *_parse_blocks(m.group(1))]
+        # Split the abstract body into paragraphs (blank-line separated)
+        # and emit one Abstract block per paragraph. Consecutive Abstract
+        # blocks are merged back into a single env on re-serialisation.
+        out: list = []
+        for para in _split_paragraphs(m.group(1)):
+            out.append(Abstract(children=_parse_inlines(para)))
+        return out
     if kind == "keyword":
-        # \sep separates keywords. Render with bullet separators inline.
-        kw_body = m.group(1).replace(r"\sep", " · ")
-        return [Section(level=2, numbered=False,
-                        children=[Text(text="Keywords")]),
-                Paragraph(children=_parse_inlines(kw_body))]
+        # \sep separates keywords; emit one Keywords block per item so
+        # they can be edited independently in the formatted view.
+        body = m.group(1)
+        # Split on \sep — preserving the inline content of each keyword.
+        parts = re.split(r"\\sep\b\s*", body)
+        return [Keywords(children=_parse_inlines(p.strip()))
+                for p in parts if p.strip()]
     if kind == "bibliography":
         return RawLatex(text=m.group(0))
     if kind == "unknown_env":

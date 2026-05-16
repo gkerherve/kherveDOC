@@ -31,9 +31,9 @@ from .paged_edit import PagedTextEdit
 TEMPLATE_CHOICES = ["article", "report", "book", "letter", "beamer", "memoir"]
 
 from .model import (
-    Author, Citation, CrossRef, Document, DocMeta, Figure, Footnote, Link,
-    List as ListNode, ListItem, MathBlock, MathInline, Paragraph, RawLatex,
-    Section, Table, Text, Title,
+    Abstract, Author, Citation, CrossRef, Document, DocMeta, Figure, Footnote,
+    Keywords, Link, List as ListNode, ListItem, MathBlock, MathInline,
+    Paragraph, RawLatex, Section, Table, Text, Title,
 )
 
 
@@ -41,6 +41,8 @@ from .model import (
 _STATE_PARAGRAPH = 0
 _STATE_TITLE = 7        # Word-style "Title" paragraph; emits \maketitle
 _STATE_AUTHOR = 8       # Author of the document; pulled into \author{} preamble
+_STATE_ABSTRACT = 9     # Abstract paragraph; consecutive blocks merge
+_STATE_KEYWORDS = 10    # Keyword line; consecutive blocks merge with \sep
 _STATE_MATH_BLOCK = 99
 _STATE_FIGURE = 100
 _STATE_TABLE = 101
@@ -117,6 +119,39 @@ def _author_block_format() -> QTextBlockFormat:
     bfmt = QTextBlockFormat()
     bfmt.setAlignment(Qt.AlignHCenter)
     bfmt.setTopMargin(0); bfmt.setBottomMargin(24)
+    return bfmt
+
+
+def _abstract_char_format() -> QTextCharFormat:
+    fmt = QTextCharFormat()
+    f = QFont()
+    f.setPointSize(11)
+    fmt.setFont(f)
+    return fmt
+
+
+def _abstract_block_format() -> QTextBlockFormat:
+    bfmt = QTextBlockFormat()
+    # Inset the abstract on both sides so it visually reads as the
+    # journal-style block it is, rather than a plain paragraph.
+    bfmt.setLeftMargin(48); bfmt.setRightMargin(48)
+    bfmt.setTopMargin(4); bfmt.setBottomMargin(4)
+    return bfmt
+
+
+def _keywords_char_format() -> QTextCharFormat:
+    fmt = QTextCharFormat()
+    f = QFont()
+    f.setItalic(True); f.setPointSize(11)
+    fmt.setFont(f)
+    fmt.setForeground(QColor("#444"))
+    return fmt
+
+
+def _keywords_block_format() -> QTextBlockFormat:
+    bfmt = QTextBlockFormat()
+    bfmt.setLeftMargin(48); bfmt.setRightMargin(48)
+    bfmt.setTopMargin(2); bfmt.setBottomMargin(18)
     return bfmt
 
 
@@ -391,6 +426,18 @@ class DocumentEditor(QWidget):
             for inline in block.children:
                 self._insert_inline(cursor, inline, base_format=_author_char_format())
             return
+        if isinstance(block, Abstract):
+            cursor.setBlockFormat(_abstract_block_format())
+            cursor.block().setUserState(_STATE_ABSTRACT)
+            for inline in block.children:
+                self._insert_inline(cursor, inline, base_format=_abstract_char_format())
+            return
+        if isinstance(block, Keywords):
+            cursor.setBlockFormat(_keywords_block_format())
+            cursor.block().setUserState(_STATE_KEYWORDS)
+            for inline in block.children:
+                self._insert_inline(cursor, inline, base_format=_keywords_char_format())
+            return
         if isinstance(block, Section):
             cursor.block().setUserState(block.level)
             cfmt = _heading_char_format(block.level)
@@ -537,6 +584,12 @@ class DocumentEditor(QWidget):
         align_name = _ALIGNMENT_FROM_QT.get(align_flag, "left")
         children = self._inlines_from_block(block)
 
+        # State-driven dispatch for paragraph styles that aren't visually
+        # distinguishable from Body (Abstract / Keywords share the body
+        # font and only differ by indentation/italic).
+        if state == _STATE_ABSTRACT: return Abstract(children=children)
+        if state == _STATE_KEYWORDS: return Keywords(children=children)
+
         # Empty block: no fragments to inspect — fall back to state.
         it = block.begin()
         if it.atEnd():
@@ -607,7 +660,9 @@ class DocumentEditor(QWidget):
     # ---------- formatting actions (called by mainwindow) ----------
 
     def apply_heading(self, level: int) -> None:
-        """level: -1 = Title, -2 = Author, 0 = Body, 1..5 = Heading 1..5."""
+        """Apply a paragraph style by level code:
+            -1 = Title,  -2 = Author,  -3 = Abstract,  -4 = Keywords,
+             0 = Body,  1..5 = Heading 1..5."""
         cursor = self._edit.textCursor()
         block = cursor.block()
         block_cursor = QTextCursor(block)
@@ -620,6 +675,14 @@ class DocumentEditor(QWidget):
             block.setUserState(_STATE_AUTHOR)
             QTextCursor(block).setBlockFormat(_author_block_format())
             block_cursor.mergeCharFormat(_author_char_format())
+        elif level == -3:
+            block.setUserState(_STATE_ABSTRACT)
+            QTextCursor(block).setBlockFormat(_abstract_block_format())
+            block_cursor.setCharFormat(_abstract_char_format())
+        elif level == -4:
+            block.setUserState(_STATE_KEYWORDS)
+            QTextCursor(block).setBlockFormat(_keywords_block_format())
+            block_cursor.setCharFormat(_keywords_char_format())
         elif level >= 1:
             block.setUserState(level)
             QTextCursor(block).setBlockFormat(QTextBlockFormat())
@@ -911,11 +974,13 @@ class DocumentEditor(QWidget):
         c.block().setUserState(_STATE_PARAGRAPH)
 
     def current_heading_level(self) -> int:
-        """Returns -1 = Title, -2 = Author, 0 = Body, 1..5 = Heading,
-        -99 = non-text block (math/figure/table)."""
+        """Returns -1 = Title, -2 = Author, -3 = Abstract, -4 = Keywords,
+        0 = Body, 1..5 = Heading, -99 = non-text block."""
         state = self._edit.textCursor().block().userState()
         if state == _STATE_TITLE: return -1
         if state == _STATE_AUTHOR: return -2
+        if state == _STATE_ABSTRACT: return -3
+        if state == _STATE_KEYWORDS: return -4
         if 1 <= state <= 5: return state
         if state == _STATE_PARAGRAPH: return 0
         return -99

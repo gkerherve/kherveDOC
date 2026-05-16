@@ -1,7 +1,7 @@
 from khervedoc.model import (
-    Author, Citation, CrossRef, Document, DocMeta, Figure, Footnote, Link,
-    List as ListNode, ListItem, MathBlock, MathInline, Paragraph, RawLatex,
-    Section, Table, Text, Title, from_json, to_json,
+    Abstract, Author, Citation, CrossRef, Document, DocMeta, Figure, Footnote,
+    Keywords, Link, List as ListNode, ListItem, MathBlock, MathInline,
+    Paragraph, RawLatex, Section, Table, Text, Title, from_json, to_json,
 )
 
 
@@ -11,6 +11,8 @@ def test_round_trip_preserves_all_node_types():
         children=[
             Title(children=[Text(text="My title")]),
             Author(children=[Text(text="Jane Doe")]),
+            Abstract(children=[Text(text="A short summary.")]),
+            Keywords(children=[Text(text="kw1")]),
             Section(level=2, children=[Text(text="Heading")]),
             Paragraph(children=[
                 Text(text="hi ", marks=["bold", "italic"]),
