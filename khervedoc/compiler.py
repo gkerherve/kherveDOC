@@ -114,6 +114,12 @@ def compile_tex(
     still emits the PDF with a "?" placeholder where the image would go.
     """
     workdir.mkdir(parents=True, exist_ok=True)
+    # Resolve relative \includegraphics paths against source_dir (so they
+    # work from the temp workdir) and swap missing-image references for
+    # a visible placeholder (so a stale figure path doesn't blow up the
+    # whole compile). Always run — _rewrite_includegraphics is a no-op
+    # when nothing matches.
+    tex_source = _rewrite_includegraphics(tex_source, source_dir)
     tex_path = workdir / f"{basename}.tex"
     tex_path.write_text(tex_source, encoding="utf-8")
 
