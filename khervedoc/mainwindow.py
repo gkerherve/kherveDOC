@@ -1268,8 +1268,6 @@ class MainWindow(QMainWindow):
             self._pending_recompile = True
             return
         tex = serialize_document(self._editor.get_document())
-        if not self._suppress_latex_update:
-            self._latex_view.set_source(tex)
         source_dir = self._resolved_source_dir()
         self._compile_worker = _CompileWorker(tex, self._build_dir, source_dir)
         self._compile_worker.finished_with.connect(self._on_compile_done)

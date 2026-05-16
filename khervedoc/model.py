@@ -77,7 +77,7 @@ Alignment = Literal["left", "center", "right", "justify"]
 @dataclass
 class Paragraph:
     children: list[Inline] = field(default_factory=list)
-    alignment: Alignment = "left"
+    alignment: Alignment = "justify"
     type: str = "Paragraph"
 
 

@@ -90,7 +90,15 @@ _QT_ALIGNMENT = {
     "right": Qt.AlignRight,
     "justify": Qt.AlignJustify,
 }
-_ALIGNMENT_FROM_QT = {v: k for k, v in _QT_ALIGNMENT.items()}
+# Qt.AlignLeft is the default for new blocks; in LaTeX semantics that
+# corresponds to justified text (no wrapper env). Map both to "justify"
+# so paragraphs don't spuriously acquire \begin{flushleft} wrappers.
+_ALIGNMENT_FROM_QT = {
+    Qt.AlignLeft: "justify",
+    Qt.AlignHCenter: "center",
+    Qt.AlignRight: "right",
+    Qt.AlignJustify: "justify",
+}
 _TITLE_FONT_SIZE = 28
 
 
@@ -759,7 +767,7 @@ class DocumentEditor(QWidget):
         """
         state = block.userState()
         align_flag = block.blockFormat().alignment() & Qt.AlignHorizontal_Mask
-        align_name = _ALIGNMENT_FROM_QT.get(align_flag, "left")
+        align_name = _ALIGNMENT_FROM_QT.get(align_flag, "justify")
         children = self._inlines_from_block(block)
 
         # State-driven dispatch for paragraph styles that aren't visually
