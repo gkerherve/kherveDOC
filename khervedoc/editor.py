@@ -467,7 +467,7 @@ class DocumentEditor(QWidget):
                 state = block.userState()
                 text = block.text()
                 if state == _STATE_MATH_BLOCK:
-                    blocks.append(MathBlock(latex=text))
+                    blocks.append(MathBlock(latex=text.replace(_LINE_SEP, "\n")))
                 elif state == _STATE_FIGURE:
                     blocks.append(self._figure_from_stub(text))
                 elif state == _STATE_TABLE:
@@ -538,7 +538,14 @@ class DocumentEditor(QWidget):
                 self._insert_inline(cursor, inline)
         elif isinstance(block, MathBlock):
             cursor.block().setUserState(_STATE_MATH_BLOCK)
-            cursor.insertText(block.latex, _math_block_char_format())
+            # Multi-line bodies (\begin{align}\n...\n\end{align}, split
+            # envs, etc.) must be kept inside ONE QTextBlock or Qt will
+            # split on '\n' and the readback at _STATE_MATH_BLOCK only
+            # captures the first line — losing the closing \end{align}
+            # and breaking compilation with "\begin{align} ... ended by
+            # \end{document}". U+2028 is the same trick RawLatex uses.
+            visible = block.latex.replace("\n", _LINE_SEP)
+            cursor.insertText(visible, _math_block_char_format())
         elif isinstance(block, ListNode):
             lfmt = QTextListFormat()
             lfmt.setStyle(QTextListFormat.ListDecimal if block.ordered
@@ -1022,7 +1029,10 @@ class DocumentEditor(QWidget):
         c.insertBlock()
         c.block().setUserState(_STATE_MATH_BLOCK)
         c.setBlockFormat(QTextBlockFormat())
-        c.insertText(latex, _math_block_char_format())
+        # Keep multi-line math (align envs, split, etc.) inside ONE
+        # QTextBlock; the readback in get_document substitutes _LINE_SEP
+        # back to '\n' before serialization.
+        c.insertText(latex.replace("\n", _LINE_SEP), _math_block_char_format())
         c.insertBlock(); c.block().setUserState(_STATE_PARAGRAPH)
 
     def insert_bullet_list(self) -> None:

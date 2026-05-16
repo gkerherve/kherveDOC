@@ -213,7 +213,10 @@ _BLOCK_DISPATCH = [
     # Last-resort: any other \begin{...}...\end{...} we don't understand
     # gets wrapped in a RawLatex block instead of leaking its body as
     # plain text. Must remain LAST so the specific handlers above win.
-    ("unknown_env",     re.compile(r"\\begin\{([A-Za-z]+\*?)\}(?:\[[^\]]*\])?(?:\{[^}]*\})?(.*?)\\end\{\1\}", re.DOTALL)),
+    # `@` is part of internal LaTeX names (e.g. \begin{@twocolumnfalse}
+    # used by twocolumn[...] to hold a wide title). Accept it in the
+    # env name so the round-trip preserves these blocks verbatim.
+    ("unknown_env",     re.compile(r"\\begin\{([A-Za-z@]+\*?)\}(?:\[[^\]]*\])?(?:\{[^}]*\})?(.*?)\\end\{\1\}", re.DOTALL)),
 ]
 
 
@@ -412,6 +415,45 @@ def _flatten_single(nodes: list):
     return nodes[0] if len(nodes) == 1 else nodes
 
 
+_BRACKET_ARG_MACROS = ("twocolumn", "onecolumn")
+
+
+def _scan_bracket_arg_macro(body: str, start: int) -> tuple[int, int] | None:
+    r"""Find the next occurrence at or after `start` of any
+    \twocolumn[...] / \onecolumn[...] (etc.) and return
+    (match_start, match_end) covering both the macro and its
+    bracketed body, with depth-tracked '[' / ']' balancing.
+
+    These macros sit at block level and contain free-form LaTeX
+    (\begin{@twocolumnfalse}\maketitle\tableofcontents...). Without
+    treating the whole macro+arg as one opaque RawLatex block, the
+    regex-based block parser dives into the bracket content and
+    breaks the structure (\maketitle gets pulled out, the closing
+    \end{@twocolumnfalse} ends up dangling, etc.)."""
+    best: tuple[int, int] | None = None
+    for name in _BRACKET_ARG_MACROS:
+        pat = re.compile(r"\\" + re.escape(name) + r"(?![A-Za-z])\s*\[")
+        m = pat.search(body, start)
+        if not m:
+            continue
+        # Walk forward from the opening '[' to the matching ']'.
+        j = m.end()  # one past the opening '['
+        depth = 1
+        n = len(body)
+        while j < n and depth > 0:
+            if body[j] == "[":
+                depth += 1
+            elif body[j] == "]":
+                depth -= 1
+            j += 1
+        if depth != 0:
+            # Unbalanced — bail out, don't pretend to consume.
+            continue
+        if best is None or m.start() < best[0]:
+            best = (m.start(), j)
+    return best
+
+
 def _parse_blocks(body: str) -> list:
     """Walk the document body and produce a list of Block nodes."""
     blocks: list = []
@@ -422,6 +464,14 @@ def _parse_blocks(body: str) -> list:
         best_kind = None
         best_match = None
         best_start = n
+        # Bracket-argument block-level macros (\twocolumn[...]) win
+        # first so the dispatch regexes don't dive into their bodies.
+        ba = _scan_bracket_arg_macro(body, i)
+        if ba is not None and ba[0] < best_start:
+            ba_start, ba_end = ba
+            best_kind = "bracket_arg_macro"
+            best_match = _StubMatch(ba_start, ba_end, body[ba_start:ba_end])
+            best_start = ba_start
         for kind, regex in _BLOCK_DISPATCH:
             m = regex.search(body, i)
             if m and m.start() < best_start:
@@ -450,7 +500,26 @@ def _split_paragraphs(chunk: str) -> list[str]:
     return [p.strip() for p in re.split(r"\n\s*\n", chunk) if p.strip()]
 
 
-def _dispatch(kind: str, m: re.Match) -> object:
+class _StubMatch:
+    """Minimal stand-in for re.Match so the manually-scanned bracket-arg
+    macros can flow through the same dispatch pipeline as regex hits."""
+    def __init__(self, start: int, end: int, text: str):
+        self._start = start
+        self._end = end
+        self._text = text
+    def start(self) -> int: return self._start
+    def end(self) -> int: return self._end
+    def group(self, n: int = 0) -> str:
+        if n != 0:
+            raise IndexError("_StubMatch only exposes group 0")
+        return self._text
+
+
+def _dispatch(kind: str, m) -> object:
+    if kind == "bracket_arg_macro":
+        # \twocolumn[ ... ]: preserved verbatim. The captured text
+        # already includes the macro name and the balanced brackets.
+        return RawLatex(text=m.group(0))
     if kind == "math_block_env":
         env_name = m.group(1)
         body = m.group(2).strip()

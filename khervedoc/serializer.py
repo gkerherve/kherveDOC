@@ -290,15 +290,18 @@ def serialize_document(doc: Document) -> str:
         f"\\usepackage{{{p}}}" for p in m.packages)
     if preamble_extras:
         packages += "\n" + preamble_extras
-    # Always provide \Kstroke so users can pick it from the Symbols
-    # palette without manually wiring a \newcommand into every file.
-    packages += "\n" + _KSTROKE_PROVIDE
     # User-supplied preamble customisation (\lstset for listings styling,
     # \definecolor, \hypersetup, \newcommand etc.) — preserved verbatim
     # from the imported .tex so the PDF keeps its framed line-numbered
     # syntax-coloured code blocks and any other custom rendering.
     if m.preamble_extras and m.preamble_extras.strip():
         packages += "\n" + m.preamble_extras.strip()
+    # \Kstroke is provided AFTER preamble_extras so that documents
+    # importing their own \newcommand{\Kstroke}{...} keep theirs and
+    # ours becomes a no-op. The reverse order produced a "command
+    # already defined" error because \newcommand (unlike
+    # \providecommand) refuses to redefine an existing macro.
+    packages += "\n" + _KSTROKE_PROVIDE
 
     # Pull title / author content out of the body (or fall back to meta).
     inline_title: str | None = None

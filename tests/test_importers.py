@@ -562,6 +562,35 @@ def test_unknown_macro_with_arg_preserved():
     assert raws[0].latex == r"\textcolor{red}{important}"
 
 
+def test_twocolumn_bracket_arg_preserved_verbatim():
+    """\\twocolumn[...] holds a wide title with \\maketitle /
+    \\tableofcontents inside. Previously the block parser dived into
+    the bracket argument, pulled \\maketitle out as a top-level block,
+    and left \\end{@twocolumnfalse} dangling. The whole macro+arg
+    must come through as one RawLatex block."""
+    src = r"""\documentclass[twocolumn]{article}\begin{document}
+\twocolumn[
+    \begin{@twocolumnfalse}
+        \maketitle
+        \tableofcontents
+    \end{@twocolumnfalse}
+]
+Body paragraph.
+\end{document}"""
+    doc = _round_trip(src)
+    raws = [b for b in doc.children if isinstance(b, RawLatex)]
+    matching = [r for r in raws if r.text.startswith("\\twocolumn[")]
+    assert len(matching) == 1
+    assert "@twocolumnfalse" in matching[0].text
+    out = serialize_document(doc)
+    # The closing bracket and inner env must survive serialization
+    # (the bug emitted \maketitle as a standalone block and left
+    # \end{@twocolumnfalse} stranded between paragraphs).
+    assert "\\twocolumn[" in out
+    assert "\\begin{@twocolumnfalse}" in out
+    assert "\\end{@twocolumnfalse}" in out
+
+
 def test_align_star_imports_as_math_block_then_round_trips_without_double_wrap():
     """align* env at top level should import as a MathBlock that, on
     serialise, emits \\begin{align*}...\\end{align*} verbatim — not
