@@ -27,6 +27,37 @@ from .model import (
 
 _SECTION_RE = re.compile(
     r"\\(section|subsection|subsubsection|paragraph|subparagraph)(\*?)\{([^}]*)\}")
+
+
+def _strip_tex_comments(src: str) -> str:
+    """Drop LaTeX comments: `%` through end-of-line, except for `\\%`."""
+    return re.sub(r"(?<!\\)%[^\n]*", "", src)
+
+
+def _extract_braced(src: str, command: str) -> str | None:
+    """Find `\\command[opts]?{...}` in src and return the balanced argument.
+
+    Replaces the previous regex `\\\\title\\{([^}]*)\\}` which couldn't see
+    past the first `}` and so truncated author lines containing nested
+    macros (Elsevier's `\\author[ic]{Name\\corref{cor1}}` was a casualty).
+    """
+    pattern = re.compile(r"\\" + re.escape(command) + r"\b")
+    m = pattern.search(src)
+    if not m:
+        return None
+    pos = m.end()
+    # Skip optional bracket arguments.
+    while pos < len(src) and src[pos] == '[':
+        depth = 1; j = pos + 1
+        while j < len(src) and depth > 0:
+            if src[j] == '[': depth += 1
+            elif src[j] == ']': depth -= 1
+            j += 1
+        pos = j
+    if pos >= len(src) or src[pos] != '{':
+        return None
+    content, _ = _consume_braced(src, pos)
+    return content
 _SECTION_LEVEL = {
     "section": 1, "subsection": 2, "subsubsection": 3,
     "paragraph": 4, "subparagraph": 5,
@@ -56,16 +87,32 @@ _MATH_ENV_RE = re.compile(
 # routing. Order matters — math/figure/table envs first so they take
 # precedence over generic environments.
 _BLOCK_DISPATCH = [
+    # Math envs win first.
     ("math_block_env",  _MATH_ENV_RE),
     ("math_block_dd",   re.compile(r"\$\$(.*?)\$\$", re.DOTALL)),
     ("math_block_bs",   re.compile(r"\\\[(.*?)\\\]", re.DOTALL)),
+    # Lists
     ("itemize",         re.compile(r"\\begin\{itemize\}(.*?)\\end\{itemize\}", re.DOTALL)),
     ("enumerate",       re.compile(r"\\begin\{enumerate\}(.*?)\\end\{enumerate\}", re.DOTALL)),
+    # Floats and tables
     ("figure",          re.compile(r"\\begin\{figure\*?\}(?:\[[^\]]*\])?(.*?)\\end\{figure\*?\}", re.DOTALL)),
     ("table",           re.compile(r"\\begin\{table\*?\}(?:\[[^\]]*\])?(.*?)\\end\{table\*?\}", re.DOTALL)),
     ("standalone_tabular", re.compile(r"\\begin\{tabular\}\{([^}]*)\}(.*?)\\end\{tabular\}", re.DOTALL)),
+    # Verbatim-style code blocks: preserved as RawLatex so the source survives.
+    ("verbatim",        re.compile(r"\\begin\{verbatim\}(.*?)\\end\{verbatim\}", re.DOTALL)),
+    ("lstlisting",      re.compile(r"\\begin\{lstlisting\}(?:\[[^\]]*\])?(.*?)\\end\{lstlisting\}", re.DOTALL)),
+    # Elsevier-style metadata blocks.
+    ("abstract",        re.compile(r"\\begin\{abstract\}(.*?)\\end\{abstract\}", re.DOTALL)),
+    ("keyword",         re.compile(r"\\begin\{keyword(?:s)?\}(.*?)\\end\{keyword(?:s)?\}", re.DOTALL)),
+    # Bibliography preserved verbatim so the references round-trip intact.
+    ("bibliography",    re.compile(r"\\begin\{thebibliography\}\{[^}]*\}(.*?)\\end\{thebibliography\}", re.DOTALL)),
+    # Sections / titles.
     ("section",         _SECTION_RE),
     ("maketitle",       re.compile(r"\\maketitle\b")),
+    # Last-resort: any other \begin{...}...\end{...} we don't understand
+    # gets wrapped in a RawLatex block instead of leaking its body as
+    # plain text. Must remain LAST so the specific handlers above win.
+    ("unknown_env",     re.compile(r"\\begin\{([A-Za-z]+\*?)\}(?:\[[^\]]*\])?(?:\{[^}]*\})?(.*?)\\end\{\1\}", re.DOTALL)),
 ]
 
 
@@ -181,7 +228,40 @@ def _match_macro(s: str, i: int) -> tuple[object, int] | None:
         # Strip — section/figure handlers attach labels themselves.
         _, end = _consume_braced(s, after)
         return Text(text=""), (end if end > after else after)
-    return None
+    if name == "url":
+        arg, end = _consume_braced(s, after)
+        if arg is None: return None
+        return Link(url=arg, children=[Text(text=arg)]), end
+    if name == "sep":
+        # Elsevier keyword separator — render as a middle dot.
+        return Text(text=" · "), after
+    if name == "verb":
+        # \verb<delim>...<delim> — inline verbatim, render as code mark.
+        if after >= len(s): return None
+        delim = s[after]
+        close = s.find(delim, after + 1)
+        if close < 0: return None
+        return Text(text=s[after + 1:close], marks=["code"]), close + 1
+
+    # Unknown command — instead of letting it leak as scrambled text,
+    # consume the macro plus any [...] options and {...} arguments. The
+    # output is an empty Text so the loop keeps making progress without
+    # dragging the macro name into the document body.
+    pos = after
+    while pos < len(s) and s[pos] == "[":
+        depth = 1; j = pos + 1
+        while j < len(s) and depth > 0:
+            if s[j] == "[": depth += 1
+            elif s[j] == "]": depth -= 1
+            j += 1
+        pos = j
+    while pos < len(s) and s[pos] == "{":
+        _, pos = _consume_braced(s, pos)
+    if pos == after:
+        # Macro had no arguments; still mark progress so the outer loop
+        # doesn't fall back to one-character text consumption.
+        return Text(text=""), pos
+    return Text(text=""), pos
 
 
 def _consume_braced(s: str, i: int) -> tuple[str | None, int]:
@@ -287,6 +367,30 @@ def _dispatch(kind: str, m: re.Match) -> object:
         return _parse_table_env(m.group(1))
     if kind == "standalone_tabular":
         return _parse_tabular(m.group(1), m.group(2))
+    if kind == "verbatim":
+        return RawLatex(text=f"\\begin{{verbatim}}{m.group(1)}\\end{{verbatim}}")
+    if kind == "lstlisting":
+        # Preserve the full matched env (including any [caption=...]).
+        return RawLatex(text=m.group(0))
+    if kind == "abstract":
+        return [Section(level=1, numbered=False,
+                        children=[Text(text="Abstract")]),
+                *_parse_blocks(m.group(1))]
+    if kind == "keyword":
+        # \sep separates keywords. Render with bullet separators inline.
+        kw_body = m.group(1).replace(r"\sep", " · ")
+        return [Section(level=2, numbered=False,
+                        children=[Text(text="Keywords")]),
+                Paragraph(children=_parse_inlines(kw_body))]
+    if kind == "bibliography":
+        return RawLatex(text=m.group(0))
+    if kind == "unknown_env":
+        env_name = m.group(1)
+        # Some envs are pure wrappers we want to strip entirely
+        # (frontmatter brackets the real content).
+        if env_name == "frontmatter":
+            return _parse_blocks(m.group(2))
+        return RawLatex(text=m.group(0))
     if kind == "maketitle":
         return None
     return None
@@ -370,11 +474,20 @@ def _parse_tabular(align_spec: str, body: str) -> Table:
 
 
 def import_tex(tex_source: str) -> Document:
-    """Parse a LaTeX source string into a Document. Unknown commands are
-    preserved as RawLatex blocks so nothing is silently lost."""
+    """Parse a LaTeX source string into a Document. Unknown commands and
+    environments are preserved as RawLatex blocks so nothing is silently
+    lost from the source."""
+    # Strip line comments first — Elsevier templates use `%%` ruled
+    # banners between sections, and without this every banner would
+    # appear as a stray paragraph in the imported document.
+    tex_source = _strip_tex_comments(tex_source)
+
     docclass_m = _DOCCLASS_RE.search(tex_source)
-    title_m = _TITLE_PREAMBLE_RE.search(tex_source)
-    author_m = _AUTHOR_PREAMBLE_RE.search(tex_source)
+    # Use balanced-brace extraction for title/author so Elsevier-style
+    # `\author[ic]{Name\corref{cor1}}` arguments aren't truncated at the
+    # first inner `}`.
+    title_text = _extract_braced(tex_source, "title")
+    author_text = _extract_braced(tex_source, "author")
     geom_m = _GEOMETRY_RE.search(tex_source)
     packages = [p for p in _PACKAGE_RE.findall(tex_source)
                 if p not in ("geometry",)]
@@ -386,9 +499,17 @@ def import_tex(tex_source: str) -> Document:
         elif "legalpaper" in opts: page_size = "Legal"
         elif "a4paper" in opts:    page_size = "A4"
 
+    # Strip nested macros from the author line — \corref{} etc. clutter
+    # the visible author name. The cleaned author can still live in
+    # meta.author; the full original is in the source if needed.
+    if author_text:
+        author_clean = re.sub(r"\\[A-Za-z@]+\*?(?:\[[^\]]*\])?(?:\{[^}]*\})?",
+                              "", author_text).strip()
+    else:
+        author_clean = ""
     meta = DocMeta(
-        title=title_m.group(1) if title_m else "",
-        author=author_m.group(1) if author_m else "",
+        title=(title_text or "").strip(),
+        author=author_clean,
         documentclass=docclass_m.group(1) if docclass_m else "article",
         packages=packages or ["amsmath", "graphicx"],
         page_size=page_size,

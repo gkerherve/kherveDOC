@@ -4,7 +4,7 @@ generating a meaningful .docx fixture costs more than the test is worth."""
 from khervedoc.importers import import_tex
 from khervedoc.model import (
     Citation, CrossRef, Figure, Footnote, Link, List as ListNode, MathBlock,
-    MathInline, Paragraph, Section, Table, Text, Title,
+    MathInline, Paragraph, RawLatex, Section, Table, Text, Title,
 )
 
 
@@ -242,6 +242,158 @@ def test_figure_caption_with_inline_macros_preserved():
     assert len(figs) == 1
     # The full caption is preserved verbatim, including the textbf macro.
     assert "Result for" in figs[0].caption and r"\textbf" in figs[0].caption
+
+
+def test_strips_percent_line_comments():
+    src = r"""\documentclass{article}\begin{document}
+%% ============================================
+\section{Intro}
+%% banner
+Body text here.
+\end{document}"""
+    doc = _round_trip(src)
+    # The %% banners must not have leaked into the body as paragraphs.
+    body_texts = [c.text for b in doc.children if isinstance(b, Paragraph)
+                  for c in b.children if isinstance(c, Text)]
+    flat = " ".join(body_texts)
+    assert "===" not in flat
+    assert "banner" not in flat
+    assert "Body text here." in flat
+
+
+def test_url_macro_becomes_link():
+    src = r"\documentclass{article}\begin{document}See \url{https://x.com/y} for more.\end{document}"
+    doc = _round_trip(src)
+    inlines = doc.children[0].children
+    assert any(isinstance(c, Link) and c.url == "https://x.com/y" for c in inlines)
+
+
+def test_verbatim_environment_preserved_as_rawlatex():
+    src = r"""\documentclass{article}\begin{document}
+Example:
+\begin{verbatim}
+def foo(): return 1
+\end{verbatim}
+After.
+\end{document}"""
+    doc = _round_trip(src)
+    raws = [b for b in doc.children if isinstance(b, RawLatex)]
+    assert len(raws) == 1
+    assert "verbatim" in raws[0].text
+    assert "def foo()" in raws[0].text
+
+
+def test_lstlisting_with_caption_preserved():
+    src = r"""\documentclass{article}\begin{document}
+\begin{lstlisting}[caption={Demo}]
+print("hi")
+\end{lstlisting}
+\end{document}"""
+    doc = _round_trip(src)
+    raws = [b for b in doc.children if isinstance(b, RawLatex)]
+    assert len(raws) == 1
+    assert r"\begin{lstlisting}[caption={Demo}]" in raws[0].text
+    assert 'print("hi")' in raws[0].text
+
+
+def test_thebibliography_preserved_as_rawlatex():
+    src = r"""\documentclass{article}\begin{document}
+body
+\begin{thebibliography}{9}
+\bibitem{key}
+A reference.
+\end{thebibliography}
+\end{document}"""
+    doc = _round_trip(src)
+    raws = [b for b in doc.children if isinstance(b, RawLatex)]
+    assert any("thebibliography" in r.text for r in raws)
+    assert any(r"\bibitem{key}" in r.text for r in raws)
+
+
+def test_abstract_becomes_section_plus_body():
+    src = r"""\documentclass{article}\begin{document}
+\begin{abstract}
+Short summary of the work.
+\end{abstract}
+\section{Intro}
+body
+\end{document}"""
+    doc = _round_trip(src)
+    sections = [b for b in doc.children if isinstance(b, Section)]
+    # First section should be "Abstract", starred.
+    assert sections[0].numbered is False
+    assert any(isinstance(c, Text) and c.text == "Abstract"
+               for c in sections[0].children)
+    # The summary paragraph that follows the Abstract heading.
+    para_texts = " ".join(
+        c.text for b in doc.children if isinstance(b, Paragraph)
+        for c in b.children if isinstance(c, Text))
+    assert "Short summary" in para_texts
+
+
+def test_keyword_environment_becomes_section_with_sep_dots():
+    src = r"""\documentclass{article}\begin{document}
+\begin{keyword}
+XPS \sep PHI \sep Python
+\end{keyword}
+\end{document}"""
+    doc = _round_trip(src)
+    sections = [b for b in doc.children if isinstance(b, Section)]
+    assert any(isinstance(c, Text) and c.text == "Keywords"
+               for c in sections[0].children)
+    para = next(b for b in doc.children if isinstance(b, Paragraph))
+    text = "".join(c.text for c in para.children if isinstance(c, Text))
+    assert "·" in text
+    assert "XPS" in text and "Python" in text
+
+
+def test_frontmatter_wrapper_is_flattened():
+    src = r"""\documentclass{elsarticle}\begin{document}
+\begin{frontmatter}
+\title{Real Title}
+\author[ic]{Some Author\corref{cor1}}
+\begin{abstract}
+Summary.
+\end{abstract}
+\end{frontmatter}
+\section{Body}
+content
+\end{document}"""
+    doc = _round_trip(src)
+    # Title is captured (either in meta or promoted to a Title block) and
+    # there must be no stray "frontmatter" text.
+    title_blocks = [b for b in doc.children if isinstance(b, Title)]
+    title_seen = doc.meta.title or "".join(
+        c.text for t in title_blocks for c in t.children if isinstance(c, Text))
+    assert "Real Title" in title_seen
+    # No raw "begin{frontmatter}" should survive as text.
+    all_text = " ".join(
+        c.text for b in doc.children if isinstance(b, Paragraph)
+        for c in b.children if isinstance(c, Text))
+    assert "frontmatter" not in all_text
+    # The Abstract section should have been extracted from inside.
+    sections = [b for b in doc.children if isinstance(b, Section)]
+    assert any(isinstance(c, Text) and c.text == "Abstract"
+               for s in sections for c in s.children)
+
+
+def test_unknown_macro_with_braced_arg_does_not_leak_args():
+    src = r"\documentclass{article}\begin{document}\journal{SoftwareX} Body.\end{document}"
+    doc = _round_trip(src)
+    text = "".join(
+        c.text for b in doc.children if isinstance(b, Paragraph)
+        for c in b.children if isinstance(c, Text))
+    # The \journal argument must not appear as a stray paragraph.
+    assert "SoftwareX" not in text
+    assert "Body." in text
+
+
+def test_author_with_nested_corref_returns_clean_name():
+    src = r"\documentclass{elsarticle}\author[ic]{Gwilherm Kerherve\corref{cor1}}\begin{document}body\end{document}"
+    doc = _round_trip(src)
+    assert "Gwilherm Kerherve" in doc.meta.author
+    assert "corref" not in doc.meta.author
+    assert "{" not in doc.meta.author
 
 
 def test_escapes_unescaped():
