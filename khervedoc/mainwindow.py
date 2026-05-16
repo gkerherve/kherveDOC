@@ -320,8 +320,15 @@ _RECENT_FILES_MAX = 8
 
 
 class MainWindow(QMainWindow):
+    # Module-level registry of every live MainWindow. Needed so windows
+    # spawned via File > New window don't get garbage-collected the
+    # moment the local reference falls out of scope, and so the Window
+    # menu can list every open document.
+    _windows: list["MainWindow"] = []
+
     def __init__(self):
         super().__init__()
+        MainWindow._windows.append(self)
         self._current_path: Path | None = None
         # Imported (.tex/.docx) files don't get a "current path" — the user
         # has to Save As before kherveDOC knows where to save the .kdocz.
@@ -348,8 +355,11 @@ class MainWindow(QMainWindow):
         w = min(1500, int(screen.width() * 0.85))
         h = min(950, int(screen.height() * 0.85))
         self.resize(w, h)
-        self.move(screen.x() + (screen.width() - w) // 2,
-                  screen.y() + (screen.height() - h) // 2)
+        # Cascade secondary windows so they don't perfectly overlap the
+        # first one. The Nth window shifts by (N-1)*30 px in both axes.
+        cascade = (len(MainWindow._windows) - 1) * 30
+        self.move(screen.x() + (screen.width() - w) // 2 + cascade,
+                  screen.y() + (screen.height() - h) // 2 + cascade)
 
         self._editor = DocumentEditor(self)
         self._latex_view = LatexView(self)
@@ -438,8 +448,15 @@ class MainWindow(QMainWindow):
         # File
         self.act_new = QAction(icons.file_new(), "&New", self,
                                shortcut=QKeySequence.New, triggered=self._new)
+        self.act_new_window = QAction("New &window", self,
+                                      shortcut=QKeySequence("Ctrl+Shift+N"),
+                                      triggered=self._new_window)
         self.act_open = QAction(icons.file_open(), "&Open...", self,
                                 shortcut=QKeySequence.Open, triggered=self._open)
+        self.act_open_in_new_window = QAction(
+            "Open in new wind&ow...", self,
+            shortcut=QKeySequence("Ctrl+Shift+O"),
+            triggered=self._open_in_new_window)
         self.act_save = QAction(icons.file_save(), "&Save", self,
                                 shortcut=QKeySequence.Save, triggered=self._save)
         self.act_save_as = QAction("Save &As...", self,
@@ -620,7 +637,9 @@ class MainWindow(QMainWindow):
 
         m_file = mb.addMenu("&File")
         m_file.addAction(self.act_new)
+        m_file.addAction(self.act_new_window)
         m_file.addAction(self.act_open)
+        m_file.addAction(self.act_open_in_new_window)
         self._recent_menu = m_file.addMenu("Open &recent")
         self._refresh_recent_menu()
         m_file.addSeparator()
@@ -689,8 +708,36 @@ class MainWindow(QMainWindow):
         m_history.addAction(self.act_commit_now)
         m_history.addAction(self.act_history)
 
+        # Window menu — populated dynamically with one entry per open
+        # MainWindow so the user can flip between documents without
+        # alt-tabbing. Refreshed on aboutToShow and whenever a window
+        # opens / closes / changes title.
+        self._window_menu = mb.addMenu("&Window")
+        self._window_menu.aboutToShow.connect(self._refresh_window_menu)
+        self._refresh_window_menu()
+
         m_help = mb.addMenu("&Help")
         m_help.addAction(self.act_about)
+
+    def _refresh_window_menu(self) -> None:
+        if not hasattr(self, "_window_menu"):
+            return
+        self._window_menu.clear()
+        self._window_menu.addAction(self.act_new_window)
+        self._window_menu.addAction(self.act_open_in_new_window)
+        self._window_menu.addSeparator()
+        for i, win in enumerate(MainWindow._windows):
+            label = win.windowTitle() or f"Window {i + 1}"
+            # Trim the "kherveDOC vX.Y.N+sha — " prefix when present so
+            # the Window menu shows just the document name.
+            marker = " — "
+            if marker in label:
+                label = label.split(marker, 1)[1]
+            act = self._window_menu.addAction(label)
+            act.setCheckable(True)
+            act.setChecked(win is self)
+            act.triggered.connect(lambda checked=False, w=win: (
+                w.raise_(), w.activateWindow()))
 
     # ----- toolbar -----
 
@@ -809,6 +856,49 @@ class MainWindow(QMainWindow):
         self._import_source_dir = None
         self._editor.set_document(_starter_document())
         self._update_title()
+
+    def _new_window(self) -> MainWindow:
+        """Open a fresh, empty MainWindow alongside this one. Returns the
+        new window so callers (Open in new window...) can route a
+        document into it."""
+        win = MainWindow()
+        win.show()
+        return win
+
+    def _open_in_new_window(self) -> None:
+        path_s, _ = QFileDialog.getOpenFileName(
+            self, "Open document in new window", "",
+            "All supported (*.kdocz *.kdoc.json *.tex);;"
+            "Bundled (*.kdocz);;JSON (*.kdoc.json);;LaTeX (*.tex);;All files (*)")
+        if not path_s:
+            return
+        win = self._new_window()
+        win._open_path(Path(path_s))
+
+    def setWindowTitle(self, title: str) -> None:
+        # Every title change should be reflected in the Window menus of
+        # all sibling windows so the document list stays current as
+        # users open / save / import documents.
+        super().setWindowTitle(title)
+        # Guard against early calls during __init__ (before the menu
+        # exists) by checking the registry / attribute.
+        for w in MainWindow._windows:
+            w._refresh_window_menu()
+
+    def closeEvent(self, event) -> None:
+        # Remove ourselves from the live-windows registry so the Window
+        # menus on other windows refresh, and so the process can exit
+        # once the last window closes (Qt does this automatically once
+        # the last top-level QWidget is destroyed).
+        try:
+            MainWindow._windows.remove(self)
+        except ValueError:
+            pass
+        # Refresh the Window menu on all surviving windows so this
+        # document no longer appears in the list.
+        for w in MainWindow._windows:
+            w._refresh_window_menu()
+        super().closeEvent(event)
 
     def _open(self) -> None:
         path_s, _ = QFileDialog.getOpenFileName(
