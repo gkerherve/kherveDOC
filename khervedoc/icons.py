@@ -266,21 +266,37 @@ def file_save() -> QIcon:
 
 
 def undo() -> QIcon:
+    """Hook-style undo arrow: horizontal shaft at the bottom-left with a
+    curl over the top-right, matching the Office / Google Docs convention."""
     px, p = _new_canvas()
-    p.setPen(QPen(_FG, 2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    p.setRenderHint(QPainter.Antialiasing, True)
+    p.setPen(QPen(_FG, 2.2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
     p.setBrush(Qt.NoBrush)
-    p.drawArc(4, 7, 16, 12, 30 * 16, 200 * 16)
-    p.drawPolyline([QPointF(4, 6), QPointF(4, 12), QPointF(10, 12)])
+    path = QPainterPath()
+    path.moveTo(5, 13)
+    path.lineTo(14, 13)
+    path.cubicTo(20, 13, 20, 5, 14, 5)
+    p.drawPath(path)
+    # Filled arrowhead at the left end of the shaft, pointing left.
+    p.setBrush(QBrush(_FG)); p.setPen(Qt.NoPen)
+    p.drawPolygon([QPointF(2, 13), QPointF(8, 9), QPointF(8, 17)])
     p.end()
     return QIcon(px)
 
 
 def redo() -> QIcon:
+    """Mirror of undo — same hook shape pointing the other way."""
     px, p = _new_canvas()
-    p.setPen(QPen(_FG, 2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    p.setRenderHint(QPainter.Antialiasing, True)
+    p.setPen(QPen(_FG, 2.2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
     p.setBrush(Qt.NoBrush)
-    p.drawArc(4, 7, 16, 12, -50 * 16, 200 * 16)
-    p.drawPolyline([QPointF(20, 6), QPointF(20, 12), QPointF(14, 12)])
+    path = QPainterPath()
+    path.moveTo(19, 13)
+    path.lineTo(10, 13)
+    path.cubicTo(4, 13, 4, 5, 10, 5)
+    p.drawPath(path)
+    p.setBrush(QBrush(_FG)); p.setPen(Qt.NoPen)
+    p.drawPolygon([QPointF(22, 13), QPointF(16, 9), QPointF(16, 17)])
     p.end()
     return QIcon(px)
 
