@@ -61,11 +61,18 @@ _P_CROSSREF = QTextCharFormat.UserProperty + 5  # value = "label|kind"
 # Block-text holds a compact serialization the editor doesn't try to render
 # visually beyond a one-line "stub". Format examples:
 #   Figure: "[FIGURE] path | caption | label | width"
-#   Table:  "[TABLE] rows-as-tsv-newline-separated || caption | label | alignment"
-#   Raw:    raw LaTeX text on one or multiple lines (joined with \n).
+#   Table:  "[TABLE] rows-as-tsv-LINESEP-separated || caption | label | alignment"
+#   Raw:    raw LaTeX text on one or multiple lines, internal \n replaced
+#           by U+2028 so Qt keeps every line in the same QTextBlock.
 _FIGURE_PREFIX = "[FIGURE] "
 _TABLE_PREFIX = "[TABLE] "
 _RAW_PREFIX = "[RAW] "
+# Qt splits text into separate QTextBlocks at every '\n'. For block-text
+# fields that NEED to carry literal newlines (multi-line lstlisting and
+# verbatim envs, multi-row tables) we substitute U+2028 (Unicode "Line
+# Separator"), which Qt renders as a soft line break inside one block
+# and which round-trips losslessly on read-back.
+_LINE_SEP = chr(0x2028)
 
 
 _HEADING_FONT_SIZES = {1: 22, 2: 18, 3: 15, 4: 13, 5: 12}
@@ -398,6 +405,10 @@ class DocumentEditor(QWidget):
                     blocks.append(self._table_from_stub(text))
                 elif state == _STATE_RAW:
                     raw = text[len(_RAW_PREFIX):] if text.startswith(_RAW_PREFIX) else text
+                    # Restore the real newlines we substituted on render
+                    # so the LaTeX serializer emits a well-formed verbatim
+                    # / lstlisting / etc. environment.
+                    raw = raw.replace(_LINE_SEP, "\n")
                     blocks.append(RawLatex(text=raw))
                 else:
                     # Text blocks: determine the paragraph style from how
@@ -480,14 +491,21 @@ class DocumentEditor(QWidget):
             cursor.block().setUserState(_STATE_TABLE)
             cursor.setBlockFormat(_stub_block_format())
             label = block.label or ""
-            # rows-as-tsv with \n between rows, '|' between metadata fields.
-            rows_tsv = "\n".join("\t".join(r) for r in block.rows)
+            # rows separated by U+2028 (LINE SEPARATOR) instead of '\n' so
+            # the entire stub stays in one QTextBlock — '\n' would split
+            # the row sequence across QTextBlocks and the readback would
+            # only see the first row.
+            rows_tsv = _LINE_SEP.join("\t".join(r) for r in block.rows)
             stub = f"{_TABLE_PREFIX}{rows_tsv}||{block.caption}|{label}|{block.alignment}"
             cursor.insertText(stub, _stub_char_format())
         elif isinstance(block, RawLatex):
             cursor.block().setUserState(_STATE_RAW)
             cursor.setBlockFormat(_stub_block_format())
-            cursor.insertText(_RAW_PREFIX + block.text, _stub_char_format())
+            # Multi-line verbatim / lstlisting envs: substitute U+2028
+            # for '\n' so Qt keeps every line in the same block. The
+            # _STATE_RAW reader in get_document undoes the substitution.
+            visible = block.text.replace("\n", _LINE_SEP)
+            cursor.insertText(_RAW_PREFIX + visible, _stub_char_format())
 
     # ---------- inline rendering ----------
 
@@ -673,7 +691,15 @@ class DocumentEditor(QWidget):
     def _table_from_stub(self, text: str) -> Table:
         body = text[len(_TABLE_PREFIX):] if text.startswith(_TABLE_PREFIX) else text
         rows_str, sep, meta = body.partition("||")
-        rows = [r.split("\t") for r in rows_str.split("\n")] if rows_str else []
+        # Rows are LINE_SEP-separated (matches what set_document writes);
+        # tolerate the legacy '\n' form for older sessions.
+        if rows_str:
+            row_sources = rows_str.split(_LINE_SEP)
+            if len(row_sources) == 1 and "\n" in rows_str:
+                row_sources = rows_str.split("\n")
+            rows = [r.split("\t") for r in row_sources]
+        else:
+            rows = []
         parts = meta.split("|") if sep else []
         while len(parts) < 3: parts.append("")
         return Table(rows=rows, caption=parts[0], label=parts[1] or None,

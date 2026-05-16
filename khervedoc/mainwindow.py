@@ -185,57 +185,61 @@ class DocSettingsDialog(QDialog):
 DocPropertiesDialog = DocSettingsDialog
 
 
-class SymbolPickerDialog(QDialog):
-    """A grid of common LaTeX symbols grouped by category. Clicking a
-    button emits the symbol's LaTeX form (e.g. \\alpha) — the caller
-    wraps it in math mode if appropriate.
+class SymbolPickerWindow(QWidget):
+    """Floating, non-modal palette of LaTeX symbols.
+
+    Built as a standalone Qt.Tool window so the user can keep it open
+    alongside the main editor, drift between paragraphs, and click
+    glyphs to drop them into the formatted text at the current cursor.
     """
+
+    symbolPicked = Signal(str)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self.setWindowTitle("Insert symbol")
-        self.resize(620, 540)
-        self._chosen: str | None = None
+        # Tool window = floats above the parent, has a small frame, and
+        # does NOT block the main window the way a modal QDialog does.
+        self.setWindowFlags(Qt.Tool | Qt.WindowStaysOnTopHint)
+        self.setWindowTitle("Symbols")
+        self.resize(440, 480)
 
         scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         inner = QWidget()
         outer = QVBoxLayout(inner)
-        outer.setSpacing(12)
+        outer.setSpacing(8)
+        outer.setContentsMargins(6, 6, 6, 6)
 
         for group_name, items in symbols.SYMBOL_GROUPS:
-            box = QGroupBox(group_name)
-            grid = QGridLayout(box)
-            grid.setSpacing(4)
-            cols = 8
+            label = QLabel(f"<b>{group_name}</b>")
+            label.setStyleSheet("color: #444; padding-top: 4px;")
+            outer.addWidget(label)
+            grid = QGridLayout()
+            grid.setSpacing(2)
+            cols = 10
             for i, (latex, glyph) in enumerate(items):
                 btn = QPushButton(glyph)
                 btn.setToolTip(latex)
-                btn.setMinimumWidth(56)
-                btn.setMinimumHeight(34)
-                btn.setStyleSheet("font-size: 14pt;")
+                btn.setFixedSize(32, 28)
+                btn.setStyleSheet(
+                    "QPushButton { font-size: 12pt; padding: 0; }")
                 btn.clicked.connect(
-                    lambda checked=False, tex=latex: self._pick(tex))
+                    lambda checked=False, tex=latex: self.symbolPicked.emit(tex))
                 grid.addWidget(btn, i // cols, i % cols)
-            outer.addWidget(box)
+            outer.addLayout(grid)
 
+        outer.addStretch(1)
         scroll.setWidget(inner)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Cancel)
-        buttons.rejected.connect(self.reject)
-
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel(
-            "Click any symbol to insert it. Hover for the LaTeX command."))
-        layout.addWidget(scroll, 1)
-        layout.addWidget(buttons)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(scroll)
 
-    def _pick(self, latex: str) -> None:
-        self._chosen = latex
-        self.accept()
 
-    def chosen(self) -> str | None:
-        return self._chosen
+# Back-compat: older code references the dialog name. The window also
+# satisfies the rest of MainWindow's plumbing.
+SymbolPickerDialog = SymbolPickerWindow
 
 
 # ---------- main window ----------
@@ -469,7 +473,7 @@ class MainWindow(QMainWindow):
         self.act_table = QAction(icons.table(), "&Table...", self,
                                  triggered=e.insert_table)
         self.act_raw = QAction("Raw LaTeX...", self, triggered=e.insert_raw_latex)
-        self.act_symbol = QAction("&Symbol...", self,
+        self.act_symbol = QAction(icons.symbol(), "&Symbol...", self,
                                   shortcut=QKeySequence("Ctrl+Shift+S"),
                                   triggered=self._insert_symbol)
         self.act_pagebreak = QAction(icons.page_break(), "Page break", self,
@@ -875,12 +879,16 @@ class MainWindow(QMainWindow):
         self._kick_compile()
 
     def _insert_symbol(self) -> None:
-        dlg = SymbolPickerDialog(self)
-        if dlg.exec() == QDialog.Accepted and dlg.chosen():
-            # Wrap the picked LaTeX in inline math so the symbol renders
-            # the way the user expects. The existing insert-inline-math
-            # logic handles the editor representation and serialization.
-            self._editor.insert_inline_math_with(dlg.chosen())
+        # Lazy-create the palette once, then re-show on subsequent clicks.
+        # Keeps it alongside the editor (Qt.Tool window) so users can
+        # drop multiple symbols without closing/reopening every time.
+        if not hasattr(self, "_symbol_window") or self._symbol_window is None:
+            self._symbol_window = SymbolPickerWindow(self)
+            self._symbol_window.symbolPicked.connect(
+                self._editor.insert_inline_math_with)
+        self._symbol_window.show()
+        self._symbol_window.raise_()
+        self._symbol_window.activateWindow()
 
     def _insert_link_with_hyperref(self) -> None:
         # Ensure hyperref is in the package list before inserting.

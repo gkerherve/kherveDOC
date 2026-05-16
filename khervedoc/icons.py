@@ -374,6 +374,17 @@ def zoom_in() -> QIcon:
     return QIcon(px)
 
 
+def symbol() -> QIcon:
+    """Greek alpha glyph — toolbar marker for the symbol palette."""
+    px, p = _new_canvas()
+    f = QFont("Cambria Math")
+    f.setPointSize(17); f.setItalic(True)
+    p.setFont(f); p.setPen(_ACCENT)
+    p.drawText(QRect(0, 0, _SIZE, _SIZE), Qt.AlignCenter, "α")  # α
+    p.end()
+    return QIcon(px)
+
+
 def zoom_out() -> QIcon:
     px, p = _new_canvas()
     p.setPen(QPen(_FG, 1.8, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
