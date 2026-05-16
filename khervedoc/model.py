@@ -169,7 +169,11 @@ Block = Union[Paragraph, Section, MathBlock, List, Figure, Table, RawLatex,
 
 # ---------------- Metadata + document ----------------
 
-DEFAULT_PACKAGES = ["amsmath", "graphicx"]
+# amssymb provides \square (and other math symbols) — required because the
+# equation-builder palette uses \square as the placeholder slot for users
+# to fill in. Without it, every freshly-inserted template raises an
+# "Undefined control sequence \square" error from tectonic.
+DEFAULT_PACKAGES = ["amsmath", "amssymb", "graphicx"]
 
 
 @dataclass
