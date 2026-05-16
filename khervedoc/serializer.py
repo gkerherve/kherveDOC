@@ -201,10 +201,34 @@ def _body_font_pt_class_option(pt: int) -> str:
     return f"{min((10, 11, 12), key=lambda v: abs(v - pt))}pt"
 
 
+def _split_keyword_inlines(blocks: list) -> list[str]:
+    r"""Given one or more consecutive Keywords blocks, flatten their
+    inlines and split into individual keyword terms.
+
+    The importer combines all of an env's keywords into one Keywords
+    block separated by Text(" · ") fragments so the editor can show
+    them on a single line. To re-emit the elsarticle-friendly
+    `kw \sep kw \sep kw` form, we serialize the inlines and split on
+    the visible bullet separator. Multiple input blocks (the legacy
+    one-per-term form) are accepted too.
+    """
+    out: list[str] = []
+    for block in blocks:
+        line = serialize_inlines(block.children).strip()
+        if not line: continue
+        for term in line.split(" · "):
+            term = term.strip(" \t\n")
+            if term:
+                out.append(term)
+    return out
+
+
 def serialize_document(doc: Document) -> str:
     from . import page_sizes
     page = page_sizes.by_code(doc.meta.page_size)
     m = doc.meta
+    is_elsarticle = (m.documentclass or "").lower().startswith("elsarticle")
+
     # Margins flow into geometry per-side so users can pick asymmetric layouts.
     geometry = (
         f"\\usepackage[{page.geometry_option},"
@@ -229,9 +253,7 @@ def serialize_document(doc: Document) -> str:
     if preamble_extras:
         packages += "\n" + preamble_extras
 
-    # A Title block in the document body takes precedence over meta.title —
-    # this lets the user pick the "Title" style inside the editor and have
-    # the document title flow naturally into the LaTeX output.
+    # Pull title / author content out of the body (or fall back to meta).
     inline_title: str | None = None
     has_title_block = False
     inline_author: str | None = None
@@ -247,6 +269,63 @@ def serialize_document(doc: Document) -> str:
         escape_text((doc.meta.author or "").strip()))
 
     has_metadata = bool(title_text or author_text)
+
+    # elsarticle and the other Elsevier classes require title / author /
+    # abstract / keywords all to live inside \begin{frontmatter} ...
+    # \end{frontmatter}. Anything outside that block is silently dropped
+    # by the class — which was why the user's abstract didn't reach the
+    # PDF. For these classes we collect the front matter explicitly and
+    # emit the rest of the document as body.
+    if is_elsarticle:
+        abstract_blocks: list = []
+        keywords_blocks: list = []
+        body_blocks: list = []
+        for block in doc.children:
+            if isinstance(block, (Title, Author)):
+                continue   # handled via title_text / author_text
+            if isinstance(block, Abstract):
+                abstract_blocks.append(block); continue
+            if isinstance(block, Keywords):
+                keywords_blocks.append(block); continue
+            body_blocks.append(block)
+
+        front_parts: list[str] = []
+        if title_text:
+            front_parts.append(f"\\title{{{title_text}}}")
+        if author_text:
+            front_parts.append(f"\\author{{{author_text}}}")
+        if abstract_blocks:
+            paras = [serialize_inlines(b.children) for b in abstract_blocks]
+            joined = "\n\n".join(p for p in paras if p)
+            front_parts.append(f"\\begin{{abstract}}\n{joined}\n\\end{{abstract}}")
+        if keywords_blocks:
+            terms = _split_keyword_inlines(keywords_blocks)
+            if terms:
+                joined = " \\sep ".join(terms)
+                front_parts.append(f"\\begin{{keyword}}\n{joined}\n\\end{{keyword}}")
+        frontmatter = (
+            "\\begin{frontmatter}\n" + "\n\n".join(front_parts) +
+            "\n\\end{frontmatter}\n") if front_parts else ""
+
+        body_parts: list[str] = []
+        for i, b in enumerate(body_blocks):
+            body_parts.append(serialize_block(b))
+            if i < len(body_blocks) - 1:
+                body_parts.append("\n")
+        body = "".join(body_parts)
+
+        return (
+            f"\\documentclass[{_body_font_pt_class_option(m.body_font_pt)}]"
+            f"{{{m.documentclass}}}\n"
+            f"{packages}\n"
+            f"\\begin{{document}}\n"
+            f"{frontmatter}"
+            f"{body}"
+            f"\\end{{document}}\n"
+        )
+
+    # Standard article / report / book / etc. — title and author go in
+    # the preamble, abstract / keywords flow inline in the body.
     preamble_meta = ""
     if has_metadata:
         preamble_meta += f"\\title{{{title_text or '~'}}}\n"
@@ -259,9 +338,6 @@ def serialize_document(doc: Document) -> str:
     i = 0
     while i < n:
         block = children[i]
-        # Group consecutive Abstract blocks into a single \begin{abstract}
-        # environment with paragraph breaks between, so a multi-paragraph
-        # abstract doesn't produce multiple env wrappers.
         if isinstance(block, Abstract):
             paras: list[str] = []
             while i < n and isinstance(children[i], Abstract):
@@ -271,15 +347,13 @@ def serialize_document(doc: Document) -> str:
             parts.append(f"\\begin{{abstract}}\n{joined}\n\\end{{abstract}}\n")
             if i < n: parts.append("\n")
             continue
-        # Keywords: join consecutive Keywords blocks with \sep between
-        # them (matches the Elsevier convention).
         if isinstance(block, Keywords):
-            groups: list[str] = []
+            group: list = []
             while i < n and isinstance(children[i], Keywords):
-                line = serialize_inlines(children[i].children).strip()
-                if line: groups.append(line)
+                group.append(children[i])
                 i += 1
-            joined = " \\sep ".join(groups)
+            terms = _split_keyword_inlines(group)
+            joined = " \\sep ".join(terms)
             parts.append(f"\\begin{{keyword}}\n{joined}\n\\end{{keyword}}\n")
             if i < n: parts.append("\n")
             continue
@@ -292,9 +366,6 @@ def serialize_document(doc: Document) -> str:
         if i < n:
             parts.append("\n")
 
-    # If meta.title is set but no Title block exists in the body, fall back
-    # to emitting \maketitle once at the top — preserves the previous
-    # behaviour for documents created via the properties dialog.
     if has_metadata and not has_title_block and not emitted_maketitle:
         parts.insert(0, "\\maketitle\n")
     body = "".join(parts)

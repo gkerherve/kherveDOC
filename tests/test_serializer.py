@@ -242,6 +242,8 @@ def test_consecutive_abstract_blocks_merge_into_one_env():
 
 
 def test_keywords_blocks_join_with_sep():
+    # Legacy form: one Keywords block per term — serializer still produces
+    # a single keyword env with \sep between.
     doc = Document(
         meta=DocMeta(),
         children=[
@@ -253,6 +255,56 @@ def test_keywords_blocks_join_with_sep():
     out = serialize_document(doc)
     assert out.count(r"\begin{keyword}") == 1
     assert r"XPS \sep PHI \sep Python" in out
+
+
+def test_single_keywords_block_with_bullet_separator_splits_back_to_sep():
+    # Preferred shape: one Keywords block with terms joined by ' · '.
+    doc = Document(
+        meta=DocMeta(),
+        children=[Keywords(children=[Text(text="XPS · PHI · Python")])],
+    )
+    out = serialize_document(doc)
+    assert r"XPS \sep PHI \sep Python" in out
+
+
+def test_elsarticle_wraps_metadata_in_frontmatter():
+    doc = Document(
+        meta=DocMeta(documentclass="elsarticle", title="", author=""),
+        children=[
+            Title(children=[Text(text="My title")]),
+            Author(children=[Text(text="Jane Doe")]),
+            Abstract(children=[Text(text="Short summary.")]),
+            Keywords(children=[Text(text="alpha · beta")]),
+            Section(level=1, children=[Text(text="Intro")]),
+        ],
+    )
+    out = serialize_document(doc)
+    # Everything from title to keywords must live inside the frontmatter env.
+    fm_start = out.index(r"\begin{frontmatter}")
+    fm_end = out.index(r"\end{frontmatter}")
+    front = out[fm_start:fm_end]
+    assert r"\title{My title}" in front
+    assert r"\author{Jane Doe}" in front
+    assert r"\begin{abstract}" in front and r"\end{abstract}" in front
+    assert r"\begin{keyword}" in front and r"\end{keyword}" in front
+    assert r"alpha \sep beta" in front
+    # And the body section comes AFTER the closing of frontmatter.
+    assert out.index(r"\section{Intro}") > fm_end
+    # No \maketitle in elsarticle — frontmatter handles it.
+    assert r"\maketitle" not in out
+
+
+def test_article_class_still_uses_preamble_title_and_maketitle():
+    doc = Document(
+        meta=DocMeta(documentclass="article"),
+        children=[
+            Title(children=[Text(text="T")]),
+            Abstract(children=[Text(text="Body")]),
+        ],
+    )
+    out = serialize_document(doc)
+    assert r"\title{T}" in out
+    assert r"\begin{frontmatter}" not in out
 
 
 def test_geometry_package_emitted_for_a4_by_default():

@@ -379,7 +379,7 @@ body
     assert "second paragraph" in text1
 
 
-def test_keyword_environment_becomes_keywords_blocks():
+def test_keyword_environment_becomes_one_keywords_block_with_bullet_separators():
     src = r"""\documentclass{article}\begin{document}
 \begin{keyword}
 XPS \sep PHI \sep Python
@@ -387,12 +387,15 @@ XPS \sep PHI \sep Python
 \end{document}"""
     doc = _round_trip(src)
     kws = [b for b in doc.children if isinstance(b, Keywords)]
-    # Three keyword groups split on \sep.
-    assert len(kws) == 3
-    flat = [" ".join(c.text for c in k.children if isinstance(c, Text)) for k in kws]
-    assert "XPS" in flat[0]
-    assert "PHI" in flat[1]
-    assert "Python" in flat[2]
+    # One Keywords block with three terms joined by ' · ' inlines.
+    assert len(kws) == 1
+    text = "".join(c.text for c in kws[0].children if isinstance(c, Text))
+    assert "XPS" in text and "PHI" in text and "Python" in text
+    assert " · " in text   # the visible separator
+    # Round-trip via the serializer: " · " becomes " \sep " again.
+    from khervedoc.serializer import serialize_document
+    out = serialize_document(doc)
+    assert r"XPS \sep PHI \sep Python" in out
 
 
 def test_frontmatter_wrapper_is_flattened():

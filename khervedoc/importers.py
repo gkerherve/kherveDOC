@@ -406,13 +406,22 @@ def _dispatch(kind: str, m: re.Match) -> object:
             out.append(Abstract(children=_parse_inlines(para)))
         return out
     if kind == "keyword":
-        # \sep separates keywords; emit one Keywords block per item so
-        # they can be edited independently in the formatted view.
+        # \sep separates terms in the source. Render them in the editor
+        # as a single Keywords block whose children are the terms joined
+        # by a visible ' · ' separator — the previous per-term layout
+        # produced one italic paragraph per keyword, which the user
+        # rightly disliked. The serializer splits on the same visible
+        # separator to reconstruct the \sep-separated form.
         body = m.group(1)
-        # Split on \sep — preserving the inline content of each keyword.
-        parts = re.split(r"\\sep\b\s*", body)
-        return [Keywords(children=_parse_inlines(p.strip()))
-                for p in parts if p.strip()]
+        parts = [p.strip() for p in re.split(r"\\sep\b\s*", body) if p.strip()]
+        if not parts:
+            return []
+        inlines: list = []
+        for i, part in enumerate(parts):
+            if i > 0:
+                inlines.append(Text(text=" · "))
+            inlines.extend(_parse_inlines(part))
+        return [Keywords(children=inlines)]
     if kind == "bibliography":
         return RawLatex(text=m.group(0))
     if kind in ("flushleft", "flushright", "center"):
