@@ -204,6 +204,12 @@ class DocMeta:
     # Captures \author[opts]{... \corref{...}}, \ead, \cortext, \affiliation
     # and similar commands the model doesn't natively represent.
     frontmatter_extras: str = ""
+    # Verbatim LaTeX to drop after \usepackage{...} and before
+    # \begin{document}. Captures preamble customisation we don't model,
+    # most importantly \lstset{...} (listings styling — frame, line
+    # numbers, syntax-colour keywordstyle/commentstyle/stringstyle),
+    # \definecolor, \hypersetup, \newcommand, \theoremstyle, etc.
+    preamble_extras: str = ""
 
 
 @dataclass
@@ -314,6 +320,7 @@ def _build_document(d: dict) -> Document:
         line_spacing=float(meta_d.get("line_spacing", 1.0)),
         paragraph_indent=bool(meta_d.get("paragraph_indent", True)),
         frontmatter_extras=str(meta_d.get("frontmatter_extras", "")),
+        preamble_extras=str(meta_d.get("preamble_extras", "")),
     )
     return Document(
         children=[_build_block(b) for b in d.get("children", [])],

@@ -398,6 +398,52 @@ XPS \sep PHI \sep Python
     assert r"XPS \sep PHI \sep Python" in out
 
 
+def test_preamble_extras_captures_lstset_and_friends():
+    src = r"""\documentclass{article}
+\usepackage{listings}
+\usepackage{xcolor}
+\lstset{
+    language=Python,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    commentstyle=\color{gray},
+    frame=single,
+    numbers=left
+}
+\definecolor{mycolor}{RGB}{12,34,56}
+\hypersetup{colorlinks=true}
+\newcommand{\bigtitle}[1]{\Large\textbf{#1}}
+\begin{document}
+body
+\end{document}"""
+    doc = _round_trip(src)
+    extras = doc.meta.preamble_extras
+    assert r"\lstset" in extras
+    assert "frame=single" in extras
+    assert "numbers=left" in extras
+    assert r"\definecolor{mycolor}" in extras
+    assert r"\hypersetup{colorlinks=true}" in extras
+    assert r"\newcommand{\bigtitle}" in extras
+    # \usepackage and \documentclass must NOT appear (already modelled).
+    assert r"\usepackage" not in extras
+    assert r"\documentclass" not in extras
+
+
+def test_preamble_extras_round_trips_through_serializer():
+    from khervedoc.serializer import serialize_document
+    src = r"""\documentclass{article}
+\usepackage{listings}
+\lstset{language=Python, frame=single, numbers=left}
+\begin{document}
+body
+\end{document}"""
+    doc = _round_trip(src)
+    out = serialize_document(doc)
+    assert r"\lstset{language=Python, frame=single, numbers=left}" in out
+    # And the lstset comes BEFORE \begin{document}.
+    assert out.index(r"\lstset") < out.index(r"\begin{document}")
+
+
 def test_elsarticle_imports_frontmatter_extras_into_meta():
     src = r"""\documentclass{elsarticle}
 \begin{document}

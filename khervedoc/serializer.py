@@ -254,6 +254,12 @@ def serialize_document(doc: Document) -> str:
         f"\\usepackage{{{p}}}" for p in m.packages)
     if preamble_extras:
         packages += "\n" + preamble_extras
+    # User-supplied preamble customisation (\lstset for listings styling,
+    # \definecolor, \hypersetup, \newcommand etc.) — preserved verbatim
+    # from the imported .tex so the PDF keeps its framed line-numbered
+    # syntax-coloured code blocks and any other custom rendering.
+    if m.preamble_extras and m.preamble_extras.strip():
+        packages += "\n" + m.preamble_extras.strip()
 
     # Pull title / author content out of the body (or fall back to meta).
     inline_title: str | None = None

@@ -61,6 +61,42 @@ def _strip_balanced_command(src: str, command: str) -> str:
         pos = p
 
 
+def _extract_preamble_extras(src: str) -> str:
+    r"""Capture everything between \documentclass and \begin{document}
+    that the model doesn't already represent.
+
+    Removed (already modelled):
+      - \documentclass[opts]{class}
+      - \usepackage[opts]{name}
+      - \title{...}, \author{...}, \journal{...}
+      - line comments
+
+    Kept (so they survive the round-trip and the PDF retains its
+    styling): \lstset, \definecolor, \hypersetup, \newcommand,
+    \renewcommand, \setlength, \theoremstyle, \newtheorem,
+    \DeclareMathOperator, any other customisation the user wrote
+    before \begin{document}.
+    """
+    doc_m = re.search(r"\\documentclass\b", src)
+    body_m = re.search(r"\\begin\{document\}", src)
+    if not doc_m or not body_m:
+        return ""
+    preamble = src[doc_m.start():body_m.start()]
+    # Drop comments first so they don't interfere with the strip patterns.
+    preamble = _strip_tex_comments(preamble)
+    # Strip the patterns we already represent in the model.
+    preamble = re.sub(
+        r"\\documentclass(?:\[[^\]]*\])?\{[^}]+\}", "", preamble)
+    preamble = re.sub(
+        r"\\usepackage(?:\[[^\]]*\])?\{[^}]+\}", "", preamble)
+    preamble = _strip_balanced_command(preamble, "title")
+    preamble = _strip_balanced_command(preamble, "author")
+    preamble = _strip_balanced_command(preamble, "journal")
+    # Collapse runs of blank lines.
+    preamble = re.sub(r"\n\s*\n+", "\n", preamble)
+    return preamble.strip()
+
+
 def _extract_frontmatter_extras(src: str) -> str:
     r"""Return whatever lives inside \begin{frontmatter} that the model
     doesn't already represent (so it can be re-emitted verbatim for
@@ -627,6 +663,11 @@ def import_tex(tex_source: str) -> Document:
         frontmatter_extras = _extract_frontmatter_extras(tex_source)
     else:
         frontmatter_extras = ""
+    # Preserve every other preamble customisation (\lstset for listings
+    # styling, \definecolor, \hypersetup, custom \newcommand etc.) so
+    # the PDF re-compiled from kherveDOC retains the framed line-numbered
+    # syntax-coloured code blocks the user authored upstream.
+    preamble_extras = _extract_preamble_extras(tex_source)
     meta = DocMeta(
         title=(title_text or "").strip(),
         author=author_clean,
@@ -634,6 +675,7 @@ def import_tex(tex_source: str) -> Document:
         packages=packages or ["amsmath", "graphicx"],
         page_size=page_size,
         frontmatter_extras=frontmatter_extras,
+        preamble_extras=preamble_extras,
     )
 
     body_m = _BODY_RE.search(tex_source)
