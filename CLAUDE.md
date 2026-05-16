@@ -6,13 +6,23 @@ Remote: https://github.com/gkerherve/kherveDOC
 
 ## Branching: `dev` is the working branch
 
-**All my work goes on `dev`.** I do not commit to `main` directly. `main`
-is the stable mainline that lags behind `dev` until the user explicitly
-asks for a merge.
+**All my work goes on `dev` in the main repo checkout.** I do not commit
+to `main` directly. `main` is the stable mainline that lags behind `dev`
+until the user explicitly asks for a merge.
+
+**Never work in a git worktree (e.g. `.claude/worktrees/...`) or on a
+throwaway branch like `claude/<name>`.** The user watches commits land
+on `dev` in PyCharm's Git Log; commits made on worktree branches do not
+show up there. If I find myself in a worktree or on a non-`dev` branch,
+switch to the main repo path
+(`C:\Users\gwilh\OneDrive - Imperial College London\Documents\MEGAsync\Programs\Python\kherveDOC`)
+and `git checkout dev` before editing anything.
 
 Workflow:
-1. Confirm I am on `dev` (`git rev-parse --abbrev-ref HEAD`). If not,
-   `git checkout dev`.
+1. Confirm I am in the main repo (not a worktree) and on `dev`
+   (`git rev-parse --abbrev-ref HEAD` → `dev`,
+   `git rev-parse --show-toplevel` → the main repo path above). If not,
+   `cd` to the main repo and `git checkout dev`.
 2. If `dev` doesn't exist locally, create it from `main`:
    `git checkout -b dev origin/dev` (or branch from `origin/main` and
    push with `-u origin dev`).
