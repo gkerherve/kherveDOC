@@ -149,7 +149,13 @@ def _parse_inlines(s: str) -> list:
             m = _match_macro(s, i)
             if m is not None:
                 node, end = m
-                out.append(node)
+                # Mark macros that wrap multiple children flatten into a
+                # list here. Extend the inline stream so the downstream
+                # serializer never sees a list-as-inline-node.
+                if isinstance(node, list):
+                    out.extend(node)
+                else:
+                    out.append(node)
                 i = end
                 continue
         # Plain text run up to the next $ or recognised macro.
@@ -164,7 +170,20 @@ def _parse_inlines(s: str) -> list:
         else:
             out.append(Text(text=_unescape_text(s[i:end])))
             i = end
-    return [n for n in out if not (isinstance(n, Text) and n.text == "")]
+    # Drop empty text fragments left over from unknown-macro consumption.
+    out = [n for n in out if not (isinstance(n, Text) and n.text == "")]
+    # Merge adjacent text runs with the same marks so a sequence like
+    # `\texttt{extract\_all}` produces one `\texttt{extract\_all}` on
+    # re-serialisation, not five back-to-back `\texttt{}` groups.
+    merged: list = []
+    for n in out:
+        if (isinstance(n, Text) and merged and isinstance(merged[-1], Text)
+                and sorted(merged[-1].marks) == sorted(n.marks)):
+            merged[-1] = Text(text=merged[-1].text + n.text,
+                              marks=list(n.marks))
+        else:
+            merged.append(n)
+    return merged
 
 
 # Macros that wrap a single brace argument and translate to a Text mark.
