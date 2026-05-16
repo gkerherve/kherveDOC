@@ -88,6 +88,14 @@ SYMBOL_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
         (r"\acute{a}", "á"), (r"\grave{a}", "à"),
         (r"\check{a}", "ǎ"), (r"\breve{a}", "ă"),
     ]),
+    # \Kstroke renders a capital K with a diagonal stroke through the
+    # right leg — a Breton spelling abbreviation the author uses for
+    # surnames like "Kerherve". The macro is provided by kherveDOC in
+    # the preamble (see serializer._KSTROKE_PROVIDE), so users get the
+    # glyph without having to copy a \newcommand into every document.
+    ("kherveDOC", [
+        (r"\Kstroke", "Ꝁ"),
+    ]),
 ]
 
 

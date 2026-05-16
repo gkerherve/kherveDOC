@@ -1122,6 +1122,20 @@ class DocumentEditor(QWidget):
     def insert_page_break(self) -> None:
         self._insert_raw_block(r"\newpage")
 
+    def insert_multicol_region(self) -> None:
+        """Insert a 2-column \\begin{multicols}{2}...\\end{multicols} block
+        with placeholder text. Only the content inside the environment
+        flows in two columns; the rest of the document stays one-column.
+        For a whole-document two-column layout, use
+        File > Document settings > Layout > Two-column document."""
+        self._insert_raw_block(
+            "\\begin{multicols}{2}\n"
+            "Replace this paragraph with the content that should flow "
+            "across two columns. Add as many paragraphs as you like — "
+            "everything between \\begin{multicols} and \\end{multicols} "
+            "is balanced into the two columns automatically.\n"
+            "\\end{multicols}")
+
     def insert_horizontal_rule(self) -> None:
         self._insert_raw_block(r"\hrulefill")
 

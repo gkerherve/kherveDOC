@@ -173,7 +173,7 @@ Block = Union[Paragraph, Section, MathBlock, List, Figure, Table, RawLatex,
 # equation-builder palette uses \square as the placeholder slot for users
 # to fill in. Without it, every freshly-inserted template raises an
 # "Undefined control sequence \square" error from tectonic.
-DEFAULT_PACKAGES = ["amsmath", "amssymb", "graphicx"]
+DEFAULT_PACKAGES = ["amsmath", "amssymb", "graphicx", "multicol"]
 
 
 @dataclass
@@ -199,6 +199,10 @@ class DocMeta:
     # Indent the first line of each paragraph? Most modern docs prefer no
     # indent with extra paragraph spacing; LaTeX's default is the opposite.
     paragraph_indent: bool = True
+    # When true, pass `twocolumn` to \documentclass so the whole document
+    # flows in two columns. Independent from in-flow \begin{multicols}{2}
+    # regions, which the user inserts via Insert > Multi-column region.
+    two_column: bool = False
     # Verbatim LaTeX to drop inside \begin{frontmatter} (Elsevier classes)
     # alongside the model-driven title / author / abstract / keyword envs.
     # Captures \author[opts]{... \corref{...}}, \ead, \cortext, \affiliation
@@ -319,6 +323,7 @@ def _build_document(d: dict) -> Document:
         body_font_family=str(meta_d.get("body_font_family", "default")),
         line_spacing=float(meta_d.get("line_spacing", 1.0)),
         paragraph_indent=bool(meta_d.get("paragraph_indent", True)),
+        two_column=bool(meta_d.get("two_column", False)),
         frontmatter_extras=str(meta_d.get("frontmatter_extras", "")),
         preamble_extras=str(meta_d.get("preamble_extras", "")),
     )

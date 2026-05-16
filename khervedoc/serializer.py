@@ -203,6 +203,24 @@ def _body_font_pt_class_option(pt: int) -> str:
     return f"{min((10, 11, 12), key=lambda v: abs(v - pt))}pt"
 
 
+def _class_options(m) -> str:
+    """Comma-joined documentclass options: font size, twocolumn, etc."""
+    opts = [_body_font_pt_class_option(m.body_font_pt)]
+    if getattr(m, "two_column", False):
+        opts.append("twocolumn")
+    return ",".join(opts)
+
+
+# kherveDOC-provided macros. \providecommand (not \newcommand) so that
+# imported documents which already define \Kstroke in their preamble
+# survive the round-trip without a "command already defined" error.
+# \rotatebox needs graphicx, which is in DEFAULT_PACKAGES.
+_KSTROKE_PROVIDE = (
+    r"\providecommand{\Kstroke}"
+    r"{K\hspace{-0.55em}\raisebox{-0.5ex}{\rotatebox{40}{--}}\hspace{-0.1em}}"
+)
+
+
 def _split_keyword_inlines(blocks: list) -> list[str]:
     r"""Given one or more consecutive Keywords blocks, flatten their
     inlines and split into individual keyword terms.
@@ -254,6 +272,9 @@ def serialize_document(doc: Document) -> str:
         f"\\usepackage{{{p}}}" for p in m.packages)
     if preamble_extras:
         packages += "\n" + preamble_extras
+    # Always provide \Kstroke so users can pick it from the Symbols
+    # palette without manually wiring a \newcommand into every file.
+    packages += "\n" + _KSTROKE_PROVIDE
     # User-supplied preamble customisation (\lstset for listings styling,
     # \definecolor, \hypersetup, \newcommand etc.) — preserved verbatim
     # from the imported .tex so the PDF keeps its framed line-numbered
@@ -330,7 +351,7 @@ def serialize_document(doc: Document) -> str:
         body = "".join(body_parts)
 
         return (
-            f"\\documentclass[{_body_font_pt_class_option(m.body_font_pt)}]"
+            f"\\documentclass[{_class_options(m)}]"
             f"{{{m.documentclass}}}\n"
             f"{packages}\n"
             f"\\begin{{document}}\n"
@@ -386,7 +407,7 @@ def serialize_document(doc: Document) -> str:
     body = "".join(parts)
 
     return (
-        f"\\documentclass[{_body_font_pt_class_option(m.body_font_pt)}]"
+        f"\\documentclass[{_class_options(m)}]"
         f"{{{m.documentclass}}}\n"
         f"{packages}\n"
         f"{preamble_meta}"

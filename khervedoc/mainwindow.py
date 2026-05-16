@@ -38,13 +38,16 @@ from .serializer import serialize_document
 class _CompileWorker(QThread):
     finished_with = Signal(object)
 
-    def __init__(self, tex_source: str, workdir: Path):
+    def __init__(self, tex_source: str, workdir: Path,
+                 source_dir: Path | None = None):
         super().__init__()
         self._tex = tex_source
         self._workdir = workdir
+        self._source_dir = source_dir
 
     def run(self) -> None:
-        self.finished_with.emit(compile_tex(self._tex, self._workdir))
+        self.finished_with.emit(
+            compile_tex(self._tex, self._workdir, source_dir=self._source_dir))
 
 
 # ---------- document properties dialog ----------
@@ -141,6 +144,9 @@ class DocSettingsDialog(QDialog):
         self._m_bottom = _margin_spin(meta.margin_bottom_cm)
         self._m_left = _margin_spin(meta.margin_left_cm)
         self._m_right = _margin_spin(meta.margin_right_cm)
+        self._two_column = QCheckBox(
+            "Two-column document (whole document flows in two columns)")
+        self._two_column.setChecked(meta.two_column)
 
         w = QWidget()
         form = QFormLayout(w)
@@ -149,6 +155,11 @@ class DocSettingsDialog(QDialog):
         form.addRow("Bottom:", self._m_bottom)
         form.addRow("Left:", self._m_left)
         form.addRow("Right:", self._m_right)
+        form.addRow(QLabel("<b>Columns</b>"))
+        form.addRow("", self._two_column)
+        form.addRow(QLabel(
+            "<i>For a two-column region inside an otherwise one-column<br>"
+            "document, use Insert &rarr; Multi-column region instead.</i>"))
         return w
 
     def _build_packages_tab(self, meta: DocMeta) -> QWidget:
@@ -181,6 +192,9 @@ class DocSettingsDialog(QDialog):
             body_font_family=str(self._font_family.currentData() or "default"),
             line_spacing=self._line_spacing.value(),
             paragraph_indent=self._para_indent.isChecked(),
+            two_column=self._two_column.isChecked(),
+            frontmatter_extras=self._orig_meta.frontmatter_extras,
+            preamble_extras=self._orig_meta.preamble_extras,
         )
 
 
@@ -305,6 +319,12 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self._current_path: Path | None = None
+        # Imported (.tex/.docx) files don't get a "current path" — the user
+        # has to Save As before kherveDOC knows where to save the .kdocz.
+        # But we still want the original file's parent directory available
+        # so relative \includegraphics paths (`Images/foo.png` next to the
+        # imported .tex) resolve when compiling the preview.
+        self._import_source_dir: Path | None = None
         self._kdocz_extract_dir: Path | None = None   # set when opening a .kdocz
         self._build_dir = Path(tempfile.mkdtemp(prefix="khervedoc-"))
         self._compile_worker: _CompileWorker | None = None
@@ -548,6 +568,8 @@ class MainWindow(QMainWindow):
                                      triggered=e.insert_page_break)
         self.act_hrule = QAction(icons.horizontal_rule(), "Horizontal rule", self,
                                  triggered=e.insert_horizontal_rule)
+        self.act_multicol = QAction("&Multi-column region (2)...", self,
+                                    triggered=e.insert_multicol_region)
 
         # View
         self.act_view_formatted = QAction("Show &Formatted tab", self,
@@ -632,6 +654,7 @@ class MainWindow(QMainWindow):
         m_insert.addAction(self.act_figure); m_insert.addAction(self.act_table)
         m_insert.addSeparator()
         m_insert.addAction(self.act_pagebreak); m_insert.addAction(self.act_hrule)
+        m_insert.addAction(self.act_multicol)
         m_insert.addAction(self.act_code_block)
         m_insert.addAction(self.act_raw)
 
@@ -758,6 +781,7 @@ class MainWindow(QMainWindow):
 
     def _new(self) -> None:
         self._current_path = None
+        self._import_source_dir = None
         self._editor.set_document(_starter_document())
         self._update_title()
 
@@ -786,6 +810,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Open failed", str(exc))
             return
         self._current_path = path
+        self._import_source_dir = None  # current_path supersedes any prior import
         self._editor.set_document(doc)
         self._update_title()
         self._remember_recent(path)
@@ -853,6 +878,10 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Import failed", str(exc))
             return
         self._current_path = None
+        # Remember where the .tex came from so relative \includegraphics
+        # paths (e.g. Images/foo.png next to main.tex) resolve when we
+        # compile the preview in a temp build dir.
+        self._import_source_dir = path.parent
         self._editor.set_document(doc)
         self.setWindowTitle(f"kherveDOC {version_string()} — {path.stem} (imported)")
         self._status.showMessage(f"Imported {path.name} — Save As to keep it", 6000)
@@ -877,6 +906,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Import failed", str(exc))
             return
         self._current_path = None
+        self._import_source_dir = None  # docx images are extracted into build_dir
         self._editor.set_document(doc)
         self.setWindowTitle(f"kherveDOC {version_string()} — {path.stem} (imported)")
         n_imgs = len(list(image_dir.glob("image_*"))) if image_dir.exists() else 0
@@ -898,8 +928,9 @@ class MainWindow(QMainWindow):
         path_s, _ = QFileDialog.getSaveFileName(
             self, "Export PDF", "document.pdf", "PDF (*.pdf)")
         if not path_s: return
+        source_dir = self._resolved_source_dir()
         result = compile_tex(serialize_document(self._editor.get_document()),
-                             self._build_dir)
+                             self._build_dir, source_dir=source_dir)
         if result.ok and result.pdf_path is not None:
             Path(path_s).write_bytes(result.pdf_path.read_bytes())
             self._status.showMessage(f"Exported {path_s}", 4000)
@@ -1069,6 +1100,14 @@ class MainWindow(QMainWindow):
                 lambda: setattr(self, "_suppress_latex_update", False))
         self._kick_compile()
 
+    def _resolved_source_dir(self) -> Path | None:
+        """Where to look for relative asset paths (\\includegraphics etc.).
+        Prefer the current saved-doc location; fall back to an imported
+        .tex's original folder so its `Images/` directory resolves."""
+        if self._current_path is not None:
+            return self._current_path.parent
+        return self._import_source_dir
+
     def _kick_compile(self) -> None:
         if not tectonic_available():
             self._preview.show_message(
@@ -1079,7 +1118,8 @@ class MainWindow(QMainWindow):
             return
         tex = serialize_document(self._editor.get_document())
         self._latex_view.set_source(tex)
-        self._compile_worker = _CompileWorker(tex, self._build_dir)
+        source_dir = self._resolved_source_dir()
+        self._compile_worker = _CompileWorker(tex, self._build_dir, source_dir)
         self._compile_worker.finished_with.connect(self._on_compile_done)
         self._compile_worker.start()
         self._status.showMessage("Compiling...", 0)

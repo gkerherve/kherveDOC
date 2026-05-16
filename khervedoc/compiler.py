@@ -43,11 +43,23 @@ def tectonic_available() -> bool:
     return _find_tectonic() is not None
 
 
-def compile_tex(tex_source: str, workdir: Path, basename: str = "document") -> CompileResult:
+def compile_tex(
+    tex_source: str,
+    workdir: Path,
+    basename: str = "document",
+    source_dir: Path | None = None,
+) -> CompileResult:
     """Write `tex_source` to `workdir/basename.tex` and compile with tectonic.
 
     `workdir` is created if missing. Returns a CompileResult; on failure the
     `log` field contains tectonic's full output for diagnosis.
+
+    `source_dir`, when supplied, is the directory of the user's original
+    document. It's added to TEXINPUTS so relative \\includegraphics paths
+    (e.g. `Images/foo.png` next to the .tex) resolve even though we
+    compile in a temp `workdir`. We also pass `-Z continue-on-errors`
+    so a single missing image doesn't halt the whole preview — tectonic
+    still emits the PDF with a "?" placeholder where the image would go.
     """
     workdir.mkdir(parents=True, exist_ok=True)
     tex_path = workdir / f"{basename}.tex"
@@ -63,10 +75,20 @@ def compile_tex(tex_source: str, workdir: Path, basename: str = "document") -> C
                   "Install it from https://tectonic-typesetting.github.io/",
         )
 
+    env = os.environ.copy()
+    if source_dir is not None and Path(source_dir).is_dir():
+        # TEXINPUTS uses ':' on POSIX and ';' on Windows. The trailing
+        # separator preserves tectonic's default search path so bundled
+        # classes/packages still resolve.
+        sep = ";" if os.name == "nt" else ":"
+        existing = env.get("TEXINPUTS", "")
+        env["TEXINPUTS"] = f"{Path(source_dir)}{sep}{existing}"
+
     try:
         proc = subprocess.run(
             [
                 tectonic_path,
+                "-Z", "continue-on-errors",
                 "--keep-logs",
                 "--synctex",
                 "--outdir", str(workdir),
@@ -75,6 +97,7 @@ def compile_tex(tex_source: str, workdir: Path, basename: str = "document") -> C
             capture_output=True,
             text=True,
             timeout=120,
+            env=env,
         )
     except subprocess.TimeoutExpired:
         return CompileResult(False, None, "", "tectonic timed out after 120s")

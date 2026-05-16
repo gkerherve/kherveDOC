@@ -400,3 +400,47 @@ def test_set_title_emits_maketitle():
     out = serialize_document(doc)
     assert r"\title{X}" in out
     assert r"\maketitle" in out
+
+
+def test_two_column_adds_twocolumn_class_option():
+    doc = Document(meta=DocMeta(two_column=True),
+                   children=[Paragraph(children=[Text(text="hi")])])
+    out = serialize_document(doc)
+    # Class options are comma-joined and include twocolumn alongside size.
+    assert "twocolumn" in out.splitlines()[0]
+    assert r"\documentclass[" in out.splitlines()[0]
+
+
+def test_two_column_default_off():
+    doc = Document(meta=DocMeta(),
+                   children=[Paragraph(children=[Text(text="hi")])])
+    assert "twocolumn" not in serialize_document(doc).splitlines()[0]
+
+
+def test_two_column_works_with_elsarticle():
+    doc = Document(meta=DocMeta(documentclass="elsarticle",
+                                two_column=True),
+                   children=[Paragraph(children=[Text(text="hi")])])
+    out = serialize_document(doc)
+    assert "twocolumn" in out.splitlines()[0]
+    assert "{elsarticle}" in out.splitlines()[0]
+
+
+def test_kstroke_macro_provided_in_preamble():
+    """\\Kstroke is a kherveDOC built-in symbol; the preamble must define
+    it via \\providecommand so users picking it from the symbol palette
+    get a glyph rather than an Undefined-control-sequence error."""
+    doc = Document(meta=DocMeta(),
+                   children=[Paragraph(children=[Text(text="hi")])])
+    out = serialize_document(doc)
+    assert r"\providecommand{\Kstroke}" in out
+
+
+def test_kstroke_uses_providecommand_not_newcommand():
+    """Importers may carry the user's own \\newcommand{\\Kstroke}{...}
+    in preamble_extras; \\providecommand lets ours coexist without a
+    "command already defined" error from tectonic."""
+    doc = Document(meta=DocMeta(),
+                   children=[Paragraph(children=[Text(text="hi")])])
+    out = serialize_document(doc)
+    assert r"\newcommand{\Kstroke}" not in out
