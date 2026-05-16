@@ -172,16 +172,49 @@ def serialize_block(node: Block) -> str:
     raise TypeError(f"Unknown block node: {type(node).__name__}")
 
 
+_FONT_FAMILY_PACKAGES = {
+    "default":  "",                  # Computer Modern, LaTeX default
+    "times":    "\\usepackage{times}",
+    "palatino": "\\usepackage{palatino}",
+    "helvetica":"\\usepackage{helvet}\n\\renewcommand{\\familydefault}{\\sfdefault}",
+    "courier":  "\\usepackage{courier}\n\\renewcommand{\\familydefault}{\\ttdefault}",
+    "charter":  "\\usepackage[bitstream-charter]{mathdesign}",
+    "libertine":"\\usepackage{libertine}",
+}
+
+
+def _body_font_pt_class_option(pt: int) -> str:
+    """LaTeX article supports 10/11/12pt. Snap to the closest."""
+    return f"{min((10, 11, 12), key=lambda v: abs(v - pt))}pt"
+
+
 def serialize_document(doc: Document) -> str:
     from . import page_sizes
     page = page_sizes.by_code(doc.meta.page_size)
-    # 2.5cm uniform margins — matches the Word-document default the user
-    # is comparing against, and stops short documents from rendering as a
-    # tiny ribbon of text centred on a vast white page.
-    geometry = (f"\\usepackage[{page.geometry_option},"
-                f"margin=2.5cm]{{geometry}}")
+    m = doc.meta
+    # Margins flow into geometry per-side so users can pick asymmetric layouts.
+    geometry = (
+        f"\\usepackage[{page.geometry_option},"
+        f"top={m.margin_top_cm}cm,bottom={m.margin_bottom_cm}cm,"
+        f"left={m.margin_left_cm}cm,right={m.margin_right_cm}cm]{{geometry}}"
+    )
+    font_pkg = _FONT_FAMILY_PACKAGES.get(m.body_font_family, "")
+    spacing_pkg = "\\usepackage{setspace}"
+    spacing_cmd = ""
+    if abs(m.line_spacing - 1.0) > 0.01:
+        if abs(m.line_spacing - 1.5) < 0.01:
+            spacing_cmd = "\\onehalfspacing"
+        elif abs(m.line_spacing - 2.0) < 0.01:
+            spacing_cmd = "\\doublespacing"
+        else:
+            spacing_cmd = f"\\setstretch{{{m.line_spacing}}}"
+    parindent = "" if m.paragraph_indent else "\\setlength{\\parindent}{0pt}\n\\setlength{\\parskip}{0.8em}"
+
+    preamble_extras = "\n".join(p for p in (font_pkg, spacing_pkg, spacing_cmd, parindent) if p)
     packages = geometry + "\n" + "\n".join(
-        f"\\usepackage{{{p}}}" for p in doc.meta.packages)
+        f"\\usepackage{{{p}}}" for p in m.packages)
+    if preamble_extras:
+        packages += "\n" + preamble_extras
 
     # A Title block in the document body takes precedence over meta.title —
     # this lets the user pick the "Title" style inside the editor and have
@@ -224,7 +257,8 @@ def serialize_document(doc: Document) -> str:
     body = "".join(parts)
 
     return (
-        f"\\documentclass{{{doc.meta.documentclass}}}\n"
+        f"\\documentclass[{_body_font_pt_class_option(m.body_font_pt)}]"
+        f"{{{m.documentclass}}}\n"
         f"{packages}\n"
         f"{preamble_meta}"
         f"\\begin{{document}}\n"

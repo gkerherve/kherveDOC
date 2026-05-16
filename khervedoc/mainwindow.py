@@ -5,14 +5,15 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QSettings, QThread, Signal
 from PySide6.QtGui import (
     QAction, QActionGroup, QGuiApplication, QKeySequence,
 )
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QLabel,
-    QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit, QSlider, QStatusBar,
-    QTabWidget, QToolBar, QToolButton, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
+    QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
+    QMessageBox, QPlainTextEdit, QSlider, QSpinBox, QStatusBar, QTabWidget,
+    QToolBar, QToolButton, QVBoxLayout, QWidget,
 )
 
 from . import __version__, git_backend, icons, kdocz, page_sizes, version_string
@@ -44,40 +45,143 @@ class _CompileWorker(QThread):
 
 # ---------- document properties dialog ----------
 
-class DocPropertiesDialog(QDialog):
+_FONT_FAMILIES = [
+    ("default",   "Computer Modern (LaTeX default)"),
+    ("times",     "Times Roman"),
+    ("palatino",  "Palatino"),
+    ("charter",   "Charter"),
+    ("libertine", "Linux Libertine"),
+    ("helvetica", "Helvetica (sans-serif)"),
+    ("courier",   "Courier (monospace)"),
+]
+
+
+class DocSettingsDialog(QDialog):
+    """All document-level typesetting knobs in one tabbed dialog."""
+
     def __init__(self, meta: DocMeta, parent: QWidget | None = None):
         super().__init__(parent)
-        self.setWindowTitle("Document properties")
-        self._title = QLineEdit(meta.title, self)
-        self._author = QLineEdit(meta.author, self)
-        self._docclass = QComboBox(self)
-        self._docclass.setEditable(True)
-        self._docclass.addItems(["article", "report", "book", "letter", "beamer"])
-        self._docclass.setCurrentText(meta.documentclass)
-        self._packages = QPlainTextEdit("\n".join(meta.packages), self)
-        self._packages.setPlaceholderText("One package name per line (e.g. amsmath)")
-        self._packages.setFixedHeight(120)
+        self.setWindowTitle("Document settings")
+        self.resize(560, 540)
+        # Keep a reference so result_meta can carry forward fields this
+        # dialog doesn't expose (page_size, etc.) without dropping them.
+        self._orig_meta = meta
 
-        form = QFormLayout()
-        form.addRow("Title:", self._title)
-        form.addRow("Author:", self._author)
-        form.addRow("Document class:", self._docclass)
-        form.addRow("Packages:", self._packages)
+        tabs = QTabWidget(self)
+        tabs.addTab(self._build_metadata_tab(meta), "Metadata")
+        tabs.addTab(self._build_text_tab(meta), "Text")
+        tabs.addTab(self._build_layout_tab(meta), "Layout")
+        tabs.addTab(self._build_packages_tab(meta), "Packages")
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject)
 
         layout = QVBoxLayout(self)
-        layout.addLayout(form); layout.addWidget(buttons)
+        layout.addWidget(tabs); layout.addWidget(buttons)
+
+    # ---- tabs ----
+
+    def _build_metadata_tab(self, meta: DocMeta) -> QWidget:
+        self._title = QLineEdit(meta.title)
+        self._author = QLineEdit(meta.author)
+        self._docclass = QComboBox(); self._docclass.setEditable(True)
+        self._docclass.addItems(["article", "report", "book", "letter",
+                                 "beamer", "memoir"])
+        self._docclass.setCurrentText(meta.documentclass)
+
+        w = QWidget()
+        form = QFormLayout(w)
+        form.addRow("Title:", self._title)
+        form.addRow("Author:", self._author)
+        form.addRow("Document class:", self._docclass)
+        return w
+
+    def _build_text_tab(self, meta: DocMeta) -> QWidget:
+        self._font_family = QComboBox()
+        for code, label in _FONT_FAMILIES:
+            self._font_family.addItem(label, code)
+        idx = self._font_family.findData(meta.body_font_family)
+        if idx >= 0: self._font_family.setCurrentIndex(idx)
+
+        self._body_pt = QComboBox()
+        for v in (10, 11, 12):
+            self._body_pt.addItem(f"{v} pt", v)
+        idx = self._body_pt.findData(meta.body_font_pt)
+        if idx >= 0: self._body_pt.setCurrentIndex(idx)
+
+        self._line_spacing = QDoubleSpinBox()
+        self._line_spacing.setRange(0.8, 3.0)
+        self._line_spacing.setSingleStep(0.1)
+        self._line_spacing.setDecimals(2)
+        self._line_spacing.setValue(meta.line_spacing)
+
+        self._para_indent = QCheckBox("Indent first line of every paragraph")
+        self._para_indent.setChecked(meta.paragraph_indent)
+
+        w = QWidget()
+        form = QFormLayout(w)
+        form.addRow("Body font:", self._font_family)
+        form.addRow("Body size:", self._body_pt)
+        form.addRow("Line spacing:", self._line_spacing)
+        form.addRow("", self._para_indent)
+        return w
+
+    def _build_layout_tab(self, meta: DocMeta) -> QWidget:
+        def _margin_spin(value: float) -> QDoubleSpinBox:
+            sb = QDoubleSpinBox()
+            sb.setRange(0.5, 6.0); sb.setSingleStep(0.1); sb.setSuffix(" cm")
+            sb.setDecimals(1); sb.setValue(value)
+            return sb
+
+        self._m_top = _margin_spin(meta.margin_top_cm)
+        self._m_bottom = _margin_spin(meta.margin_bottom_cm)
+        self._m_left = _margin_spin(meta.margin_left_cm)
+        self._m_right = _margin_spin(meta.margin_right_cm)
+
+        w = QWidget()
+        form = QFormLayout(w)
+        form.addRow(QLabel("<b>Page margins</b>"))
+        form.addRow("Top:", self._m_top)
+        form.addRow("Bottom:", self._m_bottom)
+        form.addRow("Left:", self._m_left)
+        form.addRow("Right:", self._m_right)
+        return w
+
+    def _build_packages_tab(self, meta: DocMeta) -> QWidget:
+        self._packages = QPlainTextEdit("\n".join(meta.packages))
+        self._packages.setPlaceholderText("One package name per line")
+        w = QWidget()
+        v = QVBoxLayout(w)
+        v.addWidget(QLabel(
+            "Extra LaTeX packages, one per line. "
+            "geometry / setspace are added automatically by kherveDOC."))
+        v.addWidget(self._packages, 1)
+        return w
+
+    # ---- result ----
 
     def result_meta(self) -> DocMeta:
-        pkgs = [p.strip() for p in self._packages.toPlainText().splitlines() if p.strip()]
+        pkgs = [p.strip() for p in self._packages.toPlainText().splitlines()
+                if p.strip()]
         return DocMeta(
             title=self._title.text(),
             author=self._author.text(),
             documentclass=self._docclass.currentText().strip() or "article",
             packages=pkgs,
+            page_size=self._orig_meta.page_size,
+            margin_top_cm=self._m_top.value(),
+            margin_bottom_cm=self._m_bottom.value(),
+            margin_left_cm=self._m_left.value(),
+            margin_right_cm=self._m_right.value(),
+            body_font_pt=int(self._body_pt.currentData() or 12),
+            body_font_family=str(self._font_family.currentData() or "default"),
+            line_spacing=self._line_spacing.value(),
+            paragraph_indent=self._para_indent.isChecked(),
         )
+
+
+# Back-compat alias for the older name used elsewhere in this file.
+DocPropertiesDialog = DocSettingsDialog
 
 
 # ---------- main window ----------
@@ -93,7 +197,16 @@ class MainWindow(QMainWindow):
         self._build_dir = Path(tempfile.mkdtemp(prefix="khervedoc-"))
         self._compile_worker: _CompileWorker | None = None
         self._pending_recompile = False
-        self._recent: list[Path] = []
+        # Persistent settings (Windows registry / platform-equivalent)
+        # used for the Open Recent list and any other cross-session prefs.
+        self._settings = QSettings("kherveDOC", "kherveDOC")
+        raw_recent = self._settings.value("recent_files", []) or []
+        # QSettings on Windows returns either a list, a single string, or
+        # None depending on how many entries we wrote. Normalise.
+        if isinstance(raw_recent, str):
+            raw_recent = [raw_recent]
+        self._recent: list[Path] = [
+            Path(p) for p in raw_recent if p and Path(p).exists()]
 
         screen = QGuiApplication.primaryScreen().availableGeometry()
         w = min(1500, int(screen.width() * 0.85))
@@ -706,6 +819,7 @@ class MainWindow(QMainWindow):
             self._recent.remove(path)
         self._recent.insert(0, path)
         self._recent = self._recent[:_RECENT_FILES_MAX]
+        self._settings.setValue("recent_files", [str(p) for p in self._recent])
         self._refresh_recent_menu()
 
     def _refresh_recent_menu(self) -> None:

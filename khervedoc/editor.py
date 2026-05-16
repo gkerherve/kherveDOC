@@ -219,10 +219,16 @@ class DocumentEditor(QWidget):
         desk = QWidget()
         desk.setObjectName("desk")
         desk.setStyleSheet("#desk { background: #d0d4d8; }")
-        desk_layout = QHBoxLayout(desk)
+        # Vertical outer layout anchors the page row to the top of the
+        # desk, so the white card sits at the top of the visible area
+        # rather than being stretched to fill the entire scroll viewport.
+        desk_layout = QVBoxLayout(desk)
         desk_layout.setContentsMargins(0, 24, 0, 32)
-        desk_layout.addStretch(1)
-        desk_layout.addWidget(self._page, 0)
+        page_row = QHBoxLayout()
+        page_row.addStretch(1)
+        page_row.addWidget(self._page, 0, Qt.AlignTop)
+        page_row.addStretch(1)
+        desk_layout.addLayout(page_row)
         desk_layout.addStretch(1)
 
         self._scroll = QScrollArea(self)
@@ -300,6 +306,11 @@ class DocumentEditor(QWidget):
         total_h = max(doc_h + 24, 240)
         self._edit.setMinimumHeight(total_h)
         self._edit.setMaximumHeight(total_h)
+        # The page frame also needs explicit height clamps; without these
+        # the QHBoxLayout that centres it would stretch the frame to fill
+        # the available vertical space, painting white below the text.
+        self._page.setMinimumHeight(total_h)
+        self._page.setMaximumHeight(total_h)
 
     def set_document(self, doc: Document) -> None:
         self._building = True

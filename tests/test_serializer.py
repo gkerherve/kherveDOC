@@ -228,20 +228,56 @@ def test_meta_title_fallback_when_no_title_block():
 def test_geometry_package_emitted_for_a4_by_default():
     doc = Document(meta=DocMeta(), children=[Paragraph(children=[Text(text="x")])])
     out = serialize_document(doc)
-    assert r"\usepackage[a4paper,margin=2.5cm]{geometry}" in out
+    assert "\\usepackage[a4paper,top=2.5cm,bottom=2.5cm,left=2.5cm,right=2.5cm]{geometry}" in out
 
 
 def test_geometry_package_changes_with_page_size():
     doc = Document(meta=DocMeta(page_size="Letter"),
                    children=[Paragraph(children=[Text(text="x")])])
     out = serialize_document(doc)
-    assert r"\usepackage[letterpaper,margin=2.5cm]{geometry}" in out
+    assert r"\usepackage[letterpaper," in out
+    assert r"top=2.5cm" in out
 
 
 def test_geometry_package_for_legal():
     doc = Document(meta=DocMeta(page_size="Legal"),
                    children=[Paragraph(children=[Text(text="x")])])
-    assert r"\usepackage[legalpaper,margin=2.5cm]{geometry}" in serialize_document(doc)
+    assert r"\usepackage[legalpaper," in serialize_document(doc)
+
+
+def test_custom_margins_flow_into_geometry():
+    doc = Document(
+        meta=DocMeta(margin_top_cm=1.0, margin_bottom_cm=1.5,
+                     margin_left_cm=3.0, margin_right_cm=2.0),
+        children=[Paragraph(children=[Text(text="x")])])
+    out = serialize_document(doc)
+    assert "top=1.0cm" in out and "bottom=1.5cm" in out
+    assert "left=3.0cm" in out and "right=2.0cm" in out
+
+
+def test_body_font_pt_becomes_documentclass_option():
+    doc = Document(meta=DocMeta(body_font_pt=11), children=[])
+    assert r"\documentclass[11pt]{article}" in serialize_document(doc)
+
+
+def test_line_spacing_one_half_uses_onehalfspacing():
+    doc = Document(meta=DocMeta(line_spacing=1.5),
+                   children=[Paragraph(children=[Text(text="x")])])
+    out = serialize_document(doc)
+    assert r"\onehalfspacing" in out
+
+
+def test_double_spacing_uses_doublespacing():
+    doc = Document(meta=DocMeta(line_spacing=2.0),
+                   children=[Paragraph(children=[Text(text="x")])])
+    assert r"\doublespacing" in serialize_document(doc)
+
+
+def test_font_family_helvetica_loads_helvet_package():
+    doc = Document(meta=DocMeta(body_font_family="helvetica"),
+                   children=[Paragraph(children=[Text(text="x")])])
+    out = serialize_document(doc)
+    assert r"\usepackage{helvet}" in out
 
 
 def test_set_title_emits_maketitle():

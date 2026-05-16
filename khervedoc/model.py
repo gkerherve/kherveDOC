@@ -158,6 +158,22 @@ class DocMeta:
     documentclass: str = "article"
     packages: list[str] = field(default_factory=lambda: list(DEFAULT_PACKAGES))
     page_size: str = "A4"        # short code from khervedoc.page_sizes
+    # Page margins in centimetres, fed straight into the geometry package.
+    margin_top_cm: float = 2.5
+    margin_bottom_cm: float = 2.5
+    margin_left_cm: float = 2.5
+    margin_right_cm: float = 2.5
+    # Body type size — the LaTeX article class only accepts 10 / 11 / 12 pt
+    # as a class option; anything else is rounded to the nearest of those.
+    body_font_pt: int = 12
+    # Font family. "default" leaves Computer Modern in place. Other values
+    # map to the loaded packages — see serializer._FONT_FAMILY_PACKAGES.
+    body_font_family: str = "default"
+    # Line spacing multiplier — 1.0 single, 1.15 / 1.5 / 2.0 typical.
+    line_spacing: float = 1.0
+    # Indent the first line of each paragraph? Most modern docs prefer no
+    # indent with extra paragraph spacing; LaTeX's default is the opposite.
+    paragraph_indent: bool = True
 
 
 @dataclass
@@ -255,6 +271,14 @@ def _build_document(d: dict) -> Document:
         documentclass=meta_d.get("documentclass", "article"),
         packages=list(meta_d.get("packages", list(DEFAULT_PACKAGES))),
         page_size=meta_d.get("page_size", "A4"),
+        margin_top_cm=float(meta_d.get("margin_top_cm", 2.5)),
+        margin_bottom_cm=float(meta_d.get("margin_bottom_cm", 2.5)),
+        margin_left_cm=float(meta_d.get("margin_left_cm", 2.5)),
+        margin_right_cm=float(meta_d.get("margin_right_cm", 2.5)),
+        body_font_pt=int(meta_d.get("body_font_pt", 12)),
+        body_font_family=str(meta_d.get("body_font_family", "default")),
+        line_spacing=float(meta_d.get("line_spacing", 1.0)),
+        paragraph_indent=bool(meta_d.get("paragraph_indent", True)),
     )
     return Document(
         children=[_build_block(b) for b in d.get("children", [])],
