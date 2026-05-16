@@ -139,10 +139,12 @@ def _abstract_char_format() -> QTextCharFormat:
 
 def _abstract_block_format() -> QTextBlockFormat:
     bfmt = QTextBlockFormat()
-    # Inset the abstract on both sides so it visually reads as the
-    # journal-style block it is, rather than a plain paragraph.
+    # Inset the abstract on both sides + warm cream highlight so it
+    # reads as a journal-style abstract block at a glance, clearly
+    # distinct from body text.
     bfmt.setLeftMargin(48); bfmt.setRightMargin(48)
-    bfmt.setTopMargin(4); bfmt.setBottomMargin(4)
+    bfmt.setTopMargin(8); bfmt.setBottomMargin(8)
+    bfmt.setBackground(QColor("#fff5d6"))
     return bfmt
 
 
@@ -157,8 +159,11 @@ def _keywords_char_format() -> QTextCharFormat:
 
 def _keywords_block_format() -> QTextBlockFormat:
     bfmt = QTextBlockFormat()
+    # Pale blue band to mark keywords as a separate "metadata" block,
+    # distinct from both body text and the abstract above it.
     bfmt.setLeftMargin(48); bfmt.setRightMargin(48)
-    bfmt.setTopMargin(2); bfmt.setBottomMargin(18)
+    bfmt.setTopMargin(4); bfmt.setBottomMargin(18)
+    bfmt.setBackground(QColor("#e3f0ff"))
     return bfmt
 
 
