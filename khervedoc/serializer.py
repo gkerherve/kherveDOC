@@ -8,8 +8,8 @@ import re
 
 from .model import (
     Abstract, Author, Block, Citation, CrossRef, Document, Figure, Footnote,
-    Inline, Keywords, Link, List as ListNode, ListItem, MathBlock, MathInline,
-    Paragraph, RawLatex, Section, Table, Text, Title,
+    Inline, InlineRaw, Keywords, Link, List as ListNode, ListItem, MathBlock,
+    MathInline, Paragraph, RawLatex, Section, Table, Text, Title,
 )
 
 
@@ -67,6 +67,8 @@ def serialize_inline(node: Inline) -> str:
         return f"\\{node.style}{{{keys}}}"
     if isinstance(node, CrossRef):
         return f"\\{node.kind}{{{node.label}}}"
+    if isinstance(node, InlineRaw):
+        return node.latex
     raise TypeError(f"Unknown inline node: {type(node).__name__}")
 
 
@@ -107,6 +109,15 @@ def serialize_block(node: Block) -> str:
         return f"\\{cmd}{star}{{{body}}}\n{_maybe_label(node.label)}"
 
     if isinstance(node, MathBlock):
+        # The importer stores non-equation envs (align*, gather, split, ...)
+        # as a complete \begin{env}...\end{env} string inside node.latex,
+        # so re-wrapping in equation/equation* would produce illegal
+        # \begin{equation*}\begin{align*}...\end{align*}\end{equation*}
+        # nesting and break compilation. Detect a pre-wrapped body and
+        # emit it verbatim instead.
+        stripped = node.latex.lstrip()
+        if stripped.startswith("\\begin{"):
+            return f"{node.latex}\n"
         env = "equation" if node.numbered else "equation*"
         lab = _maybe_label(node.label) if node.numbered else ""
         return f"\\begin{{{env}}}\n{lab}{node.latex}\n\\end{{{env}}}\n"

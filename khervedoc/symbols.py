@@ -105,3 +105,15 @@ def all_symbols() -> list[tuple[str, str]]:
     for _, items in SYMBOL_GROUPS:
         out.extend(items)
     return out
+
+
+# Symbols whose LaTeX is a TEXT-mode macro (i.e. would break or render
+# badly inside $...$). The Symbol picker inserts these as InlineRaw via
+# DocumentEditor.insert_raw_inline_with instead of wrapping in inline
+# math. \Kstroke uses \hspace/\raisebox/\rotatebox — all valid only in
+# (or most naturally used in) text mode.
+TEXT_MODE_SYMBOLS = frozenset({r"\Kstroke"})
+
+
+def is_text_mode_symbol(latex: str) -> bool:
+    return latex in TEXT_MODE_SYMBOLS

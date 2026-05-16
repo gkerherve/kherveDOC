@@ -3,10 +3,11 @@ generating a meaningful .docx fixture costs more than the test is worth."""
 
 from khervedoc.importers import import_tex
 from khervedoc.model import (
-    Abstract, Citation, CrossRef, Figure, Footnote, Keywords, Link,
+    Abstract, Citation, CrossRef, Figure, Footnote, InlineRaw, Keywords, Link,
     List as ListNode, MathBlock, MathInline, Paragraph, RawLatex, Section,
     Table, Text, Title,
 )
+from khervedoc.serializer import serialize_document
 
 
 def _round_trip(src: str):
@@ -528,3 +529,52 @@ def test_escapes_unescaped():
     text = "".join(c.text for c in doc.children[0].children if isinstance(c, Text))
     assert "100% & $5" in text
     assert "a_b" in text
+
+
+def test_unknown_macro_preserved_as_inline_raw():
+    """User-defined macros like \\Kstroke (defined in the preamble via
+    \\newcommand) are not in the importer's recognised-macro list. They
+    must survive as InlineRaw so the round-trip emits them unchanged,
+    rather than being silently dropped (which is what happened until
+    the InlineRaw model node was added)."""
+    src = r"""\documentclass{article}\begin{document}
+Visit \Kstroke herveFitting today.
+\end{document}"""
+    doc = _round_trip(src)
+    para = doc.children[0]
+    raws = [c for c in para.children if isinstance(c, InlineRaw)]
+    assert len(raws) == 1
+    assert raws[0].latex == r"\Kstroke"
+    # And the round-trip puts it back in the serialized output.
+    out = serialize_document(doc)
+    assert r"\Kstroke" in out
+
+
+def test_unknown_macro_with_arg_preserved():
+    """Multi-arg unknown macros (e.g. \\textcolor{red}{x}) survive too."""
+    src = r"""\documentclass{article}\begin{document}
+\textcolor{red}{important} note
+\end{document}"""
+    doc = _round_trip(src)
+    para = doc.children[0]
+    raws = [c for c in para.children if isinstance(c, InlineRaw)]
+    assert len(raws) == 1
+    assert raws[0].latex == r"\textcolor{red}{important}"
+
+
+def test_align_star_imports_as_math_block_then_round_trips_without_double_wrap():
+    """align* env at top level should import as a MathBlock that, on
+    serialise, emits \\begin{align*}...\\end{align*} verbatim — not
+    \\begin{equation*}\\begin{align*}...\\end{align*}\\end{equation*}
+    (which is the illegal nesting that broke the kherveFitting manual)."""
+    src = r"""\documentclass{article}\begin{document}
+\begin{align*}
+x &= 1 \\
+y &= 2
+\end{align*}
+\end{document}"""
+    doc = _round_trip(src)
+    out = serialize_document(doc)
+    # The killer assertion: no equation* wrapping the align* env.
+    assert "\\begin{equation*}\n\\begin{align*}" not in out
+    assert "\\begin{align*}" in out

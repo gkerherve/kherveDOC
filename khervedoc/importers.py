@@ -16,8 +16,8 @@ from pathlib import Path
 
 from .model import (
     Abstract, Author, Citation, CrossRef, Document, DocMeta, Figure, Footnote,
-    Keywords, Link, List as ListNode, ListItem, MathBlock, MathInline,
-    Paragraph, RawLatex, Section, Table, Text, Title,
+    InlineRaw, Keywords, Link, List as ListNode, ListItem, MathBlock,
+    MathInline, Paragraph, RawLatex, Section, Table, Text, Title,
 )
 
 
@@ -363,10 +363,11 @@ def _match_macro(s: str, i: int) -> tuple[object, int] | None:
         if close < 0: return None
         return Text(text=s[after + 1:close], marks=["code"]), close + 1
 
-    # Unknown command — instead of letting it leak as scrambled text,
-    # consume the macro plus any [...] options and {...} arguments. The
-    # output is an empty Text so the loop keeps making progress without
-    # dragging the macro name into the document body.
+    # Unknown command — consume the macro plus any [...] options and
+    # {...} arguments so the outer loop makes progress, and preserve
+    # the original source as an InlineRaw node. This is what keeps
+    # user-defined commands like \Kstroke surviving a .tex import
+    # instead of being silently dropped.
     pos = after
     while pos < len(s) and s[pos] == "[":
         depth = 1; j = pos + 1
@@ -377,11 +378,7 @@ def _match_macro(s: str, i: int) -> tuple[object, int] | None:
         pos = j
     while pos < len(s) and s[pos] == "{":
         _, pos = _consume_braced(s, pos)
-    if pos == after:
-        # Macro had no arguments; still mark progress so the outer loop
-        # doesn't fall back to one-character text consumption.
-        return Text(text=""), pos
-    return Text(text=""), pos
+    return InlineRaw(latex=s[i:pos]), pos
 
 
 def _consume_braced(s: str, i: int) -> tuple[str | None, int]:

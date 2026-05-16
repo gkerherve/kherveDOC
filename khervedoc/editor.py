@@ -32,7 +32,7 @@ TEMPLATE_CHOICES = ["article", "report", "book", "letter", "beamer", "memoir"]
 
 from .model import (
     Abstract, Author, Citation, CrossRef, Document, DocMeta, Figure, Footnote,
-    Keywords, Link, List as ListNode, ListItem, MathBlock, MathInline,
+    InlineRaw, Keywords, Link, List as ListNode, ListItem, MathBlock, MathInline,
     Paragraph, RawLatex, Section, Table, Text, Title,
 )
 
@@ -55,6 +55,7 @@ _P_LINK = QTextCharFormat.UserProperty + 2     # value = url
 _P_FOOTNOTE = QTextCharFormat.UserProperty + 3  # value = note text
 _P_CITATION = QTextCharFormat.UserProperty + 4  # value = "key1,key2|style"
 _P_CROSSREF = QTextCharFormat.UserProperty + 5  # value = "label|kind"
+_P_RAW = QTextCharFormat.UserProperty + 6       # value = raw LaTeX source
 
 
 # ---- block payload storage (figures/tables/raw) ----
@@ -215,6 +216,19 @@ def _crossref_format(label_kind: str) -> QTextCharFormat:
     fmt = QTextCharFormat()
     fmt.setForeground(QColor("#0a6")); fmt.setBackground(QColor("#e3f5ea"))
     fmt.setProperty(_P_CROSSREF, label_kind)
+    return fmt
+
+
+def _raw_inline_format(latex: str) -> QTextCharFormat:
+    """Display InlineRaw nodes (unknown macros preserved from .tex
+    imports, text-mode symbol-palette inserts like \\Kstroke) in a
+    monospace muted tag so the user can see they're verbatim LaTeX
+    rather than typeable letters."""
+    fmt = QTextCharFormat()
+    f = QFont("Consolas"); f.setStyleHint(QFont.Monospace)
+    fmt.setFont(f)
+    fmt.setForeground(QColor("#0a3d62")); fmt.setBackground(QColor("#e8f0fb"))
+    fmt.setToolTip(latex); fmt.setProperty(_P_RAW, latex)
     return fmt
 
 
@@ -615,6 +629,8 @@ class DocumentEditor(QWidget):
             payload = f"{node.label}|{node.kind}"
             display = f"<{node.kind}:{node.label}>"
             cursor.insertText(display, _crossref_format(payload))
+        elif isinstance(node, InlineRaw):
+            cursor.insertText(node.latex, _raw_inline_format(node.latex))
 
     # ---------- model rebuilding ----------
 
@@ -641,6 +657,8 @@ class DocumentEditor(QWidget):
                     raw = fmt.property(_P_CROSSREF)
                     label, _, kind = raw.partition("|")
                     out.append(CrossRef(label=label, kind=kind or "ref"))
+                elif fmt.property(_P_RAW):
+                    out.append(InlineRaw(latex=fmt.property(_P_RAW)))
                 else:
                     marks: list = []
                     f = fmt.font()
@@ -979,6 +997,15 @@ class DocumentEditor(QWidget):
         if not latex:
             return
         self._edit.textCursor().insertText(latex, _math_inline_format(latex))
+
+    def insert_raw_inline_with(self, latex: str) -> None:
+        """Insert the given LaTeX verbatim at the cursor (no $...$ wrap).
+        Used for text-mode macros like \\Kstroke that wouldn't render
+        correctly inside an inline math span and for round-tripping
+        unknown commands captured from imported .tex files."""
+        if not latex:
+            return
+        self._edit.textCursor().insertText(latex, _raw_inline_format(latex))
 
     def insert_math_block(self) -> None:
         latex, ok = QInputDialog.getMultiLineText(self, "Insert math block", "LaTeX:")

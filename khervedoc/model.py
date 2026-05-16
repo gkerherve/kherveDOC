@@ -56,7 +56,17 @@ class CrossRef:
     type: str = "CrossRef"
 
 
-Inline = Union[Text, MathInline, Link, Footnote, Citation, CrossRef]
+@dataclass
+class InlineRaw:
+    """Verbatim LaTeX inline. The importer emits these for unknown macros
+    (\\Kstroke, \\textcolor{...}{...}, custom \\newcommand-defined names,
+    etc.) so they survive a round-trip instead of being silently dropped.
+    The Symbol palette also inserts text-mode macros this way."""
+    latex: str = ""
+    type: str = "InlineRaw"
+
+
+Inline = Union[Text, MathInline, Link, Footnote, Citation, CrossRef, InlineRaw]
 
 
 # ---------------- Block nodes ----------------
@@ -247,6 +257,8 @@ def _build_inline(d: dict) -> Inline:
         return Citation(keys=list(d.get("keys", [])), style=d.get("style", "cite"))
     if t == "CrossRef":
         return CrossRef(label=d.get("label", ""), kind=d.get("kind", "ref"))
+    if t == "InlineRaw":
+        return InlineRaw(latex=d.get("latex", ""))
     raise ValueError(f"Unknown inline node type: {t!r}")
 
 

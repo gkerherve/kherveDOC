@@ -987,11 +987,19 @@ class MainWindow(QMainWindow):
         # drop multiple symbols without closing/reopening every time.
         if not hasattr(self, "_symbol_window") or self._symbol_window is None:
             self._symbol_window = SymbolPickerWindow(self)
-            self._symbol_window.symbolPicked.connect(
-                self._editor.insert_inline_math_with)
+            self._symbol_window.symbolPicked.connect(self._dispatch_symbol_pick)
         self._symbol_window.show()
         self._symbol_window.raise_()
         self._symbol_window.activateWindow()
+
+    def _dispatch_symbol_pick(self, latex: str) -> None:
+        """Route a symbol-palette pick to math-inline or raw-inline insert
+        based on the LaTeX command. Text-mode macros like \\Kstroke
+        wouldn't render inside $...$, so they go in as InlineRaw."""
+        if symbols.is_text_mode_symbol(latex):
+            self._editor.insert_raw_inline_with(latex)
+        else:
+            self._editor.insert_inline_math_with(latex)
 
     def _insert_equation_template(self) -> None:
         """Open the floating equation-builder palette. Picks drop the

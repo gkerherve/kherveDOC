@@ -1,7 +1,7 @@
 from khervedoc.model import (
     Abstract, Author, Citation, CrossRef, Document, DocMeta, Figure, Footnote,
-    Keywords, Link, List as ListNode, ListItem, MathBlock, MathInline,
-    Paragraph, RawLatex, Section, Table, Text, Title,
+    InlineRaw, Keywords, Link, List as ListNode, ListItem, MathBlock,
+    MathInline, Paragraph, RawLatex, Section, Table, Text, Title,
 )
 from khervedoc.serializer import (
     escape_text, serialize_block, serialize_document, serialize_inline,
@@ -434,6 +434,37 @@ def test_kstroke_macro_provided_in_preamble():
                    children=[Paragraph(children=[Text(text="hi")])])
     out = serialize_document(doc)
     assert r"\providecommand{\Kstroke}" in out
+
+
+def test_math_block_with_prewrapped_env_not_double_wrapped():
+    """The importer stores align*/gather/split etc. as a complete
+    \\begin{env}...\\end{env} string inside MathBlock.latex. The
+    serializer must not re-wrap in equation/equation* or the document
+    won't compile (you can't nest align* inside equation*)."""
+    block = MathBlock(latex="\\begin{align*}\nx &= 1\n\\end{align*}",
+                      numbered=False)
+    out = serialize_block(block)
+    assert "\\begin{equation*}" not in out
+    assert "\\begin{align*}" in out
+    assert "\\end{align*}" in out
+
+
+def test_math_block_plain_body_still_gets_equation_wrap():
+    """The double-wrap guard must only kick in for pre-wrapped bodies.
+    A bare formula stays in equation* / equation as before."""
+    block = MathBlock(latex="x + y = z", numbered=False)
+    assert "\\begin{equation*}" in serialize_block(block)
+    block2 = MathBlock(latex="a = b", numbered=True)
+    assert "\\begin{equation}" in serialize_block(block2)
+
+
+def test_inline_raw_serializes_verbatim():
+    """InlineRaw carries unknown / text-mode macros (\\Kstroke, etc.)
+    through serialization without LaTeX escaping."""
+    assert serialize_inline(InlineRaw(latex=r"\Kstroke")) == r"\Kstroke"
+    # No accidental $...$ wrapping (that would force math mode).
+    out = serialize_inline(InlineRaw(latex=r"\textcolor{red}{x}"))
+    assert out == r"\textcolor{red}{x}"
 
 
 def test_kstroke_uses_providecommand_not_newcommand():
