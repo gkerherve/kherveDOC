@@ -476,6 +476,14 @@ class MainWindow(QMainWindow):
         self.act_symbol = QAction(icons.symbol(), "&Symbol...", self,
                                   shortcut=QKeySequence("Ctrl+Shift+S"),
                                   triggered=self._insert_symbol)
+        # Quick-applies the corresponding paragraph style to the current
+        # block. Same effect as picking it from the heading combo, but
+        # surfaced in the Insert menu and toolbar so it's discoverable
+        # for users who don't realise the combo has these entries.
+        self.act_abstract = QAction("&Abstract paragraph", self,
+                                    triggered=lambda: e.apply_heading(-3))
+        self.act_keywords = QAction("Key&words paragraph", self,
+                                    triggered=lambda: e.apply_heading(-4))
         self.act_pagebreak = QAction(icons.page_break(), "Page break", self,
                                      triggered=e.insert_page_break)
         self.act_hrule = QAction(icons.horizontal_rule(), "Horizontal rule", self,
@@ -553,6 +561,8 @@ class MainWindow(QMainWindow):
         m_insert = mb.addMenu("&Insert")
         m_insert.addAction(self.act_math_inline); m_insert.addAction(self.act_math_block)
         m_insert.addAction(self.act_symbol)
+        m_insert.addSeparator()
+        m_insert.addAction(self.act_abstract); m_insert.addAction(self.act_keywords)
         m_insert.addSeparator()
         m_insert.addAction(self.act_bullet); m_insert.addAction(self.act_numbered)
         m_insert.addSeparator()
