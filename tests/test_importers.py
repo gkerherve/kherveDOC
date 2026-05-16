@@ -4,7 +4,7 @@ generating a meaningful .docx fixture costs more than the test is worth."""
 from khervedoc.importers import import_tex
 from khervedoc.model import (
     Citation, CrossRef, Figure, Footnote, Link, List as ListNode, MathBlock,
-    MathInline, Paragraph, Section, Text, Title,
+    MathInline, Paragraph, Section, Table, Text, Title,
 )
 
 
@@ -141,6 +141,107 @@ def test_figure_with_includegraphics():
     assert figs[0].path == "img/foo.png"
     assert figs[0].caption == "A photo"
     assert figs[0].label == "fig:foo"
+
+
+def test_align_environment_preserved_in_mathblock():
+    src = r"""\documentclass{article}\begin{document}
+\begin{align}
+x &= 1 \\
+y &= 2
+\end{align}
+\end{document}"""
+    doc = _round_trip(src)
+    maths = [b for b in doc.children if isinstance(b, MathBlock)]
+    assert len(maths) == 1
+    # The align environment must survive the round-trip — otherwise it
+    # downgrades to a plain equation and loses its alignment column.
+    assert r"\begin{align}" in maths[0].latex
+    assert r"x &= 1" in maths[0].latex
+
+
+def test_gather_starred_is_unnumbered():
+    src = r"""\documentclass{article}\begin{document}
+\begin{gather*}
+a + b = c
+\end{gather*}
+\end{document}"""
+    doc = _round_trip(src)
+    maths = [b for b in doc.children if isinstance(b, MathBlock)]
+    assert maths[0].numbered is False
+    assert r"\begin{gather*}" in maths[0].latex
+
+
+def test_multline_environment_imported():
+    src = r"""\documentclass{article}\begin{document}
+\begin{multline}
+\alpha + \beta \\ + \gamma = \delta
+\end{multline}
+\end{document}"""
+    doc = _round_trip(src)
+    maths = [b for b in doc.children if isinstance(b, MathBlock)]
+    assert r"\begin{multline}" in maths[0].latex
+
+
+def test_displaymath_brackets_form():
+    src = r"\documentclass{article}\begin{document}\[ E = mc^2 \]\end{document}"
+    doc = _round_trip(src)
+    maths = [b for b in doc.children if isinstance(b, MathBlock)]
+    assert len(maths) == 1
+    assert maths[0].latex == "E = mc^2"
+
+
+def test_table_environment_produces_table_node():
+    src = r"""\documentclass{article}\begin{document}
+\begin{table}[h]
+\centering
+\begin{tabular}{lcr}
+\hline
+A & B & C \\
+1 & 2 & 3 \\
+4 & 5 & 6 \\
+\hline
+\end{tabular}
+\caption{Some data}
+\label{tab:demo}
+\end{table}
+\end{document}"""
+    doc = _round_trip(src)
+    tables = [b for b in doc.children if isinstance(b, Table)]
+    assert len(tables) == 1
+    t = tables[0]
+    assert t.rows == [["A", "B", "C"], ["1", "2", "3"], ["4", "5", "6"]]
+    assert t.alignment == "lcr"
+    assert t.caption == "Some data"
+    assert t.label == "tab:demo"
+
+
+def test_standalone_tabular_is_imported():
+    src = r"""\documentclass{article}\begin{document}
+\begin{tabular}{ll}
+foo & bar \\
+baz & qux \\
+\end{tabular}
+\end{document}"""
+    doc = _round_trip(src)
+    tables = [b for b in doc.children if isinstance(b, Table)]
+    assert len(tables) == 1
+    assert tables[0].rows == [["foo", "bar"], ["baz", "qux"]]
+
+
+def test_figure_caption_with_inline_macros_preserved():
+    src = r"""\documentclass{article}\begin{document}
+\begin{figure}
+\centering
+\includegraphics[width=0.5\textwidth]{img/plot.png}
+\caption{Result for \textbf{T=300K}}
+\label{fig:r}
+\end{figure}
+\end{document}"""
+    doc = _round_trip(src)
+    figs = [b for b in doc.children if isinstance(b, Figure)]
+    assert len(figs) == 1
+    # The full caption is preserved verbatim, including the textbf macro.
+    assert "Result for" in figs[0].caption and r"\textbf" in figs[0].caption
 
 
 def test_escapes_unescaped():

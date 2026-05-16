@@ -5,7 +5,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QSettings, QThread, Signal
+from PySide6.QtCore import Qt, QSettings, QThread, QTimer, Signal
 from PySide6.QtGui import (
     QAction, QActionGroup, QGuiApplication, QKeySequence,
 )
@@ -281,6 +281,14 @@ class MainWindow(QMainWindow):
 
         self._editor.documentChanged.connect(self._on_doc_changed)
         self._editor.text_edit.cursorPositionChanged.connect(self._sync_toolbar_state)
+        # Reverse path: edits in the LaTeX tab re-parse via import_tex and
+        # rebuild the Formatted view + PDF.
+        self._latex_view.latexEdited.connect(self._on_latex_edited)
+        # Flag toggled while we're rebuilding from LaTeX, so the
+        # Formatted-edit handler doesn't immediately overwrite the LaTeX
+        # text with its re-serialization (which would clobber the user's
+        # in-progress edit).
+        self._suppress_latex_update = False
 
         self._editor.set_document(_starter_document())
         self._update_title()
@@ -620,8 +628,8 @@ class MainWindow(QMainWindow):
     def _open(self) -> None:
         path_s, _ = QFileDialog.getOpenFileName(
             self, "Open document", "",
-            "kherveDOC documents (*.kdocz *.kdoc.json);;"
-            "Bundled (*.kdocz);;JSON (*.kdoc.json);;All files (*)")
+            "All supported (*.kdocz *.kdoc.json *.tex);;"
+            "Bundled (*.kdocz);;JSON (*.kdoc.json);;LaTeX (*.tex);;All files (*)")
         if path_s:
             self._open_path(Path(path_s))
 
@@ -629,10 +637,12 @@ class MainWindow(QMainWindow):
         try:
             if kdocz.is_kdocz_path(path):
                 doc, extract_dir = kdocz.load_kdocz(path)
-                # Remember where the images were unpacked so any subsequent
-                # save knows to re-bundle them rather than try to copy from
-                # the source-archive paths.
                 self._kdocz_extract_dir = extract_dir
+            elif path.suffix.lower() == ".tex":
+                # Import via the .tex parser; unknown commands become
+                # RawLatex blocks rather than disappearing.
+                doc = importers.import_tex(path.read_text(encoding="utf-8"))
+                self._kdocz_extract_dir = None
             else:
                 doc = from_json(path.read_text(encoding="utf-8"))
                 self._kdocz_extract_dir = None
@@ -864,9 +874,32 @@ class MainWindow(QMainWindow):
     # ----- compile loop -----
 
     def _on_doc_changed(self) -> None:
-        self._latex_view.set_source(
-            serialize_document(self._editor.get_document()))
+        # When the change originated in the LaTeX tab itself we leave the
+        # LaTeX view alone so we don't overwrite the user's typing with a
+        # re-serialized version that may differ in whitespace/formatting.
+        if not self._suppress_latex_update:
+            self._latex_view.set_source(
+                serialize_document(self._editor.get_document()))
         self._sync_toolbar_state()
+        self._kick_compile()
+
+    def _on_latex_edited(self, text: str) -> None:
+        """User edited the LaTeX tab — reparse, replace the document
+        model, and let the Formatted view + PDF rerender from it."""
+        try:
+            doc = importers.import_tex(text)
+        except Exception as exc:
+            self._status.showMessage(f"LaTeX parse error: {exc}", 5000)
+            return
+        self._suppress_latex_update = True
+        try:
+            self._editor.set_document(doc)
+        finally:
+            # The editor emits documentChanged on a debounce; release the
+            # flag after the debounce window so the round-trip can finish
+            # without overwriting the user's LaTeX.
+            QTimer.singleShot(700,
+                lambda: setattr(self, "_suppress_latex_update", False))
         self._kick_compile()
 
     def _kick_compile(self) -> None:

@@ -15,9 +15,9 @@ import shutil
 from pathlib import Path
 
 from .model import (
-    Citation, CrossRef, Document, DocMeta, Figure, Footnote, Link,
+    Author, Citation, CrossRef, Document, DocMeta, Figure, Footnote, Link,
     List as ListNode, ListItem, MathBlock, MathInline, Paragraph, RawLatex,
-    Section, Text, Title,
+    Section, Table, Text, Title,
 )
 
 
@@ -41,16 +41,29 @@ _GEOMETRY_RE = re.compile(r"\\usepackage\[([^\]]*)\]\{geometry\}")
 _BODY_RE = re.compile(
     r"\\begin\{document\}(.*?)\\end\{document\}", re.DOTALL)
 
+# Math environments we recognise as a single MathBlock. The names in the
+# group are matched against the closing \end{...} via the backreference.
+_MATH_ENVS = (
+    "equation", "equation*", "align", "align*", "alignat", "alignat*",
+    "gather", "gather*", "multline", "multline*", "eqnarray", "eqnarray*",
+    "displaymath", "split",
+)
+_MATH_ENV_RE = re.compile(
+    r"\\begin\{(" + "|".join(re.escape(e) for e in _MATH_ENVS) + r")\}"
+    r"(.*?)\\end\{\1\}", re.DOTALL)
+
 # Matches the start of a top-level structure we care about, captured for
 # routing. Order matters — math/figure/table envs first so they take
 # precedence over generic environments.
 _BLOCK_DISPATCH = [
-    ("math_block_env",  re.compile(r"\\begin\{(equation\*?|displaymath|align\*?)\}(.*?)\\end\{\1\}", re.DOTALL)),
+    ("math_block_env",  _MATH_ENV_RE),
     ("math_block_dd",   re.compile(r"\$\$(.*?)\$\$", re.DOTALL)),
     ("math_block_bs",   re.compile(r"\\\[(.*?)\\\]", re.DOTALL)),
     ("itemize",         re.compile(r"\\begin\{itemize\}(.*?)\\end\{itemize\}", re.DOTALL)),
     ("enumerate",       re.compile(r"\\begin\{enumerate\}(.*?)\\end\{enumerate\}", re.DOTALL)),
-    ("figure",          re.compile(r"\\begin\{figure\}(?:\[[^\]]*\])?(.*?)\\end\{figure\}", re.DOTALL)),
+    ("figure",          re.compile(r"\\begin\{figure\*?\}(?:\[[^\]]*\])?(.*?)\\end\{figure\*?\}", re.DOTALL)),
+    ("table",           re.compile(r"\\begin\{table\*?\}(?:\[[^\]]*\])?(.*?)\\end\{table\*?\}", re.DOTALL)),
+    ("standalone_tabular", re.compile(r"\\begin\{tabular\}\{([^}]*)\}(.*?)\\end\{tabular\}", re.DOTALL)),
     ("section",         _SECTION_RE),
     ("maketitle",       re.compile(r"\\maketitle\b")),
 ]
@@ -243,7 +256,17 @@ def _split_paragraphs(chunk: str) -> list[str]:
 def _dispatch(kind: str, m: re.Match) -> object:
     if kind == "math_block_env":
         env_name = m.group(1)
-        return MathBlock(latex=m.group(2).strip(),
+        body = m.group(2).strip()
+        # `align`, `gather`, `multline`, `eqnarray`, `split` etc. are still
+        # legal LaTeX math; preserve them verbatim inside the MathBlock
+        # so re-serialization keeps the same environment instead of
+        # downgrading to a plain equation. Numbered status follows the *
+        # convention.
+        body_for_model = body
+        if env_name not in ("equation", "equation*"):
+            body_for_model = (f"\\begin{{{env_name}}}\n{body}"
+                              f"\n\\end{{{env_name}}}")
+        return MathBlock(latex=body_for_model,
                          numbered=not env_name.endswith("*"))
     if kind == "math_block_dd":
         return MathBlock(latex=m.group(1).strip(), numbered=False)
@@ -260,10 +283,11 @@ def _dispatch(kind: str, m: re.Match) -> object:
         return _parse_list(m.group(1), ordered=True)
     if kind == "figure":
         return _parse_figure(m.group(1))
+    if kind == "table":
+        return _parse_table_env(m.group(1))
+    if kind == "standalone_tabular":
+        return _parse_tabular(m.group(1), m.group(2))
     if kind == "maketitle":
-        # \maketitle without a Title block: we represent it as nothing —
-        # the meta.title (read from \title{} in the preamble) is enough
-        # for the fallback path.
         return None
     return None
 
@@ -280,7 +304,13 @@ def _parse_list(body: str, ordered: bool) -> ListNode:
 
 def _parse_figure(body: str) -> Figure:
     inc = re.search(r"\\includegraphics(?:\[([^\]]*)\])?\{([^}]+)\}", body)
-    cap = re.search(r"\\caption\{([^}]*)\}", body)
+    # Caption may contain other macros; use the balanced consumer to grab
+    # its full content even when it includes nested braces.
+    cap_match = re.search(r"\\caption\{", body)
+    caption = ""
+    if cap_match:
+        text, _ = _consume_braced(body, cap_match.end() - 1)
+        caption = (text or "").strip()
     lab = re.search(r"\\label\{([^}]*)\}", body)
     width = "0.8\\textwidth"
     if inc and inc.group(1):
@@ -288,10 +318,55 @@ def _parse_figure(body: str) -> Figure:
         if wm: width = wm.group(1).strip()
     return Figure(
         path=inc.group(2) if inc else "",
-        caption=cap.group(1) if cap else "",
+        caption=caption,
         label=lab.group(1) if lab else None,
         width=width,
     )
+
+
+def _parse_table_env(body: str) -> object:
+    """Parse a \\begin{table}...\\end{table} float. If it wraps a tabular,
+    return a Table; otherwise fall back to a RawLatex block so nothing
+    is lost."""
+    tab = re.search(r"\\begin\{tabular\}\{([^}]*)\}(.*?)\\end\{tabular\}",
+                    body, re.DOTALL)
+    cap_match = re.search(r"\\caption\{", body)
+    caption = ""
+    if cap_match:
+        text, _ = _consume_braced(body, cap_match.end() - 1)
+        caption = (text or "").strip()
+    lab = re.search(r"\\label\{([^}]*)\}", body)
+    label = lab.group(1) if lab else None
+    if not tab:
+        return RawLatex(text=f"\\begin{{table}}{body}\\end{{table}}")
+    table = _parse_tabular(tab.group(1), tab.group(2))
+    table.caption = caption
+    table.label = label
+    return table
+
+
+def _parse_tabular(align_spec: str, body: str) -> Table:
+    """Turn a tabular body into a Table model node. Cells are stored as
+    plain text strings (matching the model); embedded LaTeX inside a cell
+    is preserved verbatim because the existing serializer escapes only
+    plain-text cell content."""
+    # Drop common line-rule commands so they don't survive into cell text.
+    body = re.sub(r"\\hline\b", "", body)
+    body = re.sub(r"\\toprule|\\midrule|\\bottomrule|\\cline\{[^}]*\}", "", body)
+    # Strip extra LaTeX comments and whitespace.
+    rows_raw = re.split(r"\\\\\s*", body)
+    rows: list[list[str]] = []
+    for raw in rows_raw:
+        line = raw.strip()
+        if not line:
+            continue
+        cells = [c.strip() for c in line.split("&")]
+        rows.append(cells)
+    alignment = "".join(c for c in align_spec if c in "lcr|p")
+    # If alignment includes column-separator pipes we strip them; the
+    # serializer doesn't model vertical rules yet.
+    alignment = alignment.replace("|", "").replace("p", "l")
+    return Table(rows=rows, alignment=alignment or "")
 
 
 def import_tex(tex_source: str) -> Document:

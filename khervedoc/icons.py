@@ -69,20 +69,29 @@ def smallcaps() -> QIcon:
     return QIcon(px)
 def superscript() -> QIcon:
     px, p = _new_canvas()
-    f1 = QFont("Georgia"); f1.setPointSize(14)
-    f2 = QFont("Georgia"); f2.setPointSize(9)
     p.setPen(_FG)
-    p.setFont(f1); p.drawText(QRect(2, 4, 14, _SIZE), Qt.AlignLeft | Qt.AlignVCenter, "X")
-    p.setFont(f2); p.drawText(QRect(14, 0, 10, _SIZE), Qt.AlignLeft | Qt.AlignTop, "2")
+    # Big X anchored in the lower-left so the small 2 fits clearly above-right.
+    f1 = QFont("Georgia"); f1.setPointSize(13); f1.setBold(True)
+    p.setFont(f1)
+    p.drawText(QRect(0, 4, 16, 20), Qt.AlignCenter, "X")
+    f2 = QFont("Georgia"); f2.setPointSize(10); f2.setBold(True)
+    p.setFont(f2)
+    p.drawText(QRect(12, 0, 12, 12), Qt.AlignLeft | Qt.AlignTop, "2")
     p.end()
     return QIcon(px)
+
+
 def subscript() -> QIcon:
     px, p = _new_canvas()
-    f1 = QFont("Georgia"); f1.setPointSize(14)
-    f2 = QFont("Georgia"); f2.setPointSize(9)
     p.setPen(_FG)
-    p.setFont(f1); p.drawText(QRect(2, 0, 14, _SIZE - 4), Qt.AlignLeft | Qt.AlignVCenter, "X")
-    p.setFont(f2); p.drawText(QRect(14, 6, 10, _SIZE), Qt.AlignLeft | Qt.AlignBottom, "2")
+    # Big X anchored in the upper-left; small 2 sits in the lower-right
+    # tucked below the baseline.
+    f1 = QFont("Georgia"); f1.setPointSize(13); f1.setBold(True)
+    p.setFont(f1)
+    p.drawText(QRect(0, 0, 16, 20), Qt.AlignCenter, "X")
+    f2 = QFont("Georgia"); f2.setPointSize(10); f2.setBold(True)
+    p.setFont(f2)
+    p.drawText(QRect(12, 12, 12, 12), Qt.AlignLeft | Qt.AlignTop, "2")
     p.end()
     return QIcon(px)
 
