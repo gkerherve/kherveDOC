@@ -909,20 +909,37 @@ class DocumentEditor(QWidget):
 
     def _insert_math_image(self, cursor: QTextCursor, latex: str) -> None:
         """Render math to a PNG and insert it into the document."""
-        png_path = _render_math_image(latex)
-        if png_path is None or not png_path.exists():
-            return
-        img = QImage(str(png_path))
-        if img.isNull():
-            return
-        url = QUrl.fromLocalFile(str(png_path))
-        self._edit.document().addResource(2, url, img)
-        img_fmt = QTextImageFormat()
-        img_fmt.setName(url.toString())
-        img_fmt.setWidth(img.width())
-        img_fmt.setHeight(img.height())
-        cursor.insertImage(img_fmt)
-        cursor.insertText(_LINE_SEP)
+        _diag = Path(tempfile.gettempdir()) / "khervedoc_math_diag.txt"
+        with open(_diag, "a", encoding="utf-8") as _f:
+            _f.write(f"--- _insert_math_image called ---\n")
+            _f.write(f"  latex: {latex[:80]!r}\n")
+            try:
+                png_path = _render_math_image(latex)
+            except Exception as exc:
+                _f.write(f"  EXCEPTION in _render_math_image: {exc}\n")
+                return
+            _f.write(f"  png_path: {png_path}\n")
+            if png_path is None:
+                _f.write("  png_path is None — skipping\n")
+                return
+            exists = png_path.exists()
+            _f.write(f"  exists: {exists}\n")
+            if not exists:
+                return
+            img = QImage(str(png_path))
+            _f.write(f"  QImage null: {img.isNull()}, size: {img.width()}x{img.height()}\n")
+            if img.isNull():
+                return
+            url = QUrl.fromLocalFile(str(png_path))
+            _f.write(f"  url: {url.toString()}\n")
+            self._edit.document().addResource(2, url, img)
+            img_fmt = QTextImageFormat()
+            img_fmt.setName(url.toString())
+            img_fmt.setWidth(img.width())
+            img_fmt.setHeight(img.height())
+            cursor.insertImage(img_fmt)
+            cursor.insertText(_LINE_SEP)
+            _f.write(f"  INSERTED OK {img.width()}x{img.height()}\n")
 
     def _insert_figure_widget(self, cursor: QTextCursor, figure: Figure) -> None:
         """Insert a Figure model node as a centered QTextTable with image,

@@ -439,7 +439,7 @@ class MainWindow(QMainWindow):
         # Default to ~80 % of the screen, capped, so the window starts
         # in a comfortable size rather than near-maximised. The user
         # can still drag-resize bigger if they want.
-        w = min(1400, int(screen.width() * 0.80))
+        w = min(1700, int(screen.width() * 0.80))
         h = min(900, int(screen.height() * 0.85))
         self.resize(w, h)
         # Cascade secondary windows so they don't perfectly overlap the
@@ -470,8 +470,8 @@ class MainWindow(QMainWindow):
         # the editor (where the page card can scroll horizontally if
         # needed but the wrapped editor lines stay readable at
         # narrower widths).
-        self._splitter.setStretchFactor(0, 1)
-        self._splitter.setStretchFactor(1, 2)
+        self._splitter.setStretchFactor(0, 2)
+        self._splitter.setStretchFactor(1, 5)
 
         # Find bar (hidden until Ctrl+F).
         self._find_bar = _FindBar(self)
