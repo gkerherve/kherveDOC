@@ -146,7 +146,12 @@ class HistoryDialog(QDialog):
         self._diff.setReadOnly(True)
         f = QFont("Consolas"); f.setStyleHint(QFont.Monospace); f.setPointSize(10)
         self._diff.setFont(f)
-        self._diff.setLineWrapMode(QPlainTextEdit.NoWrap)
+        # Wrap long lines at the widget edge instead of forcing a
+        # horizontal scrollbar. Diffs of prose-y LaTeX (long body
+        # paragraphs, multi-sentence captions) end up with
+        # multi-hundred-char lines that the user couldn't read
+        # without scrolling sideways one line at a time.
+        self._diff.setLineWrapMode(QPlainTextEdit.WidgetWidth)
         # Attach the syntax highlighter to the editor's QTextDocument so
         # every block reload gets re-coloured automatically.
         self._highlighter = _DiffHighlighter(self._diff.document())
