@@ -1082,6 +1082,37 @@ class MainWindow(QMainWindow):
                       "and see what changed each time",
             triggered=self._show_history)
 
+        # Review
+        self.act_highlight = QAction(
+            icons.highlight(), "&Highlight", self,
+            shortcut=QKeySequence("Ctrl+Shift+H"),
+            statusTip="Highlight selected text",
+            triggered=self._show_highlight_picker)
+        self.act_remove_highlight = QAction(
+            "Remove highlight", self,
+            triggered=self._editor.remove_highlight)
+        self.act_comment = QAction(
+            icons.comment(), "New &comment", self,
+            shortcut=QKeySequence("Ctrl+Alt+M"),
+            statusTip="Add a reviewer comment to the selected text",
+            triggered=self._insert_comment)
+        self.act_accept_comment = QAction(
+            icons.accept_change(), "&Accept", self,
+            statusTip="Accept comment and keep the text",
+            triggered=self._editor.accept_comment)
+        self.act_reject_comment = QAction(
+            icons.reject_change(), "&Reject", self,
+            statusTip="Reject comment and delete the text",
+            triggered=self._editor.reject_comment)
+        self.act_prev_comment = QAction(
+            icons.prev_comment(), "← &Previous comment", self,
+            shortcut=QKeySequence("Ctrl+Shift+["),
+            triggered=self._editor.prev_comment)
+        self.act_next_comment = QAction(
+            icons.next_comment(), "→ &Next comment", self,
+            shortcut=QKeySequence("Ctrl+Shift+]"),
+            triggered=self._editor.next_comment)
+
         # Help
         self.act_help_guide = QAction("&User guide", self,
                                       shortcut=QKeySequence("F1"),
@@ -1171,6 +1202,17 @@ class MainWindow(QMainWindow):
         m_view.addSeparator()
         m_view.addAction(self.act_spell_check)
         m_view.addAction(self.act_dark_theme)
+
+        m_review = mb.addMenu("&Review")
+        m_review.addAction(self.act_highlight)
+        m_review.addAction(self.act_remove_highlight)
+        m_review.addSeparator()
+        m_review.addAction(self.act_comment)
+        m_review.addAction(self.act_accept_comment)
+        m_review.addAction(self.act_reject_comment)
+        m_review.addSeparator()
+        m_review.addAction(self.act_prev_comment)
+        m_review.addAction(self.act_next_comment)
 
         m_git = mb.addMenu("&Git")
         m_git.addAction(self.act_commit_now)
@@ -1397,6 +1439,11 @@ class MainWindow(QMainWindow):
         tb.addSeparator()
         tb.addAction(self.act_spell_check)
         tb.addSeparator()
+        tb.addAction(self.act_highlight)
+        tb.addAction(self.act_comment)
+        tb.addAction(self.act_accept_comment)
+        tb.addAction(self.act_reject_comment)
+        tb.addSeparator()
         tb.addAction(self.act_commit_now); tb.addAction(self.act_history)
 
         # Left vertical toolbar for Insert / layout actions. Matches
@@ -1587,7 +1634,9 @@ class MainWindow(QMainWindow):
         tex_path = path.parent / f"{tex_basename}.tex"
         tex_path.write_text(serialize_document(doc), encoding="utf-8")
 
-        commit_msg = f"Save {path.name} at {datetime.now().isoformat(timespec='seconds')}"
+        commit_msg = getattr(self, "_pending_commit_msg", None) or \
+            f"Save {path.name} at {datetime.now().isoformat(timespec='seconds')}"
+        self._pending_commit_msg = None
         if git_backend.is_available():
             git_backend.init_repo(path.parent)
             oid = git_backend.commit_all(path.parent, commit_msg,
@@ -1880,6 +1929,12 @@ class MainWindow(QMainWindow):
         self.act_commit_now.setIcon(icons.commit())
         self.act_history.setIcon(icons.history())
         self.act_spell_check.setIcon(icons.spell_check())
+        self.act_highlight.setIcon(icons.highlight())
+        self.act_comment.setIcon(icons.comment())
+        self.act_accept_comment.setIcon(icons.accept_change())
+        self.act_reject_comment.setIcon(icons.reject_change())
+        self.act_prev_comment.setIcon(icons.prev_comment())
+        self.act_next_comment.setIcon(icons.next_comment())
         for i, a in enumerate(self.heading_actions, start=1):
             a.setIcon(icons.heading(i))
         self._zoom_out_btn.setIcon(icons.zoom_out())
@@ -1990,6 +2045,40 @@ class MainWindow(QMainWindow):
             a.triggered.connect(lambda checked=False, q=p: self._open_path(q))
             self._recent_menu.addAction(a)
 
+    # ----- review -----
+
+    def _show_highlight_picker(self) -> None:
+        """Show a small popup with highlight colour choices."""
+        from .model import HIGHLIGHT_COLORS
+        menu = QMenu(self)
+        for name, hexval in HIGHLIGHT_COLORS.items():
+            act = menu.addAction(icons.highlight(hexval),
+                                 name.capitalize())
+            act.triggered.connect(
+                lambda checked=False, c=name: self._editor.insert_highlight(c))
+        menu.addSeparator()
+        act_remove = menu.addAction("Remove highlight")
+        act_remove.triggered.connect(self._editor.remove_highlight)
+        # Show below the highlight toolbar button
+        btn = self.findChild(QToolButton, "")
+        pos = self.cursor().pos()
+        menu.exec(pos)
+
+    def _insert_comment(self) -> None:
+        """Insert a comment, auto-filling the author from git config."""
+        author = ""
+        if git_backend.is_available() and self._current_path:
+            try:
+                import pygit2
+                repo_dir = (git_backend._find_enclosing_repo(
+                    self._current_path.parent) or self._current_path.parent)
+                repo = pygit2.Repository(str(repo_dir))
+                sig = repo.default_signature
+                author = sig.name
+            except Exception:
+                pass
+        self._editor.insert_comment(author=author)
+
     # ----- git -----
 
     def _commit_and_maybe_push(self) -> None:
@@ -2000,6 +2089,16 @@ class MainWindow(QMainWindow):
                 "can be created.\n\n"
                 "Use File \u2192 Save (Ctrl+S) to save it, then try again.")
             return
+        # Show dialog for custom commit message
+        default_msg = (f"Save {self._current_path.name} at "
+                       f"{datetime.now().isoformat(timespec='seconds')}")
+        msg, ok = QInputDialog.getText(
+            self, "Commit message",
+            "Describe what you changed:",
+            text=default_msg)
+        if not ok:
+            return
+        self._pending_commit_msg = msg.strip() or default_msg
         self._write_to(self._current_path)
 
     def _start_git_worker(self, op: str, repo_dir: Path,
