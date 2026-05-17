@@ -5,18 +5,18 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QSettings, QThread, QTimer, Signal
+from PySide6.QtCore import Qt, QSettings, QSize, QThread, QTimer, Signal
 from PySide6.QtGui import (
-    QAction, QActionGroup, QGuiApplication, QKeySequence, QTextCursor,
+    QAction, QActionGroup, QGuiApplication, QIcon, QKeySequence, QTextCursor,
     QTextDocument,
 )
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-    QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox,
-    QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMainWindow, QMessageBox,
-    QPlainTextEdit, QPushButton, QScrollArea, QSlider, QSpinBox,
-    QSplitter, QStatusBar, QTabWidget, QToolBar, QToolButton,
-    QVBoxLayout, QWidget,
+    QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog,
+    QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame,
+    QGridLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
+    QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea,
+    QSlider, QSpinBox, QSplitter, QStackedWidget, QStatusBar, QTabWidget,
+    QToolBar, QToolButton, QVBoxLayout, QWidget,
 )
 
 from . import (
@@ -332,54 +332,143 @@ SymbolPickerDialog = SymbolPickerWindow
 
 
 class EquationBuilderWindow(QWidget):
-    """Floating palette of templated math constructs.
+    """Word-style equation builder with a category toolbar and rendered
+    template previews.
 
-    Clicking a tile drops the template's LaTeX form at the current
-    cursor, wrapped in inline math. Templates use a U+25A1 placeholder
-    (□) so the user can immediately spot the slots they need to fill in.
+    The top strip shows category icons (fractions, integrals, etc.) in a
+    compact 2-row grid. Clicking a category swaps the panel below to
+    show rendered previews of the available templates. Clicking a
+    template emits ``templatePicked`` with the LaTeX code.
     """
 
     templatePicked = Signal(str)
+
+    # Map category index → icon function
+    _CATEGORY_ICONS = [
+        icons.eq_fractions, icons.eq_sums, icons.eq_integrals,
+        icons.eq_scripts, icons.eq_derivatives, icons.eq_greek,
+        icons.eq_vectors, icons.eq_relations, icons.eq_functions,
+        icons.eq_environments,
+    ]
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setWindowFlags(Qt.Tool | Qt.WindowStaysOnTopHint)
         self.setWindowTitle("Equation builder")
-        self.resize(520, 540)
+        self.resize(540, 380)
 
-        scroll = QScrollArea(self)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(4, 4, 4, 4)
+        root.setSpacing(4)
+
+        # ---- category toolbar strip (2 rows x 5 cols) ----
+        toolbar = QFrame()
+        toolbar.setFrameShape(QFrame.StyledPanel)
+        tb_grid = QGridLayout(toolbar)
+        tb_grid.setSpacing(2)
+        tb_grid.setContentsMargins(4, 4, 4, 4)
+
+        self._btn_group = QButtonGroup(self)
+        self._btn_group.setExclusive(True)
+
+        groups = equations.EQUATION_GROUPS
+        cols = 5
+        for idx, (group_name, _items) in enumerate(groups):
+            btn = QToolButton()
+            btn.setCheckable(True)
+            icon_fn = (self._CATEGORY_ICONS[idx]
+                       if idx < len(self._CATEGORY_ICONS)
+                       else icons.eq_fractions)
+            btn.setIcon(icon_fn())
+            btn.setIconSize(QSize(24, 24))
+            btn.setToolTip(group_name)
+            btn.setFixedSize(40, 34)
+            btn.setStyleSheet(
+                "QToolButton { border: 1px solid transparent; "
+                "border-radius: 3px; }"
+                "QToolButton:checked { border: 1px solid #1a6dd8; "
+                "background: #e0edfa; }")
+            self._btn_group.addButton(btn, idx)
+            tb_grid.addWidget(btn, idx // cols, idx % cols)
+
+        root.addWidget(toolbar)
+
+        # ---- category label ----
+        self._cat_label = QLabel()
+        self._cat_label.setStyleSheet(
+            "font-weight: bold; color: #444; padding: 2px 4px;")
+        root.addWidget(self._cat_label)
+
+        # ---- stacked template panels ----
+        self._stack = QStackedWidget()
+        self._populated: set[int] = set()
+        for _ in groups:
+            page = QWidget()
+            QVBoxLayout(page)  # placeholder layout
+            self._stack.addWidget(page)
+        root.addWidget(self._stack, 1)
+
+        self._btn_group.idClicked.connect(self._show_category)
+
+        # Select first category
+        first_btn = self._btn_group.button(0)
+        if first_btn:
+            first_btn.setChecked(True)
+            self._show_category(0)
+
+    def _show_category(self, index: int) -> None:
+        groups = equations.EQUATION_GROUPS
+        if index < 0 or index >= len(groups):
+            return
+        group_name, items = groups[index]
+        self._cat_label.setText(group_name)
+        self._stack.setCurrentIndex(index)
+        if index not in self._populated:
+            self._populate_page(index, items)
+            self._populated.add(index)
+
+    def _populate_page(self, index: int, items: list) -> None:
+        page = self._stack.widget(index)
+        old_layout = page.layout()
+        # Clear placeholder layout
+        if old_layout:
+            while old_layout.count():
+                old_layout.takeAt(0)
+
+        scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setFrameShape(QFrame.NoFrame)
         inner = QWidget()
-        outer = QVBoxLayout(inner)
-        outer.setSpacing(8)
-        outer.setContentsMargins(6, 6, 6, 6)
+        grid = QGridLayout(inner)
+        grid.setSpacing(4)
+        grid.setContentsMargins(4, 4, 4, 4)
+        btn_cols = 4
 
-        for group_name, items in equations.EQUATION_GROUPS:
-            label = QLabel(f"<b>{group_name}</b>")
-            label.setStyleSheet("color: #444; padding-top: 4px;")
-            outer.addWidget(label)
-            grid = QGridLayout()
-            grid.setSpacing(2)
-            cols = 6
-            for i, (latex, preview) in enumerate(items):
-                btn = QPushButton(preview)
-                btn.setToolTip(latex)
-                btn.setMinimumHeight(30)
-                btn.setStyleSheet(
-                    "QPushButton { font-size: 10pt; padding: 2px 6px; "
-                    "text-align: center; }")
-                btn.clicked.connect(
-                    lambda checked=False, tex=latex: self.templatePicked.emit(tex))
-                grid.addWidget(btn, i // cols, i % cols)
-            outer.addLayout(grid)
+        for i, (latex, preview_text) in enumerate(items):
+            btn = QToolButton()
+            btn.setToolTip(f"{preview_text}\n{latex}")
+            pixmap = equations.render_template_preview(latex)
+            if pixmap and not pixmap.isNull():
+                btn.setIcon(QIcon(pixmap))
+                pw, ph = pixmap.width(), pixmap.height()
+                btn.setIconSize(QSize(min(pw, 120), min(ph, 60)))
+                btn.setFixedSize(min(pw + 14, 134), min(ph + 10, 70))
+            else:
+                btn.setText(preview_text)
+                btn.setFixedSize(90, 44)
+            btn.setStyleSheet(
+                "QToolButton { border: 1px solid #ccc; "
+                "border-radius: 3px; padding: 2px; }"
+                "QToolButton:hover { border: 1px solid #1a6dd8; "
+                "background: #e8f0fa; }")
+            btn.clicked.connect(
+                lambda checked=False, tex=latex:
+                    self.templatePicked.emit(tex))
+            grid.addWidget(btn, i // btn_cols, i % btn_cols)
 
-        outer.addStretch(1)
         scroll.setWidget(inner)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(scroll)
+        old_layout.addWidget(scroll)
 
 
 # ---------- main window ----------

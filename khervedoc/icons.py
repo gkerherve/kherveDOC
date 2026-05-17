@@ -483,3 +483,119 @@ def zoom_out() -> QIcon:
     p.drawLine(7, 10, 13, 10)
     p.end()
     return QIcon(px)
+
+
+# ---- equation builder category icons ----
+
+def eq_fractions() -> QIcon:
+    px, p = _new_canvas()
+    p.setRenderHint(QPainter.Antialiasing, True)
+    f = QFont("Cambria Math"); f.setPointSize(7); f.setItalic(True)
+    p.setFont(f); p.setPen(_fg())
+    p.drawText(QRect(4, 2, 16, 10), Qt.AlignCenter, "a+b")
+    p.setPen(QPen(_fg(), 1.4)); p.drawLine(5, 12, 19, 12)
+    p.setFont(f); p.setPen(_fg())
+    p.drawText(QRect(4, 12, 16, 10), Qt.AlignCenter, "c")
+    p.end()
+    return QIcon(px)
+
+
+def eq_sums() -> QIcon:
+    px, p = _new_canvas()
+    f = QFont("Cambria Math"); f.setPointSize(16)
+    p.setFont(f); p.setPen(_accent())
+    p.drawText(QRect(0, 0, _SIZE, _SIZE), Qt.AlignCenter, "\u03a3")
+    p.end()
+    return QIcon(px)
+
+
+def eq_integrals() -> QIcon:
+    px, p = _new_canvas()
+    f = QFont("Cambria Math"); f.setPointSize(18)
+    p.setFont(f); p.setPen(_accent())
+    p.drawText(QRect(0, -1, _SIZE, _SIZE), Qt.AlignCenter, "\u222b")
+    p.end()
+    return QIcon(px)
+
+
+def eq_scripts() -> QIcon:
+    px, p = _new_canvas()
+    f = QFont("Cambria Math"); f.setPointSize(12); f.setItalic(True)
+    p.setFont(f); p.setPen(_fg())
+    p.drawText(QRect(2, 4, 14, 16), Qt.AlignCenter, "x")
+    f2 = QFont("Cambria Math"); f2.setPointSize(7); f2.setItalic(True)
+    p.setFont(f2); p.setPen(_accent())
+    p.drawText(QRect(13, 2, 10, 10), Qt.AlignLeft | Qt.AlignTop, "2")
+    p.drawText(QRect(13, 12, 10, 10), Qt.AlignLeft | Qt.AlignTop, "i")
+    p.end()
+    return QIcon(px)
+
+
+def eq_derivatives() -> QIcon:
+    px, p = _new_canvas()
+    f = QFont("Cambria Math"); f.setPointSize(8); f.setItalic(True)
+    p.setFont(f); p.setPen(_fg())
+    p.drawText(QRect(2, 2, 20, 10), Qt.AlignCenter, "dy")
+    p.setPen(QPen(_fg(), 1.2)); p.drawLine(5, 12, 19, 12)
+    p.setFont(f); p.setPen(_fg())
+    p.drawText(QRect(2, 12, 20, 10), Qt.AlignCenter, "dx")
+    p.end()
+    return QIcon(px)
+
+
+def eq_greek() -> QIcon:
+    px, p = _new_canvas()
+    f = QFont("Cambria Math"); f.setPointSize(11); f.setItalic(True)
+    p.setFont(f); p.setPen(_accent())
+    p.drawText(QRect(-2, 0, _SIZE, _SIZE), Qt.AlignCenter, "\u03b1\u03b2")
+    p.end()
+    return QIcon(px)
+
+
+def eq_vectors() -> QIcon:
+    px, p = _new_canvas()
+    p.setRenderHint(QPainter.Antialiasing, True)
+    # Arrow over x
+    p.setPen(QPen(_accent(), 1.4, Qt.SolidLine, Qt.RoundCap))
+    p.drawLine(6, 7, 18, 7)
+    p.drawLine(15, 4, 18, 7); p.drawLine(15, 10, 18, 7)
+    f = QFont("Cambria Math"); f.setPointSize(11); f.setItalic(True)
+    p.setFont(f); p.setPen(_fg())
+    p.drawText(QRect(0, 6, _SIZE, 16), Qt.AlignCenter, "x")
+    p.end()
+    return QIcon(px)
+
+
+def eq_relations() -> QIcon:
+    px, p = _new_canvas()
+    f = QFont("Cambria Math"); f.setPointSize(12)
+    p.setFont(f); p.setPen(_fg())
+    p.drawText(QRect(0, 0, _SIZE, _SIZE), Qt.AlignCenter, "\u2264\u2265")
+    p.end()
+    return QIcon(px)
+
+
+def eq_functions() -> QIcon:
+    px, p = _new_canvas()
+    f = QFont("Cambria Math"); f.setPointSize(10)
+    p.setFont(f); p.setPen(_accent())
+    p.drawText(QRect(0, 0, _SIZE, _SIZE), Qt.AlignCenter, "sin")
+    p.end()
+    return QIcon(px)
+
+
+def eq_environments() -> QIcon:
+    px, p = _new_canvas()
+    p.setRenderHint(QPainter.Antialiasing, True)
+    # Left brace
+    p.setPen(QPen(_accent(), 1.6, Qt.SolidLine, Qt.RoundCap))
+    p.drawLine(8, 4, 6, 4); p.drawLine(6, 4, 6, 10)
+    p.drawLine(6, 10, 4, 12); p.drawLine(4, 12, 6, 14)
+    p.drawLine(6, 14, 6, 20); p.drawLine(6, 20, 8, 20)
+    # Lines representing equation rows
+    p.setPen(QPen(_fg(), 1.2, Qt.SolidLine, Qt.RoundCap))
+    p.drawLine(10, 8, 20, 8)
+    p.drawLine(10, 12, 18, 12)
+    p.drawLine(10, 16, 20, 16)
+    p.end()
+    return QIcon(px)

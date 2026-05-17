@@ -8,6 +8,9 @@ slot with their own content.
 """
 from __future__ import annotations
 
+import re as _re
+from io import BytesIO as _BytesIO
+
 
 EQUATION_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
     ("Fractions & roots", [
@@ -96,3 +99,87 @@ def all_templates() -> list[tuple[str, str]]:
     for _, items in EQUATION_GROUPS:
         out.extend(items)
     return out
+
+
+# ---- rendered template previews for the equation builder UI ----
+
+_PREVIEW_CACHE: dict[str, object] = {}  # latex → QPixmap
+
+_ENV_RE = _re.compile(
+    r"\\begin\{(\w+\*?)\}(.*?)\\end\{\1\}", _re.DOTALL)
+
+
+def render_template_preview(latex: str, font_size: int = 16):
+    """Render a LaTeX template to a QPixmap for use as a button icon.
+
+    Returns a QPixmap or None on failure. Results are cached in memory.
+    """
+    from PySide6.QtGui import QImage, QPixmap
+
+    if latex in _PREVIEW_CACHE:
+        return _PREVIEW_CACHE[latex]
+    try:
+        from matplotlib.figure import Figure as MplFigure
+    except ImportError:
+        _PREVIEW_CACHE[latex] = None
+        return None
+
+    raw = latex.strip()
+    # Templates store literal two-char sequences \n for newlines.
+    # Convert known environment delimiters so the env regex can match.
+    for env in ("equation", "align", "gather", "multline",
+                "cases", "pmatrix", "bmatrix", "vmatrix"):
+        raw = raw.replace(f"\\begin{{{env}}}" + "\\n",
+                          f"\\begin{{{env}}}\n")
+        raw = raw.replace("\\n" + f"\\end{{{env}}}",
+                          f"\n\\end{{{env}}}")
+    # Also convert remaining standalone \n between content lines
+    raw = raw.replace("\\n", "\n")
+    # Strip \begin{...}\end{...} wrappers
+    m = _ENV_RE.search(raw)
+    if m:
+        raw = m.group(2).strip()
+    raw = raw.strip("$").strip()
+    # Replace placeholder □ with a visible glyph mathtext supports
+    raw = raw.replace(r"\square", r"\bullet")
+    # Translate commands mathtext doesn't support
+    raw = raw.replace("\\tfrac", "\\frac")
+    raw = raw.replace("\\dfrac", "\\frac")
+    raw = raw.replace("\\text{", "\\mathrm{")
+    raw = raw.replace("\\operatorname{", "\\mathrm{")
+    raw = raw.replace("\\displaystyle", "")
+    raw = raw.replace("\\textstyle", "")
+    raw = raw.replace("\\liminf", "\\lim\\inf")
+    raw = raw.replace("\\limsup", "\\lim\\sup")
+    # Handle multi-line: split on \\, strip &
+    lines = _re.split(r"\\\\", raw)
+    lines = [ln.replace("&", " ").strip() for ln in lines]
+    lines = [ln for ln in lines if ln]
+    if not lines:
+        _PREVIEW_CACHE[latex] = None
+        return None
+    try:
+        n = len(lines)
+        line_height = 0.3
+        fig_h = max(0.35, n * line_height)
+        fig = MplFigure(figsize=(2.4, fig_h), dpi=120)
+        fig.patch.set_alpha(0)
+        for i, line in enumerate(lines):
+            y = 1.0 - (i + 0.5) / n
+            fig.text(0.5, y, f"${line}$", fontsize=font_size,
+                     ha="center", va="center", math_fontfamily="cm")
+        buf = _BytesIO()
+        fig.savefig(buf, format="png", bbox_inches="tight",
+                    pad_inches=0.02, transparent=True)
+        buf.seek(0)
+        img = QImage()
+        img.loadFromData(buf.read())
+        if img.isNull():
+            _PREVIEW_CACHE[latex] = None
+            return None
+        px = QPixmap.fromImage(img)
+        _PREVIEW_CACHE[latex] = px
+        return px
+    except Exception:
+        _PREVIEW_CACHE[latex] = None
+        return None
