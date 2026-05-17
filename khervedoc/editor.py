@@ -41,9 +41,19 @@ from .model import (
 
 # ---- rendered math (matplotlib mathtext) ----
 import re as _re
+import hashlib as _hashlib
 from io import BytesIO as _BytesIO
 
 _MATH_IMAGE_CACHE: dict[str, QImage | None] = {}
+_math_tmp_dir: Path | None = None
+
+
+def _math_cache_dir() -> Path:
+    """Lazy-init a temp directory for rendered math PNGs."""
+    global _math_tmp_dir
+    if _math_tmp_dir is None:
+        _math_tmp_dir = Path(tempfile.mkdtemp(prefix="khervedoc-math-"))
+    return _math_tmp_dir
 
 _ENV_STRIP_RE = _re.compile(
     r"\\begin\{(equation|align|gather|multline|displaymath|eqnarray"
@@ -51,13 +61,13 @@ _ENV_STRIP_RE = _re.compile(
     _re.DOTALL)
 
 
-def _render_math_image(latex: str, font_size: int = 14) -> QImage | None:
-    """Render a LaTeX math expression to a QImage using matplotlib.
+def _render_math_image(latex: str, font_size: int = 14) -> Path | None:
+    """Render a LaTeX math expression to a PNG file using matplotlib.
 
     Handles multi-line equations (align, gather, etc.) by splitting on
     ``\\\\`` and rendering each line separately, stacked vertically.
-    Returns None if matplotlib is unavailable or the expression fails to
-    render. Results are cached in memory."""
+    Returns the path to the PNG file, or None on failure. Results are
+    cached on disk."""
     if latex in _MATH_IMAGE_CACHE:
         return _MATH_IMAGE_CACHE[latex]
     try:
@@ -93,7 +103,7 @@ def _render_math_image(latex: str, font_size: int = 14) -> QImage | None:
         return None
     try:
         n = len(lines)
-        line_height = 0.35  # inches per line (tight)
+        line_height = 0.35
         fig_h = max(0.4, n * line_height)
         fig = MplFigure(figsize=(6, fig_h), dpi=150)
         fig.patch.set_alpha(0)
@@ -101,14 +111,13 @@ def _render_math_image(latex: str, font_size: int = 14) -> QImage | None:
             y = 1.0 - (i + 0.5) / n
             fig.text(0.5, y, f"${line}$", fontsize=font_size,
                      ha="center", va="center", math_fontfamily="cm")
-        buf = _BytesIO()
-        fig.savefig(buf, format="png", bbox_inches="tight",
+        # Save to a temp file so QTextDocument can load it via file:// URL.
+        h = _hashlib.md5(latex.encode()).hexdigest()[:12]
+        png_path = _math_cache_dir() / f"math_{h}.png"
+        fig.savefig(str(png_path), format="png", bbox_inches="tight",
                     pad_inches=0.04, transparent=True)
-        buf.seek(0)
-        img = QImage()
-        img.loadFromData(buf.read())
-        _MATH_IMAGE_CACHE[latex] = img if not img.isNull() else None
-        return _MATH_IMAGE_CACHE[latex]
+        _MATH_IMAGE_CACHE[latex] = png_path
+        return png_path
     except Exception:
         _MATH_IMAGE_CACHE[latex] = None
         return None
@@ -783,18 +792,7 @@ class DocumentEditor(QWidget):
                 self._insert_inline(cursor, inline, base_format=body_fmt)
         elif isinstance(block, MathBlock):
             cursor.block().setUserState(_STATE_MATH_BLOCK)
-            # Try to render a visual math image above the LaTeX source.
-            math_img = _render_math_image(block.latex)
-            if math_img is not None and not math_img.isNull():
-                url_str = f"math://{id(math_img)}"
-                url = QUrl(url_str)
-                self._edit.document().addResource(2, url, math_img)
-                img_fmt = QTextImageFormat()
-                img_fmt.setName(url_str)
-                img_fmt.setWidth(math_img.width())
-                img_fmt.setHeight(math_img.height())
-                cursor.insertImage(img_fmt)
-                cursor.insertText(_LINE_SEP)
+            self._insert_math_image(cursor, block.latex)
             visible = block.latex.replace("\n", _LINE_SEP)
             cursor.insertText(visible, _math_block_char_format())
         elif isinstance(block, ListNode):
@@ -908,6 +906,23 @@ class DocumentEditor(QWidget):
             cap_cursor.insertText(f"Caption: {table.caption}", cap_fmt)
         # Move the cursor past the table so subsequent content goes after it.
         cursor.movePosition(QTextCursor.End)
+
+    def _insert_math_image(self, cursor: QTextCursor, latex: str) -> None:
+        """Render math to a PNG and insert it into the document."""
+        png_path = _render_math_image(latex)
+        if png_path is None or not png_path.exists():
+            return
+        img = QImage(str(png_path))
+        if img.isNull():
+            return
+        url = QUrl.fromLocalFile(str(png_path))
+        self._edit.document().addResource(2, url, img)
+        img_fmt = QTextImageFormat()
+        img_fmt.setName(url.toString())
+        img_fmt.setWidth(img.width())
+        img_fmt.setHeight(img.height())
+        cursor.insertImage(img_fmt)
+        cursor.insertText(_LINE_SEP)
 
     def _insert_figure_widget(self, cursor: QTextCursor, figure: Figure) -> None:
         """Insert a Figure model node as a centered QTextTable with image,
@@ -1511,18 +1526,7 @@ class DocumentEditor(QWidget):
         c.insertBlock()
         c.block().setUserState(_STATE_MATH_BLOCK)
         c.setBlockFormat(QTextBlockFormat())
-        # Render math image above the LaTeX source.
-        math_img = _render_math_image(latex)
-        if math_img is not None and not math_img.isNull():
-            url_str = f"math://{id(math_img)}"
-            url = QUrl(url_str)
-            self._edit.document().addResource(2, url, math_img)
-            img_fmt = QTextImageFormat()
-            img_fmt.setName(url_str)
-            img_fmt.setWidth(math_img.width())
-            img_fmt.setHeight(math_img.height())
-            c.insertImage(img_fmt)
-            c.insertText(_LINE_SEP)
+        self._insert_math_image(c, latex)
         c.insertText(latex.replace("\n", _LINE_SEP), _math_block_char_format())
         c.insertBlock(); c.block().setUserState(_STATE_PARAGRAPH)
 
