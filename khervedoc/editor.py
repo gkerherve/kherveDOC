@@ -21,7 +21,8 @@ from PySide6.QtGui import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QInputDialog, QScrollArea, QVBoxLayout, QWidget,
+    QFrame, QHBoxLayout, QInputDialog, QMenu, QScrollArea, QVBoxLayout,
+    QWidget,
 )
 
 from . import page_sizes
@@ -420,6 +421,8 @@ class DocumentEditor(QWidget):
         self._edit.setStyleSheet("QTextEdit { background: white; border: none; }")
         self._edit.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._edit.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._edit.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._edit.customContextMenuRequested.connect(self._show_context_menu)
 
         self._page = QFrame()
         self._page.setObjectName("page")
@@ -1374,6 +1377,63 @@ class DocumentEditor(QWidget):
         table = Table(rows=[["cell"] * cols for _ in range(rows)],
                       caption=cap, label=None, alignment="")
         self._insert_table_widget(c, table)
+
+    # ---- table context menu & manipulation ----
+
+    def _current_table(self) -> QTextTable | None:
+        """Return the QTextTable under the cursor, or None."""
+        return self._edit.textCursor().currentTable()
+
+    def _show_context_menu(self, pos) -> None:
+        menu = self._edit.createStandardContextMenu()
+        qtable = self._current_table()
+        if qtable is not None:
+            menu.addSeparator()
+            cursor = self._edit.textCursor()
+            cell = qtable.cellAt(cursor)
+            row, col = cell.row(), cell.column()
+
+            menu.addAction("Insert row above",
+                           lambda: self._table_insert_row(qtable, row))
+            menu.addAction("Insert row below",
+                           lambda: self._table_insert_row(qtable, row + 1))
+            menu.addAction("Insert column left",
+                           lambda: self._table_insert_col(qtable, col))
+            menu.addAction("Insert column right",
+                           lambda: self._table_insert_col(qtable, col + 1))
+            menu.addSeparator()
+            if qtable.rows() > 1:
+                menu.addAction("Delete row",
+                               lambda: self._table_delete_row(qtable, row))
+            if qtable.columns() > 1:
+                menu.addAction("Delete column",
+                               lambda: self._table_delete_col(qtable, col))
+        menu.exec(self._edit.viewport().mapToGlobal(pos))
+
+    def _table_insert_row(self, qtable: QTextTable, at: int) -> None:
+        qtable.insertRows(at, 1)
+
+    def _table_insert_col(self, qtable: QTextTable, at: int) -> None:
+        qtable.insertColumns(at, 1)
+        # Update column width constraints so they stay even.
+        ncols = qtable.columns()
+        tfmt = qtable.format()
+        constraints = [QTextLength(QTextLength.PercentageLength, 100 / ncols)
+                       for _ in range(ncols)]
+        tfmt.setColumnWidthConstraints(constraints)
+        qtable.setFormat(tfmt)
+
+    def _table_delete_row(self, qtable: QTextTable, at: int) -> None:
+        qtable.removeRows(at, 1)
+
+    def _table_delete_col(self, qtable: QTextTable, at: int) -> None:
+        qtable.removeColumns(at, 1)
+        ncols = qtable.columns()
+        tfmt = qtable.format()
+        constraints = [QTextLength(QTextLength.PercentageLength, 100 / ncols)
+                       for _ in range(ncols)]
+        tfmt.setColumnWidthConstraints(constraints)
+        qtable.setFormat(tfmt)
 
     def insert_raw_latex(self) -> None:
         text, ok = QInputDialog.getMultiLineText(self, "Insert raw LaTeX",
