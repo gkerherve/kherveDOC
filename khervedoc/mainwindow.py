@@ -1064,24 +1064,31 @@ class MainWindow(QMainWindow):
         self._write_to(path)
         self._remember_recent(path)
 
+    @staticmethod
+    def _doc_stem(path: Path) -> str:
+        """Return the document's base name, handling .kdoc.json correctly."""
+        if path.name.endswith(".kdoc.json"):
+            return path.name.replace(".kdoc.json", "")
+        return path.stem
+
     def _write_to(self, path: Path) -> None:
         doc = self._editor.get_document()
         # Dispatch on the file extension: .kdocz is the bundled ZIP container,
         # .kdoc.json is the plain JSON model. The .tex export sits alongside
         # in both cases so users can inspect the source without unzipping.
+        tex_basename = self._doc_stem(path)
         if kdocz.is_kdocz_path(path):
             kdocz.save_kdocz(doc, path)
-            tex_basename = path.stem
         else:
             path.write_text(to_json(doc), encoding="utf-8")
-            tex_basename = path.name.replace(".kdoc.json", "")
         tex_path = path.parent / f"{tex_basename}.tex"
         tex_path.write_text(serialize_document(doc), encoding="utf-8")
 
         commit_msg = f"Save {path.name} at {datetime.now().isoformat(timespec='seconds')}"
         if git_backend.is_available():
             git_backend.init_repo(path.parent)
-            oid = git_backend.commit_all(path.parent, commit_msg)
+            oid = git_backend.commit_all(path.parent, commit_msg,
+                                         file_stem=tex_basename)
             pushed = git_backend.push(path.parent) if oid else False
             if oid:
                 tail = f"; pushed" if pushed else " (push failed or no remote)"
@@ -1436,7 +1443,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "History", "No commits yet.")
             return
         from .history_dialog import HistoryDialog
-        stem = self._current_path.stem
+        stem = self._doc_stem(self._current_path)
         dlg = HistoryDialog(self._current_path.parent, self,
                             file_stem=stem)
         dlg.exec()

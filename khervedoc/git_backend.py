@@ -92,8 +92,14 @@ def _signature(repo: "pygit2.Repository | None" = None) -> "pygit2.Signature":
         "kherveDOC", "khervedoc@local", int(datetime.now().timestamp()), 0)
 
 
-def commit_all(repo_dir: Path, message: str | None = None) -> str | None:
-    """Stage every tracked + new file in `repo_dir` and create a commit.
+def commit_all(repo_dir: Path, message: str | None = None,
+               file_stem: str | None = None) -> str | None:
+    """Stage files in *repo_dir* and create a commit.
+
+    When *file_stem* is given only files whose name starts with that
+    stem are staged (e.g. ``"My report"`` stages ``My report.kdocz``,
+    ``My report.tex``, ``My report.kdoc.json``).  Otherwise every
+    tracked + new file is staged.
 
     Returns the new commit's hex OID, or None if nothing changed / git unavailable.
     """
@@ -105,7 +111,15 @@ def commit_all(repo_dir: Path, message: str | None = None) -> str | None:
     if repo is None:
         return None
     index = repo.index
-    index.add_all()
+    if file_stem:
+        repo_root = Path(repo.workdir)
+        for p in repo_root.iterdir():
+            if p.name.startswith(file_stem) and p.is_file():
+                # Path relative to repo root for index.add.
+                rel = str(p.relative_to(repo_root)).replace("\\", "/")
+                index.add(rel)
+    else:
+        index.add_all()
     index.write()
 
     # Detect "no changes" by comparing the new tree against HEAD's tree.
