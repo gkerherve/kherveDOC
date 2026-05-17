@@ -146,32 +146,48 @@ class LatexHighlighter(QSyntaxHighlighter):
             elif _BEGIN_TABLE_RE.match(text).hasMatch():
                 state = _STATE_TABLE
 
-        # Apply full-line background for block environments.
+        # Determine which block-level format applies (if any).
+        block_fmt = None
+        is_section = False
         if state == _STATE_MATH:
-            self.setFormat(0, len(text), self._math_block_fmt)
+            block_fmt = self._math_block_fmt
             if _END_MATH_RE.match(text).hasMatch():
                 state = _STATE_NORMAL
         elif state == _STATE_FIGURE:
-            self.setFormat(0, len(text), self._figure_fmt)
+            block_fmt = self._figure_fmt
             if _END_FIGURE_RE.match(text).hasMatch():
                 state = _STATE_NORMAL
         elif state == _STATE_TABLE:
-            self.setFormat(0, len(text), self._table_fmt)
+            block_fmt = self._table_fmt
             if _END_TABLE_RE.match(text).hasMatch():
                 state = _STATE_NORMAL
-        else:
-            # Section heading — highlight the whole line.
-            if _SECTION_RE.match(text).hasMatch():
-                self.setFormat(0, len(text), self._section_fmt)
+        elif _SECTION_RE.match(text).hasMatch():
+            block_fmt = self._section_fmt
+            is_section = True
 
         self.setCurrentBlockState(state)
 
-        # Token-level highlights on top of block backgrounds.
+        # Apply token-level highlights first.
         for pattern, fmt in self._rules:
             it = pattern.globalMatch(text)
             while it.hasNext():
                 m = it.next()
                 self.setFormat(m.capturedStart(), m.capturedLength(), fmt)
+
+        # Overlay block background on every character without touching the
+        # foreground colour set by the token rules above.
+        if block_fmt is not None:
+            bg = block_fmt.background().color()
+            for i in range(len(text)):
+                f = self.format(i)
+                f.setBackground(bg)
+                # For section lines, also apply bold + section foreground
+                # to characters that weren't coloured by a token rule
+                # (i.e. the plain-text portion of the heading).
+                if is_section and not f.fontWeight() > QFont.Normal:
+                    f.setForeground(block_fmt.foreground())
+                    f.setFontWeight(QFont.Bold)
+                self.setFormat(i, 1, f)
 
 
 # ---- LaTeX command dictionary for autocomplete ----
