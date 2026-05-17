@@ -87,6 +87,37 @@ class _GitNetworkWorker(QThread):
         self.finished_with.emit(self._op, ok, msg)
 
 
+def _first_text_snippet(page, max_chars: int = 24) -> str:
+    """Return the first chunk of meaningful text on a pymupdf page,
+    used as the anchor for the editor's page-break overlay. We skip
+    leading whitespace, the running header / page-number line if it
+    sits on its own at the top, and stop after `max_chars` so the
+    snippet is short enough to survive small LaTeX-vs-Qt rendering
+    differences (hyphenation, whitespace, etc.) while still being
+    unique enough to find unambiguously in the editor."""
+    try:
+        blocks = page.get_text("blocks") or []
+    except Exception:
+        return ""
+    # Sort top-to-bottom in case pymupdf returned them in another order.
+    blocks.sort(key=lambda b: (round(b[1], 1), round(b[0], 1)))
+    for b in blocks:
+        text = (b[4] if len(b) > 4 else "").strip()
+        if not text:
+            continue
+        # Page numbers sit in their own block and are usually just
+        # digits — ignore those so the snippet picks up real text.
+        if text.replace(".", "").isdigit():
+            continue
+        # Collapse internal whitespace so the snippet matches what
+        # the editor stores in its QTextBlocks.
+        flat = " ".join(text.split())
+        if len(flat) < 3:
+            continue
+        return flat[:max_chars]
+    return ""
+
+
 # ---------- document properties dialog ----------
 
 _FONT_FAMILIES = [
@@ -2242,15 +2273,24 @@ class MainWindow(QMainWindow):
             self._preview.show_pdf(result.pdf_path)
             if self._side_by_side:
                 self._pdf_side_panel.show_pdf(result.pdf_path)
-            # Tell the editor how many pages the PDF actually has so
-            # the page-break overlay can position its lines using the
-            # real ratio (editor_height / pdf_pages) instead of the
-            # static page_height_px heuristic. Cheap: pymupdf was
-            # already opened to render the preview.
+            # Tell the editor how many pages the PDF has AND give it
+            # the first-text snippet of each subsequent page so the
+            # break-line overlay can anchor itself to the actual
+            # block where the PDF starts that page — way more
+            # accurate than the doc_height/pdf_pages uniform-spacing
+            # fallback (which assumes content is evenly distributed,
+            # and falls apart when page 1 has a title block).
             try:
                 import pymupdf
+                anchors: list[tuple[int, str]] = []
                 with pymupdf.open(result.pdf_path) as pdf:
-                    self._editor.text_edit.set_pdf_page_count(len(pdf))
+                    pages = len(pdf)
+                    for i in range(1, pages):   # skip page 1 (no break above it)
+                        snippet = _first_text_snippet(pdf[i])
+                        if snippet:
+                            anchors.append((i + 1, snippet))
+                self._editor.text_edit.set_pdf_page_count(pages)
+                self._editor.text_edit.set_page_anchors(anchors)
             except Exception:
                 pass
         else:

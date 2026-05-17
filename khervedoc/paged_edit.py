@@ -47,13 +47,21 @@ class _PageBreakOverlay(QWidget):
         return False
 
     def paintEvent(self, ev):
-        # Preferred: use the *actual* PDF page count from the last
-        # compile to distribute break lines across the editor's content
-        # height. This is far more accurate than the static page-height
-        # heuristic because LaTeX's text density (font, margins,
-        # spacing) doesn't match Qt's QTextEdit defaults. With this,
-        # the page-N marker in the editor lines up with where page N
-        # actually breaks in the compiled PDF.
+        # Preferred path: the compiler hands us a list of "first text
+        # of each PDF page" anchors (page_no, y_doc_pixels). We
+        # painted those by finding each snippet in the editor and
+        # recording the Y position of its block. That maps the
+        # editor's pagination 1:1 to the PDF's, even when LaTeX's
+        # text density (title block, abstract, floats) means the
+        # break is nowhere near halfway through the editor content.
+        anchors = self._edit.page_anchor_positions()
+        if anchors:
+            self._paint_anchored(anchors)
+            return
+        # Fallback: even spacing using doc_height / pdf_page_count.
+        # Used between compile attempts or when the snippet match
+        # fails. Less accurate than the anchored path but better
+        # than the static page_height_px from before.
         pdf_pages = self._edit.pdf_page_count()
         doc_h = int(self._edit.document().size().height())
         if pdf_pages >= 2 and doc_h > 0:
@@ -80,8 +88,6 @@ class _PageBreakOverlay(QWidget):
             if y_vp > h + spacing:
                 break
             if total_pages is not None and n >= total_pages:
-                # Don't draw a "page N / N+1" line past the last PDF page —
-                # the document just ends there.
                 break
             if 0 <= y_vp <= h:
                 painter.drawLine(6, y_vp, w - 6, y_vp)
@@ -89,6 +95,26 @@ class _PageBreakOverlay(QWidget):
                          else f"— page {n} / {n + 1} (estimate) —")
                 painter.drawText(8, y_vp - 4, label)
             n += 1
+        painter.end()
+
+    def _paint_anchored(self,
+                        anchors: list[tuple[int, float]]) -> None:
+        """Draw one break line per anchor (page_no, y_doc). Each
+        anchor is "page N starts at this Y pixel in the editor"."""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, False)
+        pen = QPen(QColor(140, 70, 50, 180), 1, Qt.DashLine)
+        painter.setPen(pen)
+        scroll_y = self._edit.verticalScrollBar().value()
+        h = self.height()
+        w = self.width()
+        for page_no, y_doc in anchors:
+            y_vp = int(y_doc - scroll_y)
+            if y_vp < -20 or y_vp > h + 20:
+                continue
+            painter.drawLine(6, y_vp, w - 6, y_vp)
+            painter.drawText(8, y_vp - 4,
+                             f"— page {page_no - 1} / {page_no} —")
         painter.end()
 
 
@@ -116,6 +142,12 @@ class PagedTextEdit(QTextEdit):
         # ignores LaTeX's text density. 0 = no compile yet → fall
         # back to the heuristic.
         self._pdf_page_count = 0
+        # Raw [(page_no, snippet), ...] anchors handed in by the
+        # compiler. Re-resolved into y-positions on every paint so
+        # the lookup happens after the QTextDocument layout pass
+        # has finished — resolving at set_page_anchors() time would
+        # return y=0 for every anchor before the editor is shown.
+        self._page_anchors: list[tuple[int, str]] = []
         self._images_dir: Path | None = None
         self._image_counter = 0
         self._overlay = _PageBreakOverlay(self)
@@ -141,6 +173,41 @@ class PagedTextEdit(QTextEdit):
         if n == self._pdf_page_count:
             return
         self._pdf_page_count = n
+        self._overlay.update()
+
+    def page_anchor_positions(self) -> list[tuple[int, float]]:
+        """Lazily resolve the stored (page_no, snippet) anchors to
+        (page_no, y_doc) on each request. We resolve at paint time
+        rather than at set_page_anchors time because the QTextDocument
+        layout hasn't necessarily run yet when the compiler hands us
+        the anchors — calling blockBoundingRect before the first
+        paint would return (0,0,…) for every block."""
+        if not self._page_anchors:
+            return []
+        qdoc = self.document()
+        layout = qdoc.documentLayout()
+        resolved: list[tuple[int, float]] = []
+        for page_no, snippet in self._page_anchors:
+            key = (snippet or "").strip()[:24]
+            if not key:
+                continue
+            block = qdoc.firstBlock()
+            while block.isValid():
+                if key in block.text():
+                    rect = layout.blockBoundingRect(block)
+                    if rect.height() > 0 or rect.top() > 0:
+                        resolved.append((int(page_no), float(rect.top())))
+                    break
+                block = block.next()
+        return resolved
+
+    def set_page_anchors(self,
+                         anchors: list[tuple[int, str]]) -> None:
+        """Receive [(page_no, first_text_snippet), ...] from the
+        compiler. We store them as-is and resolve them to
+        y-positions lazily on each paint (see
+        `page_anchor_positions`)."""
+        self._page_anchors = list(anchors or [])
         self._overlay.update()
 
     def set_page_size_px(self, width_px: int, height_px: int) -> None:
