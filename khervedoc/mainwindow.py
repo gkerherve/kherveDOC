@@ -786,15 +786,28 @@ class MainWindow(QMainWindow):
                 "(pip install pyspellchecker) to enable it.", 10000))
 
         # Git
-        self.act_commit_now = QAction(icons.commit(), "&Commit && push now", self,
-                                      triggered=self._commit_and_maybe_push)
-        self.act_pull = QAction("&Pull from remote", self,
-                                triggered=self._pull_from_remote)
+        self.act_commit_now = QAction(
+            icons.commit(),
+            "&Save snapshot and upload", self,
+            statusTip="Save your work, create a version snapshot, and "
+                      "upload it to the cloud (GitHub, GitLab, etc.)",
+            triggered=self._commit_and_maybe_push)
+        self.act_pull = QAction(
+            "&Download latest from cloud", self,
+            statusTip="Download the newest version of this document "
+                      "from the cloud (e.g. if a collaborator made changes)",
+            triggered=self._pull_from_remote)
         self.act_configure_remotes = QAction(
-            "Configure &remotes…", self,
+            "Connect to &GitHub / GitLab…", self,
+            statusTip="Set up a cloud link so your document is backed up "
+                      "online and can be shared with others",
             triggered=self._configure_remotes)
-        self.act_history = QAction(icons.history(), "Show commit &history...", self,
-                                   triggered=self._show_history)
+        self.act_history = QAction(
+            icons.history(),
+            "View &version history…", self,
+            statusTip="Browse every saved snapshot of this document "
+                      "and see what changed each time",
+            triggered=self._show_history)
 
         # Help
         self.act_help_guide = QAction("&User guide", self,
@@ -885,9 +898,6 @@ class MainWindow(QMainWindow):
         m_view.addAction(self.act_spell_check)
         m_view.addAction(self.act_dark_theme)
 
-        # Renamed History → Git so it advertises the actual scope
-        # (pull / configure remotes, not just history). The old name
-        # didn't suggest you could push to GitHub from here.
         m_git = mb.addMenu("&Git")
         m_git.addAction(self.act_commit_now)
         m_git.addAction(self.act_pull)
@@ -1220,12 +1230,23 @@ class MainWindow(QMainWindow):
                                          file_stem=tex_basename)
             pushed = git_backend.push(path.parent) if oid else False
             if oid:
-                tail = f"; pushed" if pushed else " (push failed or no remote)"
-                self._status.showMessage(f"Saved + committed {oid[:8]}{tail}", 5000)
+                if pushed:
+                    self._status.showMessage(
+                        f"\u2714 Saved, snapshot created, and uploaded to cloud", 5000)
+                elif git_backend.get_remotes(path.parent):
+                    self._status.showMessage(
+                        f"\u2714 Saved and snapshot created "
+                        f"(\u26a0 upload failed \u2014 check your internet connection)", 6000)
+                else:
+                    self._status.showMessage(
+                        f"\u2714 Saved and snapshot created "
+                        f"(use Git \u2192 Connect to GitHub to enable cloud backup)", 6000)
             else:
-                self._status.showMessage("Saved (no changes to commit)", 4000)
+                self._status.showMessage(
+                    "\u2714 Saved (nothing new to snapshot)", 4000)
         else:
-            self._status.showMessage("Saved (pygit2 unavailable)", 4000)
+            self._status.showMessage(
+                "\u2714 Saved (install pygit2 to enable version history)", 5000)
 
     def _import_tex(self) -> None:
         path_s, _ = QFileDialog.getOpenFileName(
@@ -1607,63 +1628,82 @@ class MainWindow(QMainWindow):
 
     def _commit_and_maybe_push(self) -> None:
         if self._current_path is None:
-            QMessageBox.information(self, "Commit", "Save the document first.")
+            QMessageBox.information(
+                self, "Save snapshot",
+                "You need to save your document first before a snapshot "
+                "can be created.\n\n"
+                "Use File \u2192 Save (Ctrl+S) to save it, then try again.")
             return
         self._write_to(self._current_path)
 
     def _pull_from_remote(self) -> None:
         if self._current_path is None:
             QMessageBox.information(
-                self, "Pull",
-                "Save the document first so kherveDOC knows which folder "
-                "to pull into.")
+                self, "Download latest",
+                "You need to save your document first.\n\n"
+                "Use File \u2192 Save (Ctrl+S), then try again.")
             return
         if not git_backend.is_available():
             QMessageBox.warning(
-                self, "Pull",
-                "pygit2 is not installed, so pull isn't available.")
+                self, "Download latest",
+                "The pygit2 library is not installed, so cloud "
+                "features are unavailable.\n\n"
+                "To fix this, run:  pip install pygit2")
             return
         remotes = git_backend.get_remotes(self._current_path.parent)
         if not remotes:
             ask = QMessageBox.question(
-                self, "Pull",
-                "No git remote is configured for this document. "
-                "Open the remotes dialog now?")
+                self, "Download latest",
+                "This document is not connected to a cloud service yet.\n\n"
+                "To download changes from a collaborator you first need to "
+                "connect to GitHub, GitLab or another git server.\n\n"
+                "Would you like to set that up now?")
             if ask == QMessageBox.Yes:
                 self._configure_remotes()
             return
-        # If there's only one remote, just use it. Otherwise let the
-        # user pick.
         if len(remotes) == 1:
             remote_name = remotes[0][0]
         else:
             names = [n for n, _ in remotes]
             chosen, ok = QInputDialog.getItem(
-                self, "Pull from remote", "Remote:", names, 0, False)
+                self, "Download from\u2026",
+                "Which cloud service?", names, 0, False)
             if not ok:
                 return
             remote_name = chosen
         ok, msg = git_backend.pull(self._current_path.parent, remote_name)
         if ok:
-            self._status.showMessage(msg, 6000)
-            # Reload the document from disk so any incoming changes
-            # appear immediately in the editor.
+            if "up to date" in msg.lower():
+                self._status.showMessage(
+                    "\u2714 Already up to date \u2014 you have the latest version", 5000)
+            else:
+                self._status.showMessage(f"\u2714 {msg}", 6000)
             self._reload_current()
         else:
-            QMessageBox.warning(self, "Pull", msg)
+            QMessageBox.warning(
+                self, "Download failed",
+                f"{msg}\n\n"
+                "What you can try:\n"
+                "  \u2022 Check your internet connection\n"
+                "  \u2022 Make sure the cloud URL is correct "
+                "(Git \u2192 Connect to GitHub)\n"
+                "  \u2022 If the problem says \"diverged\", ask a "
+                "colleague for help or use the git command line")
 
     def _configure_remotes(self) -> None:
         if self._current_path is None:
             QMessageBox.information(
-                self, "Configure remotes",
-                "Save the document first so kherveDOC knows which folder "
-                "to configure remotes for.")
+                self, "Connect to cloud",
+                "You need to save your document first so kherveDOC "
+                "knows where to create the connection.\n\n"
+                "Use File \u2192 Save (Ctrl+S), then try again.")
             return
         if not git_backend.is_available():
             QMessageBox.warning(
-                self, "Configure remotes",
-                "pygit2 is not installed, so remote configuration isn't "
-                "available.")
+                self, "Connect to cloud",
+                "The pygit2 library is not installed, so cloud "
+                "features are unavailable.\n\n"
+                "To fix this, run:  pip install pygit2")
             return
         from .remote_dialog import RemoteDialog
         dlg = RemoteDialog(self._current_path.parent, self)
@@ -1683,15 +1723,25 @@ class MainWindow(QMainWindow):
 
     def _show_history(self) -> None:
         if self._current_path is None:
-            QMessageBox.information(self, "History", "Save the document first.")
+            QMessageBox.information(
+                self, "Version history",
+                "You need to save your document at least once before "
+                "there is any history to show.\n\n"
+                "Use File \u2192 Save (Ctrl+S), then try again.")
             return
         if not git_backend.is_available():
             QMessageBox.warning(
-                self, "History",
-                "pygit2 is not installed, so commit history isn't available.")
+                self, "Version history",
+                "The pygit2 library is not installed, so version "
+                "history is unavailable.\n\n"
+                "To fix this, run:  pip install pygit2")
             return
         if not git_backend.history_detailed(self._current_path.parent, limit=1):
-            QMessageBox.information(self, "History", "No commits yet.")
+            QMessageBox.information(
+                self, "Version history",
+                "No snapshots yet. Every time you save, kherveDOC "
+                "automatically creates a snapshot.\n\n"
+                "Save your document and come back here to see its history.")
             return
         from .history_dialog import HistoryDialog
         stem = self._doc_stem(self._current_path)
