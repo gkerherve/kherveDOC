@@ -337,6 +337,29 @@ def commit() -> QIcon:
     return QIcon(px)
 
 
+def spell_check() -> QIcon:
+    """ABC with a red wavy underline — the universal "spell check"
+    toolbar glyph. Renders cleanly at 24×24 in both light and dark
+    themes; the underline is the same red the highlighter uses."""
+    px, p = _new_canvas()
+    f = QFont("Arial"); f.setPointSize(11); f.setBold(True)
+    p.setFont(f); p.setPen(_fg())
+    p.drawText(QRect(0, 0, _SIZE, 18), Qt.AlignCenter, "ABC")
+    # Wavy red underline: a three-bump zigzag, hand-drawn so it
+    # reads as the same squiggle Qt's SpellCheckUnderline produces.
+    p.setPen(QPen(QColor("#d8000c"), 1.4, Qt.SolidLine, Qt.RoundCap,
+                  Qt.RoundJoin))
+    y_top = 18
+    y_bot = 21
+    xs = [4, 7, 10, 13, 16, 19]
+    pts: list[QPointF] = []
+    for i, x in enumerate(xs):
+        pts.append(QPointF(x, y_bot if i % 2 == 0 else y_top))
+    p.drawPolyline(pts)
+    p.end()
+    return QIcon(px)
+
+
 def page_break() -> QIcon:
     px, p = _new_canvas()
     page_bg = QColor("#2d2d2d") if _dark else Qt.white
