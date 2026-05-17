@@ -52,6 +52,43 @@ class _CompileWorker(QThread):
             compile_tex(self._tex, self._workdir, source_dir=self._source_dir))
 
 
+class _GitNetworkWorker(QThread):
+    """Run pull / push on a background thread so the GUI doesn't lock
+    up for the duration of a libgit2 network round-trip. Without this,
+    saving or pulling against an unreachable remote freezes the window
+    for 30+ seconds (Windows shows it as "Not Responding") — to the
+    user that reads as a crash, even though it's just blocked I/O on
+    the main thread.
+
+    The worker emits `finished_with` carrying (operation, success,
+    message). The caller decides how to surface that — status bar,
+    message box, etc.
+    """
+    finished_with = Signal(str, bool, str)  # op, ok, msg
+
+    def __init__(self, op: str, repo_dir: Path,
+                 remote_name: str = "origin"):
+        super().__init__()
+        self._op = op   # "pull" or "push"
+        self._repo_dir = repo_dir
+        self._remote = remote_name
+
+    def run(self) -> None:
+        from . import git_backend
+        try:
+            if self._op == "pull":
+                ok, msg = git_backend.pull(self._repo_dir, self._remote)
+            elif self._op == "push":
+                ok = git_backend.push(self._repo_dir, self._remote)
+                msg = (f"Pushed to {self._remote}." if ok
+                       else f"Push to {self._remote} failed.")
+            else:
+                ok, msg = False, f"Unknown git op: {self._op!r}"
+        except Exception as exc:  # pragma: no cover — defensive
+            ok, msg = False, f"{self._op} crashed: {exc}"
+        self.finished_with.emit(self._op, ok, msg)
+
+
 # ---------- document properties dialog ----------
 
 _FONT_FAMILIES = [
@@ -386,6 +423,9 @@ class MainWindow(QMainWindow):
         self._build_dir = Path(tempfile.mkdtemp(prefix="khervedoc-"))
         self._compile_worker: _CompileWorker | None = None
         self._pending_recompile = False
+        # Background git worker for pull / push so the GUI never
+        # blocks on a slow remote. None when no op is in flight.
+        self._git_worker: _GitNetworkWorker | None = None
         # Persistent settings (Windows registry / platform-equivalent)
         # used for the Open Recent list and any other cross-session prefs.
         self._settings = QSettings("kherveDOC", "kherveDOC")
@@ -1228,19 +1268,22 @@ class MainWindow(QMainWindow):
             git_backend.init_repo(path.parent)
             oid = git_backend.commit_all(path.parent, commit_msg,
                                          file_stem=tex_basename)
-            pushed = git_backend.push(path.parent) if oid else False
             if oid:
-                if pushed:
+                if git_backend.get_remotes(path.parent):
+                    # Push on a background thread so a slow / dead
+                    # remote can't freeze the editor for 30+ seconds
+                    # every time the user hits Ctrl+S. The save itself
+                    # already happened locally; the push status is
+                    # reported asynchronously via _on_git_done.
                     self._status.showMessage(
-                        f"\u2714 Saved, snapshot created, and uploaded to cloud", 5000)
-                elif git_backend.get_remotes(path.parent):
-                    self._status.showMessage(
-                        f"\u2714 Saved and snapshot created "
-                        f"(\u26a0 upload failed \u2014 check your internet connection)", 6000)
+                        "\u2714 Saved and snapshot created \u2014 uploading\u2026",
+                        0)
+                    self._start_git_worker("push", path.parent, "origin")
                 else:
                     self._status.showMessage(
                         f"\u2714 Saved and snapshot created "
-                        f"(use Git \u2192 Connect to GitHub to enable cloud backup)", 6000)
+                        f"(use Git \u2192 Connect to GitHub to enable cloud backup)",
+                        6000)
             else:
                 self._status.showMessage(
                     "\u2714 Saved (nothing new to snapshot)", 4000)
@@ -1636,6 +1679,53 @@ class MainWindow(QMainWindow):
             return
         self._write_to(self._current_path)
 
+    def _start_git_worker(self, op: str, repo_dir: Path,
+                          remote_name: str) -> None:
+        """Spawn a _GitNetworkWorker for pull / push. Kept on
+        self._git_worker so we can hold a reference (Qt threads get
+        GC'd otherwise) and re-check it before starting another op."""
+        worker = _GitNetworkWorker(op, repo_dir, remote_name)
+        worker.finished_with.connect(self._on_git_done)
+        self._git_worker = worker
+        # Visual hint that something is happening — the status bar
+        # message stays sticky (timeout 0) until _on_git_done clears
+        # or replaces it.
+        if op == "pull":
+            self._status.showMessage(
+                f"Downloading latest from {remote_name}…", 0)
+        worker.start()
+
+    def _on_git_done(self, op: str, ok: bool, msg: str) -> None:
+        if op == "pull":
+            if ok:
+                if "up to date" in msg.lower():
+                    self._status.showMessage(
+                        "✔ Already up to date — you have the latest version",
+                        5000)
+                else:
+                    self._status.showMessage(f"✔ {msg}", 6000)
+                    self._reload_current()
+            else:
+                self._status.clearMessage()
+                QMessageBox.warning(
+                    self, "Download failed",
+                    f"{msg}\n\n"
+                    "What you can try:\n"
+                    "  • Check your internet connection\n"
+                    "  • Make sure the cloud URL is correct "
+                    "(Git → Connect to GitHub)\n"
+                    "  • If the problem says \"diverged\", ask a "
+                    "colleague for help or use the git command line")
+        elif op == "push":
+            if ok:
+                self._status.showMessage(
+                    "✔ Saved, snapshot created, and uploaded to cloud", 5000)
+            else:
+                self._status.showMessage(
+                    "✔ Saved and snapshot created "
+                    "(⚠ upload failed — check your internet connection)", 6000)
+        self._git_worker = None
+
     def _pull_from_remote(self) -> None:
         if self._current_path is None:
             QMessageBox.information(
@@ -1671,24 +1761,16 @@ class MainWindow(QMainWindow):
             if not ok:
                 return
             remote_name = chosen
-        ok, msg = git_backend.pull(self._current_path.parent, remote_name)
-        if ok:
-            if "up to date" in msg.lower():
-                self._status.showMessage(
-                    "\u2714 Already up to date \u2014 you have the latest version", 5000)
-            else:
-                self._status.showMessage(f"\u2714 {msg}", 6000)
-            self._reload_current()
-        else:
-            QMessageBox.warning(
-                self, "Download failed",
-                f"{msg}\n\n"
-                "What you can try:\n"
-                "  \u2022 Check your internet connection\n"
-                "  \u2022 Make sure the cloud URL is correct "
-                "(Git \u2192 Connect to GitHub)\n"
-                "  \u2022 If the problem says \"diverged\", ask a "
-                "colleague for help or use the git command line")
+        # Refuse to start a second network op while one is already
+        # running \u2014 otherwise two threads race on the same repo and
+        # libgit2 can crash.
+        if getattr(self, "_git_worker", None) is not None and \
+                self._git_worker.isRunning():
+            self._status.showMessage(
+                "A git operation is already in progress, please wait\u2026",
+                4000)
+            return
+        self._start_git_worker("pull", self._current_path.parent, remote_name)
 
     def _configure_remotes(self) -> None:
         if self._current_path is None:
