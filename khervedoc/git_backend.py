@@ -140,6 +140,153 @@ def commit_all(repo_dir: Path, message: str | None = None,
     return str(commit_oid)
 
 
+def _credentials_callbacks() -> "pygit2.RemoteCallbacks":
+    """Best-effort callbacks for SSH/HTTPS auth. We try the SSH agent
+    first; libgit2 also resolves Windows/macOS credential helpers
+    transparently when no callbacks are supplied, so callers should
+    retry without callbacks if these fail."""
+    try:
+        return pygit2.RemoteCallbacks(
+            credentials=pygit2.KeypairFromAgent("git"))
+    except Exception:
+        return pygit2.RemoteCallbacks()
+
+
+def get_remotes(repo_dir: Path) -> list[tuple[str, str]]:
+    """Return [(name, url), ...] for every remote configured in the
+    repo. Empty list if there is no repo or pygit2 isn't available —
+    callers can use that to detect "remote needs configuring"."""
+    if not _PYGIT2_OK:
+        return []
+    repo = _repo_for(repo_dir)
+    if repo is None:
+        return []
+    return [(r.name, r.url) for r in repo.remotes]
+
+
+def set_remote(repo_dir: Path, name: str, url: str) -> bool:
+    """Add a remote or update its URL if it already exists. Returns
+    True on success. The repo is created on demand so a fresh
+    document can be wired up to a github URL before its first save."""
+    if not _PYGIT2_OK or not name or not url:
+        return False
+    init_repo(repo_dir)
+    repo = _repo_for(repo_dir)
+    if repo is None:
+        return False
+    try:
+        existing = {r.name for r in repo.remotes}
+        if name in existing:
+            repo.remotes.set_url(name, url)
+        else:
+            repo.remotes.create(name, url)
+        return True
+    except Exception:
+        return False
+
+
+def remove_remote(repo_dir: Path, name: str) -> bool:
+    if not _PYGIT2_OK:
+        return False
+    repo = _repo_for(repo_dir)
+    if repo is None:
+        return False
+    try:
+        repo.remotes.delete(name)
+        return True
+    except Exception:
+        return False
+
+
+def current_branch(repo_dir: Path) -> str | None:
+    """Short name of the current branch (e.g. 'dev'), or None if the
+    repo is detached / unborn / missing."""
+    if not _PYGIT2_OK:
+        return None
+    repo = _repo_for(repo_dir)
+    if repo is None or repo.head_is_unborn or repo.head_is_detached:
+        return None
+    name = repo.head.name  # 'refs/heads/dev'
+    if name.startswith("refs/heads/"):
+        return name[len("refs/heads/"):]
+    return name
+
+
+def pull(repo_dir: Path, remote_name: str = "origin") -> tuple[bool, str]:
+    """Fetch from `remote_name` and fast-forward the current branch to
+    match its upstream. Returns (success, message). Message is a short
+    human-readable line for the status bar / dialog — "Already up to
+    date", "Pulled 3 commits", "Cannot fast-forward, please merge
+    manually" etc.
+
+    We deliberately only do fast-forward merges; if a real merge is
+    needed the user should drop to the command line. The kherveDOC
+    auto-commit on save means three-way merges from inside the GUI
+    would be too easy to misuse and lose work."""
+    if not _PYGIT2_OK:
+        return False, "pygit2 is not installed."
+    repo = _repo_for(repo_dir)
+    if repo is None:
+        return False, "Not a git repository."
+    if remote_name not in [r.name for r in repo.remotes]:
+        return False, f"No remote named {remote_name!r} is configured."
+    remote = repo.remotes[remote_name]
+
+    # ---- fetch ------------------------------------------------------
+    def _fetch() -> tuple[bool, str]:
+        for cb in (_credentials_callbacks(), None):
+            try:
+                remote.fetch(callbacks=cb) if cb else remote.fetch()
+                return True, ""
+            except Exception as exc:
+                last = str(exc)
+        return False, last  # noqa: F821 — `last` always bound (loop runs ≥ once)
+
+    ok, err = _fetch()
+    if not ok:
+        return False, f"Fetch failed: {err}"
+
+    # ---- locate upstream ref ----------------------------------------
+    branch = current_branch(repo_dir)
+    if branch is None:
+        return False, "Repository has no current branch."
+    upstream_ref = f"refs/remotes/{remote_name}/{branch}"
+    try:
+        upstream_oid = repo.lookup_reference(upstream_ref).target
+    except Exception:
+        return False, (
+            f"Remote {remote_name!r} has no branch {branch!r} to pull from."
+        )
+
+    # ---- fast-forward ----------------------------------------------
+    head_oid = repo.head.target
+    if head_oid == upstream_oid:
+        return True, "Already up to date."
+    merge_analysis, _ = repo.merge_analysis(upstream_oid)
+    if merge_analysis & pygit2.GIT_MERGE_ANALYSIS_UP_TO_DATE:
+        return True, "Already up to date."
+    if not (merge_analysis & pygit2.GIT_MERGE_ANALYSIS_FASTFORWARD):
+        return False, (
+            "Local branch has diverged from the remote — kherveDOC only "
+            "fast-forwards. Resolve the merge from a terminal."
+        )
+    # Count incoming commits for a nicer status message. `.hide()`
+    # tells the walker to stop at head_oid AND skip its ancestors, so
+    # the count is exactly "how many new commits this pull brings in"
+    # rather than "every commit reachable from upstream_oid".
+    walker = repo.walk(upstream_oid, pygit2.GIT_SORT_NONE)
+    walker.hide(head_oid)
+    incoming = sum(1 for _ in walker)
+    try:
+        repo.checkout_tree(repo.get(upstream_oid))
+        repo.references.get(repo.head.name).set_target(upstream_oid)
+        repo.set_head(repo.head.name)
+    except Exception as exc:
+        return False, f"Fast-forward failed: {exc}"
+    plural = "" if incoming == 1 else "s"
+    return True, f"Pulled {incoming} commit{plural} from {remote_name}/{branch}."
+
+
 def push(repo_dir: Path, remote_name: str = "origin", branch: str = "main") -> bool:
     """Push the current branch to the given remote. Returns True on success.
 

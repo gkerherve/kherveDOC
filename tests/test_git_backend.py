@@ -80,3 +80,85 @@ def test_history_detailed_on_empty_repo_returns_empty_list(tmp_path: Path):
     git_backend.init_repo(empty)
     # Unborn HEAD — no commits yet.
     assert git_backend.history_detailed(empty) == []
+
+
+# ----- remote management -----
+
+def test_set_remote_creates_and_lists(tmp_path: Path):
+    repo = _make_repo_with_two_commits(tmp_path)
+    assert git_backend.get_remotes(repo) == []
+    assert git_backend.set_remote(repo, "origin", "https://example.org/x.git")
+    remotes = git_backend.get_remotes(repo)
+    assert remotes == [("origin", "https://example.org/x.git")]
+
+
+def test_set_remote_updates_url(tmp_path: Path):
+    repo = _make_repo_with_two_commits(tmp_path)
+    git_backend.set_remote(repo, "origin", "https://old.example.org/x.git")
+    assert git_backend.set_remote(repo, "origin", "https://new.example.org/y.git")
+    assert git_backend.get_remotes(repo) == [
+        ("origin", "https://new.example.org/y.git")]
+
+
+def test_set_remote_supports_multiple_remotes(tmp_path: Path):
+    repo = _make_repo_with_two_commits(tmp_path)
+    git_backend.set_remote(repo, "origin", "https://example.org/a.git")
+    git_backend.set_remote(repo, "backup", "https://other.org/a.git")
+    names = sorted(n for n, _ in git_backend.get_remotes(repo))
+    assert names == ["backup", "origin"]
+
+
+def test_remove_remote(tmp_path: Path):
+    repo = _make_repo_with_two_commits(tmp_path)
+    git_backend.set_remote(repo, "origin", "https://example.org/a.git")
+    assert git_backend.remove_remote(repo, "origin")
+    assert git_backend.get_remotes(repo) == []
+
+
+def test_remove_unknown_remote_returns_false(tmp_path: Path):
+    repo = _make_repo_with_two_commits(tmp_path)
+    assert git_backend.remove_remote(repo, "ghost") is False
+
+
+# ----- pull -----
+
+def test_pull_no_remote_configured(tmp_path: Path):
+    repo = _make_repo_with_two_commits(tmp_path)
+    ok, msg = git_backend.pull(repo)
+    assert ok is False
+    assert "remote" in msg.lower()
+
+
+def test_pull_already_up_to_date_via_file_remote(tmp_path: Path):
+    """Fastest test for the happy 'already up to date' branch: clone
+    a repo via a file:// remote, then pull immediately. The local and
+    remote HEAD match, so the function should report up to date."""
+    upstream = _make_repo_with_two_commits(tmp_path)
+    clone_path = tmp_path / "clone"
+    import pygit2
+    pygit2.clone_repository(str(upstream), str(clone_path))
+    ok, msg = git_backend.pull(clone_path)
+    assert ok is True
+    assert "up to date" in msg.lower()
+
+
+def test_pull_fast_forwards_new_commits(tmp_path: Path):
+    """Clone the upstream, add a commit upstream, then pull from the
+    clone — expect the clone to fast-forward and report N commits."""
+    upstream = _make_repo_with_two_commits(tmp_path)
+    clone_path = tmp_path / "clone"
+    import pygit2
+    pygit2.clone_repository(str(upstream), str(clone_path))
+    # Commit something new in the upstream so the clone is behind.
+    (upstream / "hello.txt").write_text(
+        "hello world\nsecond line\nthird line\n", encoding="utf-8")
+    git_backend.commit_all(upstream, "third line")
+    ok, msg = git_backend.pull(clone_path)
+    assert ok is True
+    assert "pulled 1 commit" in msg.lower()
+
+
+def test_current_branch(tmp_path: Path):
+    repo = _make_repo_with_two_commits(tmp_path)
+    # init_repo writes refs/heads/dev — that's what we should report.
+    assert git_backend.current_branch(repo) == "dev"
