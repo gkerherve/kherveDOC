@@ -1223,8 +1223,10 @@ class MainWindow(QMainWindow):
         self._update_zoom_visibility()
 
     def _update_zoom_visibility(self) -> None:
-        on_pdf_tab = self._tabs.currentIndex() == 2
-        show_editor_zoom = not on_pdf_tab
+        tab = self._tabs.currentIndex()
+        on_formatted = tab == 0
+        on_pdf_tab = tab == 2
+        show_editor_zoom = on_formatted
         show_pdf_zoom = on_pdf_tab or self._side_by_side
         self._zoom_out_btn.setVisible(show_editor_zoom)
         self._zoom_slider.setVisible(show_editor_zoom)
