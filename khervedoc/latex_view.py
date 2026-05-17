@@ -112,6 +112,17 @@ _SECTION_RE = QRegularExpression(
     r"^\s*\\(section|subsection|subsubsection|paragraph|subparagraph|chapter|part)\*?"
     r"(\{|\[)")
 
+# Map block state → (format attr name, end regex).
+_ENV_FMT_MAP = {
+    _STATE_MATH:     ("_math_block_fmt", _END_MATH_RE),
+    _STATE_FIGURE:   ("_figure_fmt",     _END_FIGURE_RE),
+    _STATE_TABLE:    ("_table_fmt",      _END_TABLE_RE),
+    _STATE_LIST:     ("_list_fmt",       _END_LIST_RE),
+    _STATE_ABSTRACT: ("_abstract_fmt",   _END_ABSTRACT_RE),
+    _STATE_CITE:     ("_cite_fmt",       _END_CITE_RE),
+    _STATE_CODE:     ("_code_fmt",       _END_CODE_RE),
+}
+
 
 class LatexHighlighter(QSyntaxHighlighter):
     def __init__(self, parent: QTextDocument, dark: bool = False):
@@ -207,16 +218,6 @@ class LatexHighlighter(QSyntaxHighlighter):
             elif _BEGIN_CODE_RE.match(text).hasMatch():
                 state = _STATE_CODE
 
-        # Determine which block-level format applies (if any).
-        _ENV_FMT_MAP = {
-            _STATE_MATH:     ("_math_block_fmt", _END_MATH_RE),
-            _STATE_FIGURE:   ("_figure_fmt",     _END_FIGURE_RE),
-            _STATE_TABLE:    ("_table_fmt",       _END_TABLE_RE),
-            _STATE_LIST:     ("_list_fmt",        _END_LIST_RE),
-            _STATE_ABSTRACT: ("_abstract_fmt",    _END_ABSTRACT_RE),
-            _STATE_CITE:     ("_cite_fmt",        _END_CITE_RE),
-            _STATE_CODE:     ("_code_fmt",        _END_CODE_RE),
-        }
         block_fmt = None
         is_section = False
         if state in _ENV_FMT_MAP:
@@ -375,6 +376,8 @@ class _NumberedPlainTextEdit(QPlainTextEdit):
                                  self.fontMetrics().height(),
                                  Qt.AlignRight, str(block_num + 1))
             block = block.next()
+            if not block.isValid():
+                break
             top = bottom
             bottom = top + int(self.blockBoundingRect(block).height())
             block_num += 1
