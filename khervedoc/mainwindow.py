@@ -24,7 +24,7 @@ from . import (
 )
 from .compiler import CompileResult, compile_tex, tectonic_available
 from .editor import DocumentEditor, TEMPLATE_CHOICES
-from . import importers
+from . import examples, importers
 from .latex_view import LatexView
 from .model import (
     Author, Document, DocMeta, Paragraph, Section, Text, Title,
@@ -733,6 +733,14 @@ class MainWindow(QMainWindow):
         m_history.addAction(self.act_commit_now)
         m_history.addAction(self.act_history)
 
+        # Examples menu — each entry opens that example in a new window
+        # so the user's current document isn't replaced.
+        m_examples = mb.addMenu("E&xamples")
+        for label, factory in examples.EXAMPLES:
+            act = m_examples.addAction(label)
+            act.triggered.connect(
+                lambda checked=False, f=factory: self._open_example(f))
+
         # Window menu — populated dynamically with one entry per open
         # MainWindow so the user can flip between documents without
         # alt-tabbing. Refreshed on aboutToShow and whenever a window
@@ -743,6 +751,16 @@ class MainWindow(QMainWindow):
 
         m_help = mb.addMenu("&Help")
         m_help.addAction(self.act_about)
+
+    def _open_example(self, factory) -> None:
+        """Spawn a new window and load the example into it. User-default
+        meta fields (font / margins / page size) are layered on top so
+        the example follows the same conventions as File > New."""
+        doc = factory()
+        doc.meta = _apply_user_defaults(doc.meta)
+        win = self._new_window()
+        win._editor.set_document(doc)
+        win._kick_compile()
 
     def _refresh_window_menu(self) -> None:
         if not hasattr(self, "_window_menu"):
@@ -1471,35 +1489,35 @@ class MainWindow(QMainWindow):
                 self._pagesize_combo.blockSignals(False)
 
 
-def _starter_document() -> Document:
+def _apply_user_defaults(meta: DocMeta) -> DocMeta:
+    """Overlay the user's persisted Document-defaults preferences onto a
+    DocMeta produced by an example factory. Lets the welcome tour and
+    every Examples-menu doc respect the same font / margin / spacing
+    choices the user set under Document properties."""
     s = QSettings("kherveDOC", "kherveDOC")
-    meta = DocMeta(
-        title="", author="",
-        body_font_pt=int(s.value("default/body_font_pt", 12, type=int)),
-        body_font_family=str(s.value("default/body_font_family", "default")),
-        line_spacing=float(s.value("default/line_spacing", 1.0, type=float)),
-        paragraph_indent=s.value("default/paragraph_indent", True, type=bool),
-        margin_top_cm=float(s.value("default/margin_top_cm", 2.5, type=float)),
-        margin_bottom_cm=float(s.value("default/margin_bottom_cm", 2.5, type=float)),
-        margin_left_cm=float(s.value("default/margin_left_cm", 2.5, type=float)),
-        margin_right_cm=float(s.value("default/margin_right_cm", 2.5, type=float)),
-        page_size=str(s.value("default/page_size", "A4")),
-    )
-    return Document(
-        meta=meta,
-        children=[
-            Title(children=[Text(text="My document")]),
-            Author(children=[Text(text="Your name")]),
-            Section(level=1, children=[Text(text="Introduction")]),
-            Paragraph(children=[
-                Text(text="Type here. Use the paragraph-style picker to choose "),
-                Text(text="Title", marks=["bold"]),
-                Text(text=", "),
-                Text(text="Heading 1-5", marks=["bold"]),
-                Text(text=" or "),
-                Text(text="Body text", marks=["bold"]),
-                Text(text=". Use the Insert menu for math, lists, links, "),
-                Text(text="figures, tables and more."),
-            ]),
-        ],
-    )
+    meta.body_font_pt = int(s.value("default/body_font_pt", meta.body_font_pt,
+                                    type=int))
+    meta.body_font_family = str(s.value("default/body_font_family",
+                                        meta.body_font_family))
+    meta.line_spacing = float(s.value("default/line_spacing", meta.line_spacing,
+                                      type=float))
+    meta.paragraph_indent = bool(s.value("default/paragraph_indent",
+                                         meta.paragraph_indent, type=bool))
+    meta.margin_top_cm = float(s.value("default/margin_top_cm",
+                                       meta.margin_top_cm, type=float))
+    meta.margin_bottom_cm = float(s.value("default/margin_bottom_cm",
+                                          meta.margin_bottom_cm, type=float))
+    meta.margin_left_cm = float(s.value("default/margin_left_cm",
+                                        meta.margin_left_cm, type=float))
+    meta.margin_right_cm = float(s.value("default/margin_right_cm",
+                                         meta.margin_right_cm, type=float))
+    meta.page_size = str(s.value("default/page_size", meta.page_size))
+    return meta
+
+
+def _starter_document() -> Document:
+    """First-launch / File>New document — a multi-page welcome tour so
+    users see what kherveDOC can do before they have to type anything."""
+    doc = examples.welcome()
+    doc.meta = _apply_user_defaults(doc.meta)
+    return doc
