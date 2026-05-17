@@ -31,6 +31,14 @@ _LIGHT_COLORS = {
     "figure_fg": "#2e7d32",
     "table_bg": "#fff3e0",
     "table_fg": "#e65100",
+    "list_bg": "#f3e8ff",
+    "list_fg": "#6a1b9a",
+    "abstract_bg": "#e0f7fa",
+    "abstract_fg": "#00695c",
+    "cite_bg": "#fce4ec",
+    "cite_fg": "#880e4f",
+    "code_bg": "#eceff1",
+    "code_fg": "#37474f",
 }
 _DARK_COLORS = {
     "command": "#6cb4ff",
@@ -44,16 +52,27 @@ _DARK_COLORS = {
     "figure_fg": "#66bb6a",
     "table_bg": "#3d2e1a",
     "table_fg": "#ffab40",
+    "list_bg": "#2d1b4e",
+    "list_fg": "#ce93d8",
+    "abstract_bg": "#1a3d3d",
+    "abstract_fg": "#80cbc4",
+    "cite_bg": "#3d1a2a",
+    "cite_fg": "#f48fb1",
+    "code_bg": "#263238",
+    "code_fg": "#b0bec5",
 }
 
 
 # ---- multi-line block state encoding ----
 # QSyntaxHighlighter stores an int per block via setCurrentBlockState.
-# We use bits to track which environment(s) we're inside.
 _STATE_NORMAL = 0
 _STATE_MATH = 1
 _STATE_FIGURE = 2
 _STATE_TABLE = 3
+_STATE_LIST = 4
+_STATE_ABSTRACT = 5
+_STATE_CITE = 6
+_STATE_CODE = 7
 
 
 _MATH_ENVS = (
@@ -61,16 +80,34 @@ _MATH_ENVS = (
     "gather", "gather*", "multline", "multline*", "displaymath",
     "eqnarray", "eqnarray*", "split",
 )
+_LIST_ENVS = ("itemize", "enumerate", "description")
+_ABSTRACT_ENVS = ("abstract",)
+_CITE_ENVS = ("thebibliography", "references")
+_CODE_ENVS = ("verbatim", "lstlisting", "minted", "listing")
+
+
+def _env_re(envs: tuple[str, ...], begin: bool = True) -> QRegularExpression:
+    tag = "begin" if begin else "end"
+    pat = r"^\s*\\" + tag + r"\{(" + "|".join(
+        e.replace("*", r"\*") for e in envs) + r")\}"
+    return QRegularExpression(pat)
+
 
 # Precompiled regexes for \begin{env} / \end{env}.
-_BEGIN_MATH_RE = QRegularExpression(
-    r"^\s*\\begin\{(" + "|".join(_MATH_ENVS).replace("*", r"\*") + r")\}")
-_END_MATH_RE = QRegularExpression(
-    r"^\s*\\end\{(" + "|".join(_MATH_ENVS).replace("*", r"\*") + r")\}")
+_BEGIN_MATH_RE = _env_re(_MATH_ENVS, begin=True)
+_END_MATH_RE = _env_re(_MATH_ENVS, begin=False)
 _BEGIN_FIGURE_RE = QRegularExpression(r"^\s*\\begin\{figure\*?\}")
 _END_FIGURE_RE = QRegularExpression(r"^\s*\\end\{figure\*?\}")
 _BEGIN_TABLE_RE = QRegularExpression(r"^\s*\\begin\{table\*?\}")
 _END_TABLE_RE = QRegularExpression(r"^\s*\\end\{table\*?\}")
+_BEGIN_LIST_RE = _env_re(_LIST_ENVS, begin=True)
+_END_LIST_RE = _env_re(_LIST_ENVS, begin=False)
+_BEGIN_ABSTRACT_RE = _env_re(_ABSTRACT_ENVS, begin=True)
+_END_ABSTRACT_RE = _env_re(_ABSTRACT_ENVS, begin=False)
+_BEGIN_CITE_RE = _env_re(_CITE_ENVS, begin=True)
+_END_CITE_RE = _env_re(_CITE_ENVS, begin=False)
+_BEGIN_CODE_RE = _env_re(_CODE_ENVS, begin=True)
+_END_CODE_RE = _env_re(_CODE_ENVS, begin=False)
 _SECTION_RE = QRegularExpression(
     r"^\s*\\(section|subsection|subsubsection|paragraph|subparagraph|chapter|part)\*?"
     r"(\{|\[)")
@@ -131,6 +168,22 @@ class LatexHighlighter(QSyntaxHighlighter):
         self._table_fmt.setBackground(QColor(c["table_bg"]))
         self._table_fmt.setForeground(QColor(c["table_fg"]))
 
+        self._list_fmt = QTextCharFormat()
+        self._list_fmt.setBackground(QColor(c["list_bg"]))
+        self._list_fmt.setForeground(QColor(c["list_fg"]))
+
+        self._abstract_fmt = QTextCharFormat()
+        self._abstract_fmt.setBackground(QColor(c["abstract_bg"]))
+        self._abstract_fmt.setForeground(QColor(c["abstract_fg"]))
+
+        self._cite_fmt = QTextCharFormat()
+        self._cite_fmt.setBackground(QColor(c["cite_bg"]))
+        self._cite_fmt.setForeground(QColor(c["cite_fg"]))
+
+        self._code_fmt = QTextCharFormat()
+        self._code_fmt.setBackground(QColor(c["code_bg"]))
+        self._code_fmt.setForeground(QColor(c["code_fg"]))
+
     def highlightBlock(self, text: str) -> None:
         prev = self.previousBlockState()
         if prev < 0:
@@ -145,21 +198,31 @@ class LatexHighlighter(QSyntaxHighlighter):
                 state = _STATE_FIGURE
             elif _BEGIN_TABLE_RE.match(text).hasMatch():
                 state = _STATE_TABLE
+            elif _BEGIN_LIST_RE.match(text).hasMatch():
+                state = _STATE_LIST
+            elif _BEGIN_ABSTRACT_RE.match(text).hasMatch():
+                state = _STATE_ABSTRACT
+            elif _BEGIN_CITE_RE.match(text).hasMatch():
+                state = _STATE_CITE
+            elif _BEGIN_CODE_RE.match(text).hasMatch():
+                state = _STATE_CODE
 
         # Determine which block-level format applies (if any).
+        _ENV_FMT_MAP = {
+            _STATE_MATH:     ("_math_block_fmt", _END_MATH_RE),
+            _STATE_FIGURE:   ("_figure_fmt",     _END_FIGURE_RE),
+            _STATE_TABLE:    ("_table_fmt",       _END_TABLE_RE),
+            _STATE_LIST:     ("_list_fmt",        _END_LIST_RE),
+            _STATE_ABSTRACT: ("_abstract_fmt",    _END_ABSTRACT_RE),
+            _STATE_CITE:     ("_cite_fmt",        _END_CITE_RE),
+            _STATE_CODE:     ("_code_fmt",        _END_CODE_RE),
+        }
         block_fmt = None
         is_section = False
-        if state == _STATE_MATH:
-            block_fmt = self._math_block_fmt
-            if _END_MATH_RE.match(text).hasMatch():
-                state = _STATE_NORMAL
-        elif state == _STATE_FIGURE:
-            block_fmt = self._figure_fmt
-            if _END_FIGURE_RE.match(text).hasMatch():
-                state = _STATE_NORMAL
-        elif state == _STATE_TABLE:
-            block_fmt = self._table_fmt
-            if _END_TABLE_RE.match(text).hasMatch():
+        if state in _ENV_FMT_MAP:
+            attr, end_re = _ENV_FMT_MAP[state]
+            block_fmt = getattr(self, attr)
+            if end_re.match(text).hasMatch():
                 state = _STATE_NORMAL
         elif _SECTION_RE.match(text).hasMatch():
             block_fmt = self._section_fmt
