@@ -694,6 +694,8 @@ class MainWindow(QMainWindow):
                                    triggered=self._show_history)
 
         # Help
+        self.act_shortcuts = QAction("&Keyboard shortcuts", self,
+                                     triggered=self._show_shortcuts)
         self.act_about = QAction("&About kherveDOC", self, triggered=self._about)
 
     # ----- menus -----
@@ -795,6 +797,8 @@ class MainWindow(QMainWindow):
         self._refresh_window_menu()
 
         m_help = mb.addMenu("&Help")
+        m_help.addAction(self.act_shortcuts)
+        m_help.addSeparator()
         m_help.addAction(self.act_about)
 
     def _open_example(self, factory) -> None:
@@ -1432,11 +1436,77 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _about(self) -> None:
+        tec = "installed" if tectonic_available() else "not found"
         QMessageBox.about(
             self, "About kherveDOC",
-            f"<h3>kherveDOC {version_string()}</h3>"
-            f"<p>WYSIWYG editor that produces LaTeX and tracks changes in Git.</p>"
-            f"<p>tectonic: {'OK' if tectonic_available() else 'not installed'}</p>")
+            f"<h2>kherveDOC {version_string()}</h2>"
+            f"<p>A WYSIWYG document editor that produces publication-quality "
+            f"LaTeX output with built-in Git version control.</p>"
+            f"<hr>"
+            f"<p><b>Author:</b> Gwilherm Kerherv&eacute;<br>"
+            f"Imperial College London<br>"
+            f"<a href='mailto:g.kerherve@imperial.ac.uk'>g.kerherve@imperial.ac.uk</a></p>"
+            f"<p><b>Source:</b> "
+            f"<a href='https://github.com/gkerherve/kherveDOC'>"
+            f"github.com/gkerherve/kherveDOC</a></p>"
+            f"<hr>"
+            f"<table cellpadding='2'>"
+            f"<tr><td><b>Python</b></td><td>{__import__('sys').version.split()[0]}</td></tr>"
+            f"<tr><td><b>PySide6</b></td><td>{__import__('PySide6').__version__}</td></tr>"
+            f"<tr><td><b>tectonic</b></td><td>{tec}</td></tr>"
+            f"</table>"
+            f"<p style='color: #888; margin-top: 12px;'>"
+            f"Built with PySide6, tectonic, PyMuPDF and pygit2.</p>")
+
+    def _show_shortcuts(self) -> None:
+        rows = [
+            ("File", [
+                ("Ctrl+N", "New document"),
+                ("Ctrl+Shift+N", "New window"),
+                ("Ctrl+O", "Open"),
+                ("Ctrl+S", "Save"),
+                ("Ctrl+Shift+S", "Save as"),
+            ]),
+            ("Edit", [
+                ("Ctrl+Z", "Undo"),
+                ("Ctrl+Y", "Redo"),
+                ("Ctrl+X / C / V", "Cut / Copy / Paste"),
+                ("Ctrl+A", "Select all"),
+            ]),
+            ("Formatting", [
+                ("Ctrl+B", "Bold"),
+                ("Ctrl+I", "Italic"),
+                ("Ctrl+U", "Underline"),
+            ]),
+            ("Insert", [
+                ("Ctrl+M", "Inline math"),
+                ("Ctrl+Shift+M", "Math block"),
+                ("Ctrl+K", "Hyperlink"),
+                ("Ctrl+Shift+S", "Symbol picker"),
+                ("Ctrl+Shift+E", "Equation builder"),
+            ]),
+            ("View", [
+                ("Ctrl+1", "Formatted tab"),
+                ("Ctrl+2", "LaTeX tab"),
+                ("Ctrl+3", "PDF tab"),
+                ("Ctrl+4", "PDF side panel"),
+            ]),
+        ]
+        html = "<h3>Keyboard shortcuts</h3>"
+        for group, shortcuts in rows:
+            html += f"<h4 style='margin-bottom:2px; color:#1a3a8c;'>{group}</h4>"
+            html += "<table cellpadding='3' style='margin-left:8px;'>"
+            for key, desc in shortcuts:
+                html += (f"<tr><td><code style='background:#eef3ff; "
+                         f"padding:2px 6px; border-radius:3px;'>"
+                         f"{key}</code></td>"
+                         f"<td style='padding-left:12px;'>{desc}</td></tr>")
+            html += "</table>"
+        dlg = QMessageBox(self)
+        dlg.setWindowTitle("Keyboard shortcuts")
+        dlg.setTextFormat(Qt.RichText)
+        dlg.setText(html)
+        dlg.exec()
 
     # ----- compile loop -----
 
