@@ -183,7 +183,8 @@ def history(repo_dir: Path, limit: int = 50) -> list[tuple[str, str, str]]:
 
 
 def history_detailed(repo_dir: Path,
-                     limit: int = 200) -> list[dict]:
+                     limit: int = 200,
+                     file_stem: str | None = None) -> list[dict]:
     """Richer version of `history` for the GUI commit-browser.
 
     Each entry is a dict with the keys the history dialog needs:
@@ -195,6 +196,9 @@ def history_detailed(repo_dir: Path,
       - subject:    first line of the commit message
       - body:       lines 2+ of the commit message (may be empty)
 
+    When *file_stem* is given (e.g. ``"My report"``), only commits that
+    touch a file whose name starts with that stem are returned.
+
     Empty list if pygit2 is missing or the repo has no commits."""
     if not _PYGIT2_OK or not (repo_dir / ".git").exists():
         return []
@@ -203,6 +207,8 @@ def history_detailed(repo_dir: Path,
         return []
     out: list[dict] = []
     for commit in repo.walk(repo.head.target, pygit2.GIT_SORT_TIME):
+        if file_stem and not _commit_touches_stem(commit, file_stem):
+            continue
         msg = (commit.message or "").rstrip()
         lines = msg.splitlines()
         subject = lines[0] if lines else ""
@@ -221,6 +227,28 @@ def history_detailed(repo_dir: Path,
         if len(out) >= limit:
             break
     return out
+
+
+def _commit_touches_stem(commit, stem: str) -> bool:
+    """Return True if *commit* changed any file whose name starts with *stem*."""
+    parents = list(commit.parents)
+    if not parents:
+        # Root commit — check the tree for matching filenames.
+        for entry in commit.tree:
+            if entry.name.startswith(stem):
+                return True
+        return False
+    parent = parents[0]
+    try:
+        diff = parent.tree.diff_to_tree(commit.tree)
+    except Exception:
+        return False
+    for delta in diff.deltas:
+        old = delta.old_file.path.split("/")[-1]
+        new = delta.new_file.path.split("/")[-1]
+        if old.startswith(stem) or new.startswith(stem):
+            return True
+    return False
 
 
 def diff_for_commit(repo_dir: Path, oid: str) -> str:

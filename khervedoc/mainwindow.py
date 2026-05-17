@@ -1436,7 +1436,9 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "History", "No commits yet.")
             return
         from .history_dialog import HistoryDialog
-        dlg = HistoryDialog(self._current_path.parent, self)
+        stem = self._current_path.stem
+        dlg = HistoryDialog(self._current_path.parent, self,
+                            file_stem=stem)
         dlg.exec()
 
     def _about(self) -> None:

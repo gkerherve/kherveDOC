@@ -92,12 +92,15 @@ class HistoryDialog(QDialog):
     commit's diff. Self-contained — accepts a directory and reads the
     git history through `git_backend`."""
 
-    def __init__(self, repo_dir: Path, parent: QWidget | None = None) -> None:
+    def __init__(self, repo_dir: Path, parent: QWidget | None = None,
+                 file_stem: str | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle(f"Commit history — {repo_dir.name}")
+        title = file_stem or repo_dir.name
+        self.setWindowTitle(f"Commit history — {title}")
         self.resize(1100, 700)
         self._repo_dir = repo_dir
-        self._commits = git_backend.history_detailed(repo_dir)
+        self._commits = git_backend.history_detailed(repo_dir,
+                                                     file_stem=file_stem)
 
         # ---- Left: commit table -----------------------------------------
         self._table = QTableWidget(0, 4)
@@ -109,11 +112,15 @@ class HistoryDialog(QDialog):
         self._table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._table.setShowGrid(False)
         self._table.setAlternatingRowColors(True)
+        self._table.setWordWrap(True)
         hdr = self._table.horizontalHeader()
-        hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(0, QHeaderView.Interactive)
+        hdr.setSectionResizeMode(1, QHeaderView.Interactive)
         hdr.setSectionResizeMode(2, QHeaderView.Stretch)
-        hdr.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(3, QHeaderView.Interactive)
+        hdr.resizeSection(0, 150)
+        hdr.resizeSection(1, 70)
+        hdr.resizeSection(3, 80)
 
         for row, c in enumerate(self._commits):
             self._table.insertRow(row)
@@ -125,6 +132,7 @@ class HistoryDialog(QDialog):
                     # Monospace the SHA so they line up nicely.
                     f = item.font(); f.setFamily("Consolas"); item.setFont(f)
                 self._table.setItem(row, col, item)
+        self._table.resizeRowsToContents()
         self._table.currentCellChanged.connect(self._on_row_changed)
 
         # ---- Right: details + diff --------------------------------------
