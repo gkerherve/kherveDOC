@@ -1,4 +1,4 @@
-"""Editable LaTeX source view with light syntax highlighting.
+"""Editable LaTeX source view with syntax highlighting and autocompletion.
 
 When the user edits this view kherveDOC reparses the source through
 khervedoc.importers.import_tex and updates the Formatted tab + PDF
@@ -7,14 +7,18 @@ and its LaTeX source.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QRegularExpression, QTimer, Qt, Signal
+from PySide6.QtCore import QRegularExpression, QStringListModel, QTimer, Qt, Signal
 from PySide6.QtGui import (
-    QColor, QFont, QSyntaxHighlighter, QTextCharFormat, QTextDocument,
+    QColor, QFont, QSyntaxHighlighter, QTextCharFormat, QTextCursor,
+    QTextDocument,
 )
-from PySide6.QtWidgets import QPlainTextEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QCompleter, QPlainTextEdit, QVBoxLayout, QWidget,
+)
 
 
-# Colour schemes keyed by theme name.
+# ---- colour schemes ----
+
 _LIGHT_COLORS = {
     "command": "#1a6dd8",
     "brace": "#7a4c00",
@@ -41,6 +45,35 @@ _DARK_COLORS = {
     "table_bg": "#3d2e1a",
     "table_fg": "#ffab40",
 }
+
+
+# ---- multi-line block state encoding ----
+# QSyntaxHighlighter stores an int per block via setCurrentBlockState.
+# We use bits to track which environment(s) we're inside.
+_STATE_NORMAL = 0
+_STATE_MATH = 1
+_STATE_FIGURE = 2
+_STATE_TABLE = 3
+
+
+_MATH_ENVS = (
+    "equation", "equation*", "align", "align*", "alignat", "alignat*",
+    "gather", "gather*", "multline", "multline*", "displaymath",
+    "eqnarray", "eqnarray*", "split",
+)
+
+# Precompiled regexes for \begin{env} / \end{env}.
+_BEGIN_MATH_RE = QRegularExpression(
+    r"\\begin\{(" + "|".join(_MATH_ENVS).replace("*", r"\*") + r")\}")
+_END_MATH_RE = QRegularExpression(
+    r"\\end\{(" + "|".join(_MATH_ENVS).replace("*", r"\*") + r")\}")
+_BEGIN_FIGURE_RE = QRegularExpression(r"\\begin\{figure\*?\}")
+_END_FIGURE_RE = QRegularExpression(r"\\end\{figure\*?\}")
+_BEGIN_TABLE_RE = QRegularExpression(r"\\begin\{table\*?\}")
+_END_TABLE_RE = QRegularExpression(r"\\end\{table\*?\}")
+_SECTION_RE = QRegularExpression(
+    r"\\(section|subsection|subsubsection|paragraph|subparagraph|chapter|part)\*?"
+    r"(\{|\[)")
 
 
 class LatexHighlighter(QSyntaxHighlighter):
@@ -80,7 +113,7 @@ class LatexHighlighter(QSyntaxHighlighter):
         comment_fmt.setFontItalic(True)
         self._rules.append((QRegularExpression(r"%[^\n]*"), comment_fmt))
 
-        # Block-level highlights: applied to the whole line.
+        # Block-level formats.
         self._section_fmt = QTextCharFormat()
         self._section_fmt.setBackground(QColor(c["section_bg"]))
         self._section_fmt.setForeground(QColor(c["section_fg"]))
@@ -98,26 +131,42 @@ class LatexHighlighter(QSyntaxHighlighter):
         self._table_fmt.setBackground(QColor(c["table_bg"]))
         self._table_fmt.setForeground(QColor(c["table_fg"]))
 
-    _SECTION_RE = QRegularExpression(
-        r"\\(section|subsection|subsubsection|paragraph|subparagraph|chapter|part)\*?\{")
-    _MATH_ENV_RE = QRegularExpression(
-        r"\\(begin|end)\{(equation|align|gather|multline|displaymath|eqnarray|split|alignat)\*?\}")
-    _FIGURE_RE = QRegularExpression(r"\\(begin|end)\{figure\*?\}")
-    _TABLE_RE = QRegularExpression(r"\\(begin|end)\{table\*?\}")
-
     def highlightBlock(self, text: str) -> None:
-        # Full-line background highlights for structural elements.
-        if self._SECTION_RE.match(text).hasMatch():
-            self.setFormat(0, len(text), self._section_fmt)
-        elif self._MATH_ENV_RE.match(text).hasMatch():
-            self.setFormat(0, len(text), self._math_block_fmt)
-        elif self._FIGURE_RE.match(text).hasMatch():
-            self.setFormat(0, len(text), self._figure_fmt)
-        elif self._TABLE_RE.match(text).hasMatch():
-            self.setFormat(0, len(text), self._table_fmt)
+        prev = self.previousBlockState()
+        if prev < 0:
+            prev = _STATE_NORMAL
+        state = prev
 
-        # Token-level highlights (override the full-line background where they
-        # match, giving the foreground colour priority).
+        # Check for environment opens/closes on this line.
+        if state == _STATE_NORMAL:
+            if _BEGIN_MATH_RE.match(text).hasMatch():
+                state = _STATE_MATH
+            elif _BEGIN_FIGURE_RE.match(text).hasMatch():
+                state = _STATE_FIGURE
+            elif _BEGIN_TABLE_RE.match(text).hasMatch():
+                state = _STATE_TABLE
+
+        # Apply full-line background for block environments.
+        if state == _STATE_MATH:
+            self.setFormat(0, len(text), self._math_block_fmt)
+            if _END_MATH_RE.match(text).hasMatch():
+                state = _STATE_NORMAL
+        elif state == _STATE_FIGURE:
+            self.setFormat(0, len(text), self._figure_fmt)
+            if _END_FIGURE_RE.match(text).hasMatch():
+                state = _STATE_NORMAL
+        elif state == _STATE_TABLE:
+            self.setFormat(0, len(text), self._table_fmt)
+            if _END_TABLE_RE.match(text).hasMatch():
+                state = _STATE_NORMAL
+        else:
+            # Section heading — highlight the whole line.
+            if _SECTION_RE.match(text).hasMatch():
+                self.setFormat(0, len(text), self._section_fmt)
+
+        self.setCurrentBlockState(state)
+
+        # Token-level highlights on top of block backgrounds.
         for pattern, fmt in self._rules:
             it = pattern.globalMatch(text)
             while it.hasNext():
@@ -125,15 +174,57 @@ class LatexHighlighter(QSyntaxHighlighter):
                 self.setFormat(m.capturedStart(), m.capturedLength(), fmt)
 
 
-class LatexView(QWidget):
-    """Two-way editable LaTeX source view.
+# ---- LaTeX command dictionary for autocomplete ----
 
-    Public surface:
-      - set_source(src)   set the text programmatically without firing
-                          the user-edit signal (used by the Formatted ->
-                          LaTeX sync path).
-      - latexEdited(str)  emitted after the user stops typing.
-    """
+_LATEX_COMMANDS = [
+    r"\section{}", r"\subsection{}", r"\subsubsection{}",
+    r"\paragraph{}", r"\subparagraph{}", r"\chapter{}",
+    r"\begin{}", r"\end{}",
+    r"\begin{equation}", r"\end{equation}",
+    r"\begin{align}", r"\end{align}",
+    r"\begin{figure}", r"\end{figure}",
+    r"\begin{table}", r"\end{table}",
+    r"\begin{itemize}", r"\end{itemize}",
+    r"\begin{enumerate}", r"\end{enumerate}",
+    r"\begin{tabular}{}", r"\end{tabular}",
+    r"\begin{center}", r"\end{center}",
+    r"\begin{flushleft}", r"\end{flushleft}",
+    r"\begin{flushright}", r"\end{flushright}",
+    r"\begin{abstract}", r"\end{abstract}",
+    r"\begin{multicols}{}", r"\end{multicols}",
+    r"\begin{lstlisting}", r"\end{lstlisting}",
+    r"\begin{verbatim}", r"\end{verbatim}",
+    r"\begin{thebibliography}{}", r"\end{thebibliography}",
+    r"\textbf{}", r"\textit{}", r"\texttt{}", r"\underline{}",
+    r"\emph{}", r"\textsc{}", r"\textrm{}", r"\textsf{}",
+    r"\includegraphics{}", r"\includegraphics[width=]{}",
+    r"\caption{}", r"\label{}", r"\ref{}", r"\eqref{}", r"\pageref{}",
+    r"\cite{}", r"\citep{}", r"\citet{}",
+    r"\footnote{}", r"\href{}{}", r"\url{}",
+    r"\frac{}{}", r"\sqrt{}", r"\sum", r"\prod", r"\int",
+    r"\alpha", r"\beta", r"\gamma", r"\delta", r"\epsilon",
+    r"\theta", r"\lambda", r"\mu", r"\sigma", r"\omega",
+    r"\pi", r"\phi", r"\psi", r"\chi", r"\rho", r"\tau",
+    r"\partial", r"\nabla", r"\infty", r"\forall", r"\exists",
+    r"\mathbb{}", r"\mathcal{}", r"\mathfrak{}",
+    r"\left", r"\right", r"\bigl", r"\bigr",
+    r"\hspace{}", r"\vspace{}", r"\quad", r"\qquad",
+    r"\newpage", r"\clearpage", r"\newline",
+    r"\title{}", r"\author{}", r"\date{}", r"\maketitle",
+    r"\tableofcontents", r"\listoffigures", r"\listoftables",
+    r"\usepackage{}", r"\documentclass{}",
+    r"\newcommand{}{}", r"\renewcommand{}{}",
+    r"\providecommand{}{}",
+    r"\setlength{}{}", r"\addtolength{}{}",
+    r"\hrulefill", r"\dotfill",
+    r"\centering", r"\raggedright", r"\raggedleft",
+    r"\item", r"\bibitem{}",
+    r"\Kstroke",
+]
+
+
+class LatexView(QWidget):
+    """Two-way editable LaTeX source view with autocomplete."""
 
     latexEdited = Signal(str)
 
@@ -143,6 +234,14 @@ class LatexView(QWidget):
         f = QFont("Consolas"); f.setStyleHint(QFont.Monospace); f.setPointSize(11)
         self._edit.setFont(f)
         self._highlighter = LatexHighlighter(self._edit.document())
+
+        # Autocomplete for LaTeX commands.
+        self._completer = QCompleter(self)
+        self._completer.setWidget(self._edit)
+        self._completer.setCompletionMode(QCompleter.PopupCompletion)
+        self._completer.setCaseSensitivity(Qt.CaseSensitive)
+        self._completer.setModel(QStringListModel(_LATEX_COMMANDS, self._completer))
+        self._completer.activated.connect(self._insert_completion)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -185,12 +284,48 @@ class LatexView(QWidget):
             self._edit.setStyleSheet(
                 "QPlainTextEdit { background: #ffffff; color: #1c1c1c; }")
 
+    # ----- autocomplete -----
+
+    def _text_under_cursor(self) -> str:
+        """Return the current word being typed, including the leading backslash."""
+        cursor = self._edit.textCursor()
+        cursor.movePosition(QTextCursor.StartOfBlock, QTextCursor.KeepAnchor)
+        line_to_cursor = cursor.selectedText()
+        # Find the last backslash and return everything from it.
+        idx = line_to_cursor.rfind("\\")
+        if idx < 0:
+            return ""
+        return line_to_cursor[idx:]
+
+    def _insert_completion(self, completion: str) -> None:
+        prefix = self._completer.completionPrefix()
+        cursor = self._edit.textCursor()
+        # Remove the prefix the user already typed, then insert the full completion.
+        cursor.movePosition(QTextCursor.Left, QTextCursor.KeepAnchor, len(prefix))
+        cursor.insertText(completion)
+        self._edit.setTextCursor(cursor)
+
     # ----- signal plumbing -----
 
     def _on_text_changed(self) -> None:
         if self._suppress_signal:
             return
         self._debounce.start()
+
+        # Drive the completer from the current prefix.
+        prefix = self._text_under_cursor()
+        if len(prefix) >= 2:  # at least \ + one letter
+            self._completer.setCompletionPrefix(prefix)
+            if self._completer.completionCount() > 0:
+                popup = self._completer.popup()
+                popup.setCurrentIndex(self._completer.completionModel().index(0, 0))
+                cr = self._edit.cursorRect()
+                cr.setWidth(280)
+                self._completer.complete(cr)
+            else:
+                self._completer.popup().hide()
+        else:
+            self._completer.popup().hide()
 
     def _emit_edited(self) -> None:
         self.latexEdited.emit(self._edit.toPlainText())

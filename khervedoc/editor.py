@@ -384,7 +384,7 @@ class DocumentEditor(QWidget):
     # ---------- public ----------
 
     @property
-    def text_edit(self) -> QTextEdit:
+    def text_edit(self) -> PagedTextEdit:
         return self._edit
 
     def set_source_dir(self, path: Path | None) -> None:

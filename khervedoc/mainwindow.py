@@ -432,23 +432,22 @@ class MainWindow(QMainWindow):
             self)
         self._status.addPermanentWidget(self._tectonic_label)
 
+        # Set icon colors before building actions so they render correctly.
+        self._is_dark = self._settings.value("theme_dark", False, type=bool)
+        if self._is_dark:
+            icons.set_dark(True)
+
         self._build_actions()
         self._build_menus()
         self._build_toolbar()
 
         self._editor.documentChanged.connect(self._on_doc_changed)
         self._editor.text_edit.cursorPositionChanged.connect(self._sync_toolbar_state)
-        # Reverse path: edits in the LaTeX tab re-parse via import_tex and
-        # rebuild the Formatted view + PDF.
         self._latex_view.latexEdited.connect(self._on_latex_edited)
-        # Flag toggled while we're rebuilding from LaTeX, so the
-        # Formatted-edit handler doesn't immediately overwrite the LaTeX
-        # text with its re-serialization (which would clobber the user's
-        # in-progress edit).
         self._suppress_latex_update = False
 
-        # Apply persisted theme.
-        if self._settings.value("theme_dark", False, type=bool):
+        # Apply persisted theme styling to editor/latex panels.
+        if self._is_dark:
             self._toggle_theme(True)
 
         self._editor.set_document(_starter_document())
@@ -1168,11 +1167,57 @@ class MainWindow(QMainWindow):
         else:
             self._pdf_side_panel.hide()
 
+    def _refresh_icons(self) -> None:
+        """Recreate every toolbar icon so colours match the active theme."""
+        self.act_new.setIcon(icons.file_new())
+        self.act_open.setIcon(icons.file_open())
+        self.act_save.setIcon(icons.file_save())
+        self.act_export_pdf.setIcon(icons.export_pdf())
+        self.act_undo.setIcon(icons.undo())
+        self.act_redo.setIcon(icons.redo())
+        self.act_bold.setIcon(icons.bold())
+        self.act_italic.setIcon(icons.italic())
+        self.act_underline.setIcon(icons.underline())
+        self.act_strike.setIcon(icons.strike())
+        self.act_code.setIcon(icons.code())
+        self.act_smallcaps.setIcon(icons.smallcaps())
+        self.act_sub.setIcon(icons.subscript())
+        self.act_super.setIcon(icons.superscript())
+        self.act_align_left.setIcon(icons.align_left())
+        self.act_align_center.setIcon(icons.align_center())
+        self.act_align_right.setIcon(icons.align_right())
+        self.act_align_justify.setIcon(icons.align_justify())
+        self.act_cols_1.setIcon(icons.one_column())
+        self.act_cols_2.setIcon(icons.two_columns())
+        self.act_cols_3.setIcon(icons.three_columns())
+        self.act_math_inline.setIcon(icons.math_inline())
+        self.act_math_block.setIcon(icons.math_block())
+        self.act_bullet.setIcon(icons.bullet_list())
+        self.act_numbered.setIcon(icons.numbered_list())
+        self.act_link.setIcon(icons.link())
+        self.act_footnote.setIcon(icons.footnote())
+        self.act_citation.setIcon(icons.citation())
+        self.act_crossref.setIcon(icons.cross_ref())
+        self.act_figure.setIcon(icons.figure())
+        self.act_table.setIcon(icons.table())
+        self.act_symbol.setIcon(icons.symbol())
+        self.act_equation_builder.setIcon(icons.equation_builder())
+        self.act_pagebreak.setIcon(icons.page_break())
+        self.act_hrule.setIcon(icons.horizontal_rule())
+        self.act_commit_now.setIcon(icons.commit())
+        self.act_history.setIcon(icons.history())
+        for i, a in enumerate(self.heading_actions, start=1):
+            a.setIcon(icons.heading(i))
+        self._zoom_out_btn.setIcon(icons.zoom_out())
+        self._zoom_in_btn.setIcon(icons.zoom_in())
+
     def _toggle_theme(self, dark: bool) -> None:
         from .__main__ import apply_theme
         app = QApplication.instance()
         apply_theme(app, dark)
         self._settings.setValue("theme_dark", dark)
+        icons.set_dark(dark)
+        self._refresh_icons()
         self._latex_view.set_dark(dark)
         # Update the editor page styling for dark mode.
         if dark:
