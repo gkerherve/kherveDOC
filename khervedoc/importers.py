@@ -164,6 +164,12 @@ _SECTION_LEVEL = {
 _TITLE_PREAMBLE_RE = re.compile(r"\\title\{([^}]*)\}")
 _AUTHOR_PREAMBLE_RE = re.compile(r"\\author\{([^}]*)\}")
 _DOCCLASS_RE = re.compile(r"\\documentclass(?:\[[^\]]*\])?\{([^}]+)\}")
+# Pulls the bracketed options out separately so we can read e.g.
+# `twocolumn`, `10pt`, `a4paper` into the model — the bare _DOCCLASS_RE
+# only captures the class name. Without this, every LaTeX-tab edit
+# round-trips with column_count reset to 1 and body_font_pt reset to
+# the DocMeta default, so the user's twocolumn / font choice vanishes.
+_DOCCLASS_OPTS_RE = re.compile(r"\\documentclass\[([^\]]*)\]\{[^}]+\}")
 _PACKAGE_RE = re.compile(r"\\usepackage(?:\[[^\]]*\])?\{([^}]+)\}")
 _GEOMETRY_RE = re.compile(r"\\usepackage\[([^\]]*)\]\{geometry\}")
 
@@ -723,6 +729,24 @@ def import_tex(tex_source: str) -> Document:
     else:
         author_clean = ""
     doc_class = docclass_m.group(1) if docclass_m else "article"
+
+    # Parse the \documentclass[...] options so we don't drop column
+    # count / body font size on every LaTeX-tab edit. Without this,
+    # editing the LaTeX view round-trips `[10pt,twocolumn]` into
+    # `[12pt]{article}` because the model defaults take over.
+    class_opts_m = _DOCCLASS_OPTS_RE.search(tex_source)
+    doc_class_opts = [o.strip() for o in class_opts_m.group(1).split(",")] \
+        if class_opts_m else []
+    body_font_pt = 12
+    for opt in doc_class_opts:
+        if opt in ("10pt", "11pt", "12pt"):
+            body_font_pt = int(opt[:-2])
+            break
+    column_count = 1
+    if "twocolumn" in doc_class_opts:
+        column_count = 2
+    # `onecolumn` is the default; leave column_count at 1.
+
     # For Elsevier classes we keep \author[opts]{...\corref{...}},
     # \ead, \cortext, \affiliation etc. as raw LaTeX in frontmatter_extras
     # so the round-trip reproduces the journal's title-block layout
@@ -743,6 +767,8 @@ def import_tex(tex_source: str) -> Document:
         documentclass=doc_class,
         packages=packages or ["amsmath", "graphicx"],
         page_size=page_size,
+        body_font_pt=body_font_pt,
+        column_count=column_count,
         frontmatter_extras=frontmatter_extras,
         preamble_extras=preamble_extras,
     )

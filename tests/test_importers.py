@@ -591,6 +591,42 @@ Body paragraph.
     assert "\\end{@twocolumnfalse}" in out
 
 
+def test_documentclass_twocolumn_option_preserved():
+    """When the user edits the LaTeX tab, the source is re-imported.
+    twocolumn / font size in \\documentclass[...] must round-trip so
+    we don't quietly drop column_count to 1 and reset the body font
+    to the DocMeta default on every keystroke."""
+    src = r"""\documentclass[10pt,twocolumn]{article}
+\begin{document}
+Hello.
+\end{document}"""
+    doc = _round_trip(src)
+    assert doc.meta.column_count == 2
+    assert doc.meta.body_font_pt == 10
+
+
+def test_documentclass_options_default_when_absent():
+    src = r"""\documentclass{article}
+\begin{document}
+Hello.
+\end{document}"""
+    doc = _round_trip(src)
+    assert doc.meta.column_count == 1
+    assert doc.meta.body_font_pt == 12
+
+
+def test_documentclass_options_with_a4paper_and_11pt():
+    """Mixed options: only the ones we model affect meta; the rest
+    flow through documentclass + geometry as before."""
+    src = r"""\documentclass[a4paper,11pt,twocolumn]{article}
+\begin{document}
+Hello.
+\end{document}"""
+    doc = _round_trip(src)
+    assert doc.meta.column_count == 2
+    assert doc.meta.body_font_pt == 11
+
+
 def test_align_star_imports_as_math_block_then_round_trips_without_double_wrap():
     """align* env at top level should import as a MathBlock that, on
     serialise, emits \\begin{align*}...\\end{align*} verbatim — not
