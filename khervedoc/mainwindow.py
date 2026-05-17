@@ -160,8 +160,11 @@ class DocSettingsDialog(QDialog):
         self._title = QLineEdit(meta.title)
         self._author = QLineEdit(meta.author)
         self._docclass = QComboBox(); self._docclass.setEditable(True)
-        self._docclass.addItems(["article", "report", "book", "letter",
-                                 "beamer", "memoir"])
+        self._docclass.addItems([
+            "article", "report", "book", "letter", "beamer", "memoir",
+            "elsarticle", "IEEEtran", "revtex4-2", "achemso",
+            "amsart", "llncs", "acmart",
+        ])
         self._docclass.setCurrentText(meta.documentclass)
 
         w = QWidget()
@@ -1080,6 +1083,17 @@ class MainWindow(QMainWindow):
             act = m_examples.addAction(label)
             act.triggered.connect(
                 lambda checked=False, f=factory: self._open_example(f))
+        m_examples.addSeparator()
+        m_journal = m_examples.addMenu("&Journal / publisher templates")
+        for label, factory in examples.JOURNAL_EXAMPLES:
+            act = m_journal.addAction(label)
+            act.triggered.connect(
+                lambda checked=False, f=factory: self._open_example(f))
+        m_examples.addSeparator()
+        self._custom_tpl_menu = m_examples.addMenu("&My templates")
+        self._refresh_custom_templates_menu()
+        act_save_tpl = m_examples.addAction("Save current as &template…")
+        act_save_tpl.triggered.connect(self._save_as_template)
 
         # Window menu — populated dynamically with one entry per open
         # MainWindow so the user can flip between documents without
@@ -1104,6 +1118,83 @@ class MainWindow(QMainWindow):
         win = self._new_window()
         win._editor.set_document(doc)
         win._kick_compile()
+
+    # ---- custom templates ----
+
+    @staticmethod
+    def _templates_dir() -> Path:
+        """User templates directory — sits next to QSettings data."""
+        d = Path(QSettings("kherveDOC", "kherveDOC").fileName()).parent / "templates"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def _refresh_custom_templates_menu(self) -> None:
+        menu = self._custom_tpl_menu
+        menu.clear()
+        tpl_dir = self._templates_dir()
+        templates = sorted(tpl_dir.glob("*.json"))
+        if not templates:
+            act = menu.addAction("(no saved templates)")
+            act.setEnabled(False)
+            return
+        for path in templates:
+            name = path.stem
+            sub = menu.addMenu(name)
+            act_open = sub.addAction("Open in new window")
+            act_open.triggered.connect(
+                lambda checked=False, p=path: self._open_custom_template(p))
+            act_del = sub.addAction("Delete template")
+            act_del.triggered.connect(
+                lambda checked=False, p=path, n=name: self._delete_template(p, n))
+
+    def _save_as_template(self) -> None:
+        """Save the current document as a reusable template."""
+        import json
+        name, ok = QInputDialog.getText(
+            self, "Save as template",
+            "Template name:",
+            text=self._editor.document().meta.title or "My template")
+        if not ok or not name.strip():
+            return
+        name = name.strip()
+        doc = self._editor.document()
+        data = to_json(doc)
+        path = self._templates_dir() / f"{name}.json"
+        if path.exists():
+            r = QMessageBox.question(
+                self, "Overwrite?",
+                f'A template named "{name}" already exists. Overwrite it?')
+            if r != QMessageBox.Yes:
+                return
+        path.write_text(json.dumps(json.loads(data), indent=2),
+                        encoding="utf-8")
+        self._refresh_custom_templates_menu()
+        self.statusBar().showMessage(f"Template saved: {name}", 4000)
+
+    def _open_custom_template(self, path: Path) -> None:
+        """Load a user-saved template into a new window."""
+        import json
+        try:
+            raw = path.read_text(encoding="utf-8")
+            doc = from_json(raw)
+        except Exception as exc:
+            QMessageBox.warning(self, "Template error",
+                                f"Could not load template:\n{exc}")
+            return
+        doc.meta = _apply_user_defaults(doc.meta)
+        win = self._new_window()
+        win._editor.set_document(doc)
+        win._kick_compile()
+
+    def _delete_template(self, path: Path, name: str) -> None:
+        r = QMessageBox.question(
+            self, "Delete template?",
+            f'Permanently delete the template "{name}"?')
+        if r != QMessageBox.Yes:
+            return
+        path.unlink(missing_ok=True)
+        self._refresh_custom_templates_menu()
+        self.statusBar().showMessage(f"Template deleted: {name}", 4000)
 
     def _refresh_window_menu(self) -> None:
         if not hasattr(self, "_window_menu"):

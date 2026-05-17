@@ -951,6 +951,676 @@ def letter() -> Document:
     )
 
 
+# --------------------------------------------------------- Elsevier journal
+
+def elsevier_preprint() -> Document:
+    """Elsevier preprint layout — single column, double-spaced, suitable
+    for initial submission to any Elsevier journal."""
+    return Document(
+        meta=_meta(
+            documentclass="elsarticle",
+            title="A preprint submitted to an Elsevier journal",
+            author="A. Author",
+            line_spacing=2.0,
+            packages=DEFAULT_PACKAGES + ["natbib", "hyperref", "lineno"],
+            preamble_extras="\\journal{Journal Name Here}\n\\linenumbers",
+        ),
+        children=[
+            Title(children=[Text(text="A preprint submitted to an Elsevier journal")]),
+            Author(children=[Text(text="A. Author, B. Coauthor")]),
+            Abstract(children=[Text(text=
+                "This template follows the elsarticle class used by all "
+                "Elsevier journals. The preprint option gives a single-column, "
+                "double-spaced layout suitable for initial submission. "
+                "Line numbers are enabled via the lineno package so reviewers "
+                "can reference specific lines in their feedback. "
+                "Once the paper is accepted, switch the document class to "
+                "elsarticle with a final option (1p, 3p, or 5p) under "
+                "File > Document properties to match the journal's "
+                "production layout.")]),
+            Keywords(children=[Text(text=
+                "elsarticle · preprint · Elsevier · template")]),
+
+            Section(level=1, children=[Text(text="Introduction")]),
+            _p(
+                "Elsevier publishes over 2,500 journals spanning the sciences, "
+                "engineering, medicine and social sciences. The ",
+                ("elsarticle", ["code"]), " document class is the standard "
+                "submission format for all of them. It supports several "
+                "layout modes, selectable as options to ",
+                ("\\documentclass", ["code"]), ":"
+            ),
+            _items(
+                "preprint — single-column, double-spaced (the default here)",
+                "review — single-column with line numbers",
+                "1p — single-column, final typeset",
+                "3p — single-column, final typeset with tighter spacing",
+                "5p — two-column, final typeset (typical for camera-ready)",
+            ),
+            _p(
+                "You set the target journal name with the ",
+                ("\\journal{...}", ["code"]),
+                " command in the preamble (already filled in above). This "
+                "name appears in the running headers of the compiled PDF.",
+            ),
+
+            Section(level=1, children=[Text(text="Front matter")]),
+            _p(
+                "The elsarticle class wraps title, authors, abstract and "
+                "keywords in a ", ("\\begin{frontmatter}", ["code"]),
+                " environment. kherveDOC handles this automatically — "
+                "just fill in the Title, Author, Abstract and Keywords "
+                "paragraphs as you would in any document.",
+            ),
+            _p(
+                "For advanced author metadata (multiple affiliations, "
+                "corresponding-author markers, e-mail addresses), import "
+                "an existing .tex and the extra ", ("\\author[opts]{...}", ["code"]),
+                " / ", ("\\ead{...}", ["code"]),
+                " commands are preserved verbatim in the document settings.",
+            ),
+
+            Section(level=1, children=[Text(text="Citations")]),
+            _p(
+                "Elsevier journals use ", ("natbib", ["code"]),
+                " for citation management. The three standard commands are ",
+                ("\\cite{key}", ["code"]), " (numeric), ",
+                ("\\citep{key}", ["code"]), " (parenthetical) and ",
+                ("\\citet{key}", ["code"]),
+                " (textual). kherveDOC's Insert > Citation dialog lets you "
+                "choose the style per citation.",
+            ),
+            _p(
+                "A bibliography file (.bib) is specified in the preamble "
+                "with ", ("\\bibliographystyle{elsarticle-num}", ["code"]),
+                " and ", ("\\bibliography{refs}", ["code"]),
+                ". Common Elsevier bibliography styles:",
+            ),
+            _items(
+                "elsarticle-num — numbered, e.g. [1]",
+                "elsarticle-num-names — numbered with full author names",
+                "elsarticle-harv — author–year, Harvard style",
+            ),
+
+            Section(level=1, children=[Text(text="Equations and figures")]),
+            _p(
+                "All standard LaTeX math works unchanged. Numbered equations "
+                "get sequential labels that the journal typesetters preserve:",
+            ),
+            MathBlock(
+                latex=r"\nabla \cdot \mathbf{E} = \frac{\rho}{\varepsilon_0}",
+                numbered=True, label="eq:gauss-law",
+            ),
+            _p(
+                "Figures use the standard ", ("figure", ["code"]),
+                " environment with ", ("\\includegraphics", ["code"]),
+                ". Elsevier's production workflow expects figures as separate "
+                "files (EPS, PDF, or high-resolution PNG/TIFF), placed via ",
+                ("\\includegraphics", ["code"]), " with explicit widths.",
+            ),
+
+            Section(level=1, children=[Text(text="Conclusion")]),
+            _p(
+                "Replace this placeholder content with your own. The "
+                "document class, packages and preamble are already configured "
+                "for Elsevier submission — just write, compile, and export.",
+            ),
+        ],
+    )
+
+
+def elsevier_twocol() -> Document:
+    """Elsevier final two-column layout (5p option) — what camera-ready
+    papers look like in most Elsevier physics/engineering journals."""
+    return Document(
+        meta=_meta(
+            documentclass="elsarticle",
+            title="Elsevier two-column (5p) layout",
+            author="A. Author",
+            column_count=2,
+            body_font_pt=10,
+            packages=DEFAULT_PACKAGES + ["natbib", "hyperref"],
+            preamble_extras="\\journal{Journal of Examples}",
+        ),
+        children=[
+            Title(children=[Text(text="Elsevier two-column (5p) layout")]),
+            Author(children=[Text(text="A. Author, B. Coauthor, C. Third")]),
+            Abstract(children=[Text(text=
+                "This template shows the two-column final layout used by "
+                "many Elsevier physics and engineering journals. The 5p "
+                "class option produces a compact, two-column format. "
+                "Figures can span both columns using a figure* environment "
+                "(Insert > Figure, then set width to full page). Tables "
+                "similarly use table* for full-width placement.")]),
+            Keywords(children=[Text(text=
+                "Elsevier · two-column · 5p · camera-ready")]),
+
+            Section(level=1, children=[Text(text="Introduction")]),
+            _p(
+                "The two-column layout is the standard camera-ready format "
+                "for most Elsevier journals in physics, chemistry, "
+                "engineering and computer science. Text flows in narrow "
+                "columns for faster reading; equations, figures and tables "
+                "can span both columns when they need the space."
+            ),
+
+            Section(level=1, children=[Text(text="Method")]),
+            _p(
+                "Describe your experimental or computational methodology "
+                "here. In a two-column layout, long equations may need ",
+                ("\\begin{equation*}", ["code"]),
+                " with manual line-breaking, or the ", ("breqn", ["code"]),
+                " package for automatic breaking.",
+            ),
+            MathBlock(
+                latex=r"F = G \frac{m_1 m_2}{r^2}",
+                numbered=True, label="eq:newton",
+            ),
+
+            Section(level=1, children=[Text(text="Results")]),
+            _p(
+                "Present your key findings. Tables render well in two "
+                "columns as long as you keep them to 3–4 columns of data. "
+                "Wider tables should span both columns.",
+            ),
+            Table(
+                rows=[
+                    ["Parameter", "Value", "Unit"],
+                    ["Temperature", "293.15", "K"],
+                    ["Pressure", "101.325", "kPa"],
+                    ["Flow rate", "12.5", "mL/min"],
+                ],
+                caption="Experimental conditions.",
+                label="tab:conditions",
+                alignment="lrl",
+            ),
+
+            Section(level=1, children=[Text(text="Conclusion")]),
+            _p(
+                "Summarise the key contributions and suggest directions "
+                "for future work.",
+            ),
+        ],
+    )
+
+
+# --------------------------------------------------------- IEEE
+
+def ieee_conference() -> Document:
+    """IEEE conference paper layout using the IEEEtran class — the
+    standard format for IEEE conferences and transactions."""
+    return Document(
+        meta=_meta(
+            documentclass="IEEEtran",
+            title="An IEEE conference paper",
+            author="A. Author",
+            column_count=2,
+            body_font_pt=10,
+            packages=DEFAULT_PACKAGES + ["cite", "hyperref", "url"],
+            preamble_extras=(
+                "% IEEE recommended packages\n"
+                "\\usepackage[cmex10]{amsmath}\n"
+                "\\interdisplaylinepenalty=2500"
+            ),
+        ),
+        children=[
+            Title(children=[Text(text="An IEEE conference paper template")]),
+            Author(children=[Text(text=
+                "A. Author, B. Coauthor")]),
+            Abstract(children=[Text(text=
+                "This template uses the IEEEtran document class, which is "
+                "the standard for all IEEE publications — conferences, "
+                "transactions and journals. The class enforces the familiar "
+                "two-column layout with IEEE-standard fonts, spacing and "
+                "heading styles. Common class options include: conference "
+                "(default), journal, technote, and compsoc for Computer "
+                "Society publications.")]),
+            Keywords(children=[Text(text=
+                "IEEE · IEEEtran · conference · template")]),
+
+            Section(level=1, children=[Text(text="Introduction")]),
+            _p(
+                "IEEE publishes over 200 journals and sponsors more than "
+                "2,000 conferences annually. The IEEEtran class is maintained "
+                "by Michael Shell and available on CTAN. It handles "
+                "first-page formatting, author affiliations, abstract layout, "
+                "section numbering and bibliography style automatically."
+            ),
+            _p(
+                "Key class options you can set under Document properties:",
+            ),
+            _items(
+                "conference — conference proceedings (default)",
+                "journal — IEEE transactions and journals",
+                "technote — IEEE technical notes",
+                "compsoc — IEEE Computer Society style",
+                "comsoc — IEEE Communications Society style",
+            ),
+
+            Section(level=1, children=[Text(text="Related work")]),
+            _p(
+                "Position your contribution relative to the existing "
+                "literature. IEEE style uses numbered citations in square "
+                "brackets ", Citation(keys=["ref1"], style="cite"),
+                ". The cite package sorts and compresses them automatically, "
+                "so ", ("\\cite{a,b,c}", ["code"]), " renders as [1]–[3].",
+            ),
+
+            Section(level=1, children=[Text(text="System model")]),
+            _p(
+                "Describe the system, algorithm or architecture. IEEE papers "
+                "often include block diagrams as figures and key equations "
+                "inline. The standard Shannon capacity:",
+            ),
+            MathBlock(
+                latex=r"C = B \log_2\!\left(1 + \frac{S}{N}\right)",
+                numbered=True, label="eq:shannon",
+            ),
+
+            Section(level=1, children=[Text(text="Experimental results")]),
+            _p(
+                "Tables in IEEE papers use the standard table environment. "
+                "The class automatically sets the caption above the table "
+                "in Roman numeral style.",
+            ),
+            Table(
+                rows=[
+                    ["Method", "Accuracy (%)", "Time (ms)"],
+                    ["Baseline", "87.3", "12"],
+                    ["Proposed", "93.1", "15"],
+                    ["Oracle", "98.2", "—"],
+                ],
+                caption="Comparison of methods on the benchmark dataset.",
+                label="tab:ieee-results",
+                alignment="lrr",
+            ),
+
+            Section(level=1, children=[Text(text="Conclusion")]),
+            _p(
+                "Summarise your contribution and outline future directions. "
+                "IEEE papers typically end with an acknowledgement section "
+                "(unnumbered) and a references section.",
+            ),
+        ],
+    )
+
+
+# ------------------------------------------------ APS / Physical Review
+
+def revtex_article() -> Document:
+    """APS Physical Review article using revtex4-2 — covers PRL, PRA–PRE,
+    PRX, Physical Review Research, etc."""
+    return Document(
+        meta=_meta(
+            documentclass="revtex4-2",
+            title="A Physical Review article",
+            author="A. Author",
+            body_font_pt=10,
+            packages=DEFAULT_PACKAGES + ["natbib", "hyperref"],
+            preamble_extras=(
+                "% APS options: aps, prl, pra, prb, prc, prd, pre, prx\n"
+                "% Add [twocolumn] to documentclass for final layout\n"
+                "% Add [reprint] for single-column reprint style"
+            ),
+        ),
+        children=[
+            Title(children=[Text(text="A Physical Review article template")]),
+            Author(children=[Text(text="A. Author and B. Coauthor")]),
+            Abstract(children=[Text(text=
+                "This template uses the revtex4-2 class maintained by the "
+                "American Physical Society. It is the required format for "
+                "Physical Review Letters, Physical Review A–E, Physical "
+                "Review X, Physical Review Research and Reviews of Modern "
+                "Physics. The class extends the standard article class with "
+                "physics-specific features: PACS/MSC codes, multiple "
+                "affiliations and footnote-style author marks.")]),
+            Keywords(children=[Text(text=
+                "revtex · APS · Physical Review · PRL · template")]),
+
+            Section(level=1, children=[Text(text="Introduction")]),
+            _p(
+                "The revtex4-2 class supports multiple journal targets via "
+                "class options. Set the journal under Document properties by "
+                "typing the full class option string, for example ",
+                ("revtex4-2", ["code"]),
+                " with options ",
+                ("aps,prl,preprint", ["code"]),
+                " for a PRL preprint. Common journal options:",
+            ),
+            _items(
+                "aps — American Physical Society (default)",
+                "aip — American Institute of Physics (e.g., J. Chem. Phys.)",
+                "prl — Physical Review Letters",
+                "prb — Physical Review B",
+                "prx — Physical Review X",
+            ),
+            _p(
+                "Layout options control the column format:",
+            ),
+            _items(
+                "preprint — single-column, double-spaced (for submission)",
+                "twocolumn — two-column (for camera-ready)",
+                "reprint — single-column reprint style",
+            ),
+
+            Section(level=1, children=[Text(text="Theory")]),
+            _p(
+                "RevTeX is optimised for physics notation. The Dirac "
+                "equation in natural units:",
+            ),
+            MathBlock(
+                latex=r"(i \gamma^\mu \partial_\mu - m) \psi = 0",
+                numbered=True, label="eq:dirac",
+            ),
+            _p(
+                "Multi-line derivations use the standard ",
+                ("align", ["code"]),
+                " environment. The class loads amsmath automatically, so "
+                "all AMS environments are available without extra packages.",
+            ),
+            MathBlock(
+                latex=(
+                    "\\begin{align}\n"
+                    "  \\hat{H} |\\psi\\rangle &= E |\\psi\\rangle \\\\\n"
+                    "  \\langle \\psi | \\hat{H} | \\psi \\rangle &= E\n"
+                    "\\end{align}"
+                ),
+                numbered=True,
+            ),
+
+            Section(level=1, children=[Text(text="Experimental details")]),
+            _p(
+                "RevTeX papers typically include detailed experimental "
+                "parameters in tabular form:",
+            ),
+            Table(
+                rows=[
+                    ["Quantity", "Value", "Uncertainty"],
+                    ["Wavelength", "532 nm", "±0.1 nm"],
+                    ["Power", "50 mW", "±2 mW"],
+                    ["Pulse width", "10 ns", "±0.5 ns"],
+                ],
+                caption="Laser parameters used in the experiment.",
+                label="tab:laser",
+                alignment="lrl",
+            ),
+
+            Section(level=1, children=[Text(text="Conclusion")]),
+            _p(
+                "Replace this template with your own content. The document "
+                "class, packages and APS-specific preamble are ready for "
+                "submission.",
+            ),
+        ],
+    )
+
+
+# -------------------------------------------------------- ACS chemistry
+
+def acs_article() -> Document:
+    """American Chemical Society journal article using the achemso class."""
+    return Document(
+        meta=_meta(
+            documentclass="achemso",
+            title="An ACS journal article",
+            author="A. Author",
+            body_font_pt=12,
+            packages=DEFAULT_PACKAGES + ["natbib", "hyperref", "chemformula"],
+            preamble_extras=(
+                "% Set the target journal abbreviation:\n"
+                "% \\journal{jacsat}  % J. Am. Chem. Soc.\n"
+                "% \\journal{jpcafh}  % J. Phys. Chem. A\n"
+                "% \\journal{nalefd}  % Nano Letters\n"
+                "% \\journal{ancham}  % Anal. Chem."
+            ),
+        ),
+        children=[
+            Title(children=[Text(text="An ACS journal article template")]),
+            Author(children=[Text(text="A. Author, B. Coauthor")]),
+            Abstract(children=[Text(text=
+                "This template uses the achemso class for submissions to "
+                "American Chemical Society journals — JACS, Nano Letters, "
+                "ACS Nano, Journal of Physical Chemistry and many others. "
+                "The class handles ACS-specific formatting: structured "
+                "abstracts (for some journals), author affiliations with "
+                "superscript markers, and ACS citation style.")]),
+            Keywords(children=[Text(text=
+                "achemso · ACS · chemistry · JACS · template")]),
+
+            Section(level=1, children=[Text(text="Introduction")]),
+            _p(
+                "The achemso class is maintained on CTAN and mirrors the "
+                "ACS submission guidelines. It automatically loads natbib "
+                "and sets the bibliography style to match the target journal. "
+                "Common target journals can be set in the preamble with ",
+                ("\\journal{abbreviation}", ["code"]), ".",
+            ),
+            _p("Some frequently used ACS journal codes:"),
+            _items(
+                "jacsat — Journal of the American Chemical Society",
+                "jpcafh — Journal of Physical Chemistry A",
+                "nalefd — Nano Letters",
+                "ancham — Analytical Chemistry",
+                "achre4 — Accounts of Chemical Research",
+                "langd5 — Langmuir",
+            ),
+
+            Section(level=1, children=[Text(text="Experimental section")]),
+            _p(
+                "ACS papers place detailed experimental procedures in this "
+                "section. Chemical formulae can be typeset inline using "
+                "the chemformula package: ",
+                MathInline(latex=r"\ch{H2O}"),
+                ", ",
+                MathInline(latex=r"\ch{CO2}"),
+                ", ",
+                MathInline(latex=r"\ch{NaCl}"),
+                ". For reaction schemes, use the ",
+                ("\\ch{}", ["code"]), " command:",
+            ),
+            MathBlock(
+                latex=r"\ch{2 H2 + O2 -> 2 H2O}",
+                numbered=False,
+            ),
+            _p(
+                "Thermodynamic quantities follow ACS conventions:",
+            ),
+            MathBlock(
+                latex=r"\Delta G^\circ = \Delta H^\circ - T \Delta S^\circ",
+                numbered=True, label="eq:gibbs",
+            ),
+
+            Section(level=1, children=[Text(text="Results and discussion")]),
+            _p(
+                "ACS journals often combine results and discussion. "
+                "Quantitative data are best presented in tables:",
+            ),
+            Table(
+                rows=[
+                    ["Compound", "Yield (%)", "m.p. (°C)", "Purity (%)"],
+                    ["1a", "87", "142–144", "99.2"],
+                    ["1b", "72", "156–158", "98.7"],
+                    ["1c", "91", "131–133", "99.5"],
+                ],
+                caption="Synthesis results for compounds 1a–1c.",
+                label="tab:synthesis",
+                alignment="lrrr",
+            ),
+
+            Section(level=1, children=[Text(text="Conclusion")]),
+            _p(
+                "Summarise the key chemical findings and their significance. "
+                "Replace this template content with your manuscript.",
+            ),
+        ],
+    )
+
+
+# ---------------------------------------------------- thesis / report
+
+def thesis() -> Document:
+    """Thesis or long report layout using the report class with typical
+    graduate-school formatting: double-spaced, wide margins for binding."""
+    return Document(
+        meta=_meta(
+            documentclass="report",
+            title="A thesis or dissertation",
+            author="A. Student",
+            body_font_pt=12,
+            line_spacing=2.0,
+            margin_left_cm=3.5,
+            margin_right_cm=2.5,
+            margin_top_cm=2.5,
+            margin_bottom_cm=2.5,
+            packages=DEFAULT_PACKAGES + ["natbib", "hyperref", "appendix"],
+        ),
+        children=[
+            Title(children=[Text(text="Title of the thesis")]),
+            Author(children=[Text(text="A. Student")]),
+            Abstract(children=[Text(text=
+                "This template uses the standard report class configured "
+                "for a typical graduate thesis or dissertation. It has "
+                "double line-spacing, a wider left margin for binding, "
+                "and chapter-level sectioning (Heading 1 = \\chapter). "
+                "Adapt the margins and spacing to your institution's "
+                "requirements under File > Document properties.")]),
+
+            Section(level=1, children=[Text(text="Introduction")]),
+            Section(level=2, children=[Text(text="Motivation")]),
+            _p(
+                "The report class is the natural choice for any long-form "
+                "document with chapters: theses, dissertations, technical "
+                "reports, and project write-ups. It differs from the "
+                "article class mainly in that Heading 1 produces "
+                "\\chapter (starting a new page) rather than \\section.",
+            ),
+            Section(level=2, children=[Text(text="Objectives")]),
+            _p(
+                "State the research questions or objectives of the work. "
+                "Number them for easy cross-referencing in later chapters.",
+            ),
+            _ord_items(
+                "First research question or objective",
+                "Second research question or objective",
+                "Third research question or objective",
+            ),
+
+            Section(level=1, children=[Text(text="Literature review")]),
+            _p(
+                "Survey the relevant prior work and identify the gap your "
+                "thesis addresses. Use citations extensively: ",
+                Citation(keys=["smith2020", "jones2021"], style="citep"),
+                ". A typical thesis chapter runs 15–30 pages with dozens "
+                "of references.",
+            ),
+
+            Section(level=1, children=[Text(text="Methodology")]),
+            _p(
+                "Describe your methods in enough detail for reproduction. "
+                "Mathematical notation follows the same conventions as in "
+                "a journal paper:",
+            ),
+            MathBlock(
+                latex=r"\hat{\beta} = (X^\top X)^{-1} X^\top y",
+                numbered=True, label="eq:ols",
+            ),
+
+            Section(level=1, children=[Text(text="Results")]),
+            _p("Present your results here with tables and figures."),
+
+            Section(level=1, children=[Text(text="Discussion")]),
+            _p("Interpret the results in the context of the literature."),
+
+            Section(level=1, children=[Text(text="Conclusion")]),
+            _p(
+                "Summarise the thesis contributions and suggest future work.",
+            ),
+        ],
+    )
+
+
+# -------------------------------------------------------- beamer slides
+
+def beamer_slides() -> Document:
+    """Beamer presentation template — a skeleton slide deck."""
+    return Document(
+        meta=_meta(
+            documentclass="beamer",
+            title="A presentation",
+            author="A. Speaker",
+            body_font_pt=11,
+            packages=DEFAULT_PACKAGES + ["hyperref"],
+            preamble_extras=(
+                "\\usetheme{Madrid}\n"
+                "\\usecolortheme{default}\n"
+                "% Other popular themes: Berlin, Boadilla, CambridgeUS,\n"
+                "% Copenhagen, Darmstadt, Frankfurt, Hannover, Luebeck,\n"
+                "% Malmoe, Marburg, Montpellier, PaloAlto, Pittsburgh,\n"
+                "% Rochester, Singapore, Szeged, Warsaw\n"
+                "% Colour themes: albatross, beaver, beetle, crane,\n"
+                "% dolphin, dove, fly, lily, orchid, rose, seagull,\n"
+                "% seahorse, whale, wolverine"
+            ),
+        ),
+        children=[
+            Title(children=[Text(text="Presentation title")]),
+            Author(children=[Text(text="A. Speaker — Institution")]),
+
+            Section(level=1, children=[Text(text="Introduction")]),
+            _p(
+                "This template uses the beamer class for creating PDF "
+                "presentations. Each Heading 1 creates a new section; "
+                "each Heading 2 creates a new frame (slide). The Madrid "
+                "theme is set in the preamble — change it to any of "
+                "the themes listed in the comments.",
+            ),
+
+            Section(level=2, children=[Text(text="What is beamer?")]),
+            _p(
+                "Beamer is the standard LaTeX class for slide presentations. "
+                "It supports overlays, animations, handout mode and "
+                "speaker notes. kherveDOC compiles beamer documents "
+                "to PDF — each slide becomes one page.",
+            ),
+            _items(
+                "Bullet points render as standard itemize",
+                "Math works exactly as in articles",
+                "Tables and figures are supported",
+                "Themes control the visual appearance",
+            ),
+
+            Section(level=2, children=[Text(text="Mathematics in slides")]),
+            _p("Equations work the same as in any LaTeX document:"),
+            MathBlock(
+                latex=r"e^{i\pi} + 1 = 0",
+                numbered=False,
+            ),
+
+            Section(level=1, children=[Text(text="Main content")]),
+            Section(level=2, children=[Text(text="Key results")]),
+            _p("Present your main results here. Keep slides concise."),
+            Table(
+                rows=[
+                    ["Metric", "Before", "After"],
+                    ["Accuracy", "82%", "95%"],
+                    ["Speed", "120 ms", "45 ms"],
+                ],
+                caption="Performance comparison.",
+                label="tab:beamer-results",
+                alignment="lrr",
+            ),
+
+            Section(level=2, children=[Text(text="Summary")]),
+            _p("Conclude with your key takeaways."),
+            _ord_items(
+                "First main contribution",
+                "Second main contribution",
+                "Future work direction",
+            ),
+        ],
+    )
+
+
 # Order = display order in the Examples menu. The labels here are what
 # the user sees; the factories above produce the actual documents.
 EXAMPLES: list[tuple[str, callable]] = [
@@ -961,4 +1631,16 @@ EXAMPLES: list[tuple[str, callable]] = [
     ("Three-&column document", three_column_document),
     ("&Math-heavy document",  math_heavy),
     ("&Letter",               letter),
+]
+
+# Journal and publisher templates — grouped by publisher so the Examples
+# menu can present them in a submenu.
+JOURNAL_EXAMPLES: list[tuple[str, callable]] = [
+    ("&Elsevier preprint (elsarticle)",   elsevier_preprint),
+    ("Elsevier &two-column (5p)",         elsevier_twocol),
+    ("&IEEE conference (IEEEtran)",       ieee_conference),
+    ("APS / Physical &Review (revtex4-2)", revtex_article),
+    ("&ACS journal (achemso)",            acs_article),
+    ("&Thesis / report",                  thesis),
+    ("&Beamer slides",                    beamer_slides),
 ]
