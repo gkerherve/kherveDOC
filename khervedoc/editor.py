@@ -932,6 +932,11 @@ class DocumentEditor(QWidget):
         if pt == self._body_font_pt:
             return
         self._body_font_pt = pt
+        # Sync the document meta so the serialized LaTeX preamble
+        # matches what the editor actually shows. Without this, the
+        # toolbar font-size combo changed the on-screen size but the
+        # exported / previewed .tex kept the dialog's old size.
+        self._meta.body_font_pt = pt
         self._building = True
         try:
             doc = self._edit.document()
