@@ -5,7 +5,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QSettings, QThread, QTimer, Signal
+from PySide6.QtCore import Qt, QSettings, QSize, QThread, QTimer, Signal
 from PySide6.QtGui import (
     QAction, QActionGroup, QGuiApplication, QKeySequence, QTextCursor,
     QTextDocument,
@@ -1075,11 +1075,19 @@ class MainWindow(QMainWindow):
         tb.addSeparator()
         tb.addAction(self.act_commit_now); tb.addAction(self.act_history)
 
-        # Left vertical toolbar for Insert / layout actions.
+        # Left vertical toolbar for Insert / layout actions. Uses a
+        # narrower icon size than the top toolbar (18px vs the
+        # default 24) so the column doesn't eat 50px of horizontal
+        # writing area on a small laptop screen.
         self._side_tb = QToolBar("Insert", self)
         self._side_tb.setMovable(False)
         self._side_tb.setOrientation(Qt.Vertical)
-        self._side_tb.setIconSize(tb.iconSize())
+        self._side_tb.setIconSize(QSize(18, 18))
+        self._side_tb.setStyleSheet(
+            # Shrink the padding around each tool button so the column
+            # itself is as narrow as the icons require.
+            "QToolButton { padding: 2px; margin: 0px; }"
+            "QToolBar { padding: 1px; spacing: 0px; }")
         self.addToolBar(Qt.LeftToolBarArea, self._side_tb)
 
         self._side_tb.addAction(self.act_math_inline)
@@ -2232,6 +2240,17 @@ class MainWindow(QMainWindow):
             self._preview.show_pdf(result.pdf_path)
             if self._side_by_side:
                 self._pdf_side_panel.show_pdf(result.pdf_path)
+            # Tell the editor how many pages the PDF actually has so
+            # the page-break overlay can position its lines using the
+            # real ratio (editor_height / pdf_pages) instead of the
+            # static page_height_px heuristic. Cheap: pymupdf was
+            # already opened to render the preview.
+            try:
+                import pymupdf
+                with pymupdf.open(result.pdf_path) as pdf:
+                    self._editor.text_edit.set_pdf_page_count(len(pdf))
+            except Exception:
+                pass
         else:
             tail = "\n".join(result.log.splitlines()[-10:]) if result.log else ""
             self._preview.show_message(f"{result.error}\n\n{tail}")

@@ -47,28 +47,47 @@ class _PageBreakOverlay(QWidget):
         return False
 
     def paintEvent(self, ev):
-        page_h = self._edit.page_height_px()
-        if page_h <= 0:
+        # Preferred: use the *actual* PDF page count from the last
+        # compile to distribute break lines across the editor's content
+        # height. This is far more accurate than the static page-height
+        # heuristic because LaTeX's text density (font, margins,
+        # spacing) doesn't match Qt's QTextEdit defaults. With this,
+        # the page-N marker in the editor lines up with where page N
+        # actually breaks in the compiled PDF.
+        pdf_pages = self._edit.pdf_page_count()
+        doc_h = int(self._edit.document().size().height())
+        if pdf_pages >= 2 and doc_h > 0:
+            spacing = doc_h / pdf_pages
+            total_pages = pdf_pages
+            mode = "compiled"
+        else:
+            spacing = float(self._edit.page_height_px())
+            total_pages = None
+            mode = "estimate"
+        if spacing <= 0:
             return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, False)
         pen = QPen(QColor(140, 70, 50, 180), 1, Qt.DashLine)
         painter.setPen(pen)
-        # The QTextEdit no longer scrolls internally (the outer QScrollArea
-        # owns scrolling), so the viewport top corresponds to the document
-        # top. Lines sit at multiples of page_h.
         scroll_y = self._edit.verticalScrollBar().value()
         h = self.height()
         w = self.width()
         n = 1
         while True:
-            y_doc = n * page_h
+            y_doc = n * spacing
             y_vp = int(y_doc - scroll_y)
-            if y_vp > h + page_h:
+            if y_vp > h + spacing:
+                break
+            if total_pages is not None and n >= total_pages:
+                # Don't draw a "page N / N+1" line past the last PDF page —
+                # the document just ends there.
                 break
             if 0 <= y_vp <= h:
                 painter.drawLine(6, y_vp, w - 6, y_vp)
-                painter.drawText(8, y_vp - 4, f"— page {n} / {n + 1} —")
+                label = (f"— page {n} / {n + 1} —" if mode == "compiled"
+                         else f"— page {n} / {n + 1} (estimate) —")
+                painter.drawText(8, y_vp - 4, label)
             n += 1
         painter.end()
 
@@ -90,6 +109,13 @@ class PagedTextEdit(QTextEdit):
         super().__init__(parent)
         self._page_height_px = 0
         self._page_width_px = 0
+        # Number of pages in the most recent compiled PDF. The
+        # overlay uses this (when >= 2) to position break lines
+        # proportionally to the editor's actual content height —
+        # much more accurate than the static page_height_px which
+        # ignores LaTeX's text density. 0 = no compile yet → fall
+        # back to the heuristic.
+        self._pdf_page_count = 0
         self._images_dir: Path | None = None
         self._image_counter = 0
         self._overlay = _PageBreakOverlay(self)
@@ -102,6 +128,20 @@ class PagedTextEdit(QTextEdit):
 
     def page_height_px(self) -> int:
         return self._page_height_px
+
+    def pdf_page_count(self) -> int:
+        return self._pdf_page_count
+
+    def set_pdf_page_count(self, n: int) -> None:
+        """Record the page count from the most recent successful PDF
+        compile. The page-break overlay redraws using this to space
+        its dashed indicator lines proportionally to the editor's
+        content height. Called by MainWindow after each compile."""
+        n = max(0, int(n))
+        if n == self._pdf_page_count:
+            return
+        self._pdf_page_count = n
+        self._overlay.update()
 
     def set_page_size_px(self, width_px: int, height_px: int) -> None:
         """Record the page dimensions used by the break-line overlay.
