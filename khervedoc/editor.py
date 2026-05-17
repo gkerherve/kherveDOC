@@ -60,19 +60,90 @@ _P_RAW = QTextCharFormat.UserProperty + 6       # value = raw LaTeX source
 
 # ---- block payload storage (figures/tables/raw) ----
 # Block-text holds a compact serialization the editor doesn't try to render
-# visually beyond a one-line "stub". Format examples:
-#   Figure: "[FIGURE] path | caption | label | width"
-#   Table:  "[TABLE] rows-as-tsv-LINESEP-separated || caption | label | alignment"
-#   Raw:    raw LaTeX text on one or multiple lines, internal \n replaced
+# visually beyond a stub. Each block's TYPE is identified by its userState
+# (figures get _STATE_FIGURE, etc.), so the stub text doesn't need a
+# "[TABLE]" / "[FIGURE]" prefix — those were developer-noise and have been
+# removed. Current format examples (all kept in one QTextBlock by
+# substituting U+2028 for '\n'):
+#   Figure: <path>
+#           Caption: <text>
+#           Label: <label>
+#           Width: <width>
+#   Table:  r1c1<TAB>r1c2<TAB>...
+#           r2c1<TAB>r2c2<TAB>...
+#           Caption: <text>
+#           Label: <label>
+#           Alignment: <align>
+#   Raw / Code / Bibliography: raw LaTeX text with internal '\n' replaced
 #           by U+2028 so Qt keeps every line in the same QTextBlock.
-_FIGURE_PREFIX = "[FIGURE] "
-_TABLE_PREFIX = "[TABLE] "
-_RAW_PREFIX = "[RAW] "
-_CODE_PREFIX = "[CODE] "       # lstlisting / verbatim RawLatex
-_BIB_PREFIX = "[BIBLIOGRAPHY] "  # thebibliography RawLatex
-# Every prefix the readback might encounter — listed once so old saves
-# using earlier prefixes still load cleanly.
+# The OLD prefixed format ("[TABLE] ... || cap | label | align") is still
+# accepted by _table_from_stub / _figure_from_stub etc. so sessions
+# carrying stale stubs still load cleanly.
+_FIGURE_PREFIX = "[FIGURE] "      # legacy — accepted on read, never written
+_TABLE_PREFIX = "[TABLE] "        # legacy — accepted on read, never written
+_RAW_PREFIX = "[RAW] "            # legacy — accepted on read, never written
+_CODE_PREFIX = "[CODE] "          # legacy — accepted on read, never written
+_BIB_PREFIX = "[BIBLIOGRAPHY] "   # legacy — accepted on read, never written
+# Read-back prefix list. Kept for backward compatibility with older
+# documents whose RawLatex stubs were prefixed.
 _RAW_PREFIXES = (_CODE_PREFIX, _BIB_PREFIX, _RAW_PREFIX)
+# Field labels for the meta line(s) appended to a figure/table stub.
+_META_CAPTION = "Caption: "
+_META_LABEL = "Label: "
+_META_WIDTH = "Width: "
+_META_ALIGNMENT = "Alignment: "
+_META_KEYS = (_META_CAPTION, _META_LABEL, _META_WIDTH, _META_ALIGNMENT)
+
+
+def _figure_stub(block) -> str:
+    """Render a Figure as a multi-line stub kept inside one QTextBlock
+    (lines joined with U+2028). Each metadata field is on its own
+    visible line with a clear "Caption:" / "Label:" / "Width:" label
+    so the editor doesn't expose `|`-separated developer noise."""
+    parts = [block.path]
+    parts.append(f"{_META_CAPTION}{block.caption or ''}")
+    parts.append(f"{_META_LABEL}{block.label or ''}")
+    parts.append(f"{_META_WIDTH}{block.width or ''}")
+    return _LINE_SEP.join(parts)
+
+
+def _table_stub(block) -> str:
+    """Render a Table the same way: rows first (TAB-separated cells,
+    U+2028-separated rows), then one metadata line per attribute."""
+    rows = [_LINE_SEP.join("\t".join(r) for r in block.rows)] if block.rows else []
+    meta = [
+        f"{_META_CAPTION}{block.caption or ''}",
+        f"{_META_LABEL}{block.label or ''}",
+        f"{_META_ALIGNMENT}{block.alignment or ''}",
+    ]
+    return _LINE_SEP.join(filter(None, rows + meta))
+
+
+def _split_stub_meta(text: str) -> tuple[list[str], dict[str, str]]:
+    """Split a stub into (content lines, metadata dict).
+
+    Walks the trailing lines of `text` (split on U+2028) and pulls off
+    any that start with one of the known meta labels. Stops as soon as
+    a line doesn't look like a meta line — the rest are content.
+    Returns the content lines in their original order plus a {label
+    (no trailing space): value} dict."""
+    if not text:
+        return [], {}
+    lines = text.split(_LINE_SEP)
+    meta: dict[str, str] = {}
+    # Walk from the back; remove meta lines as we encounter them.
+    while lines:
+        last = lines[-1]
+        matched = None
+        for key in _META_KEYS:
+            if last.startswith(key):
+                matched = key
+                break
+        if matched is None:
+            break
+        meta[matched.rstrip(": ")] = last[len(matched):]
+        lines.pop()
+    return lines, meta
 # Qt splits text into separate QTextBlocks at every '\n'. For block-text
 # fields that NEED to carry literal newlines (multi-line lstlisting and
 # verbatim envs, multi-row tables) we substitute U+2028 (Unicode "Line
@@ -578,40 +649,36 @@ class DocumentEditor(QWidget):
         elif isinstance(block, Figure):
             cursor.block().setUserState(_STATE_FIGURE)
             cursor.setBlockFormat(_figure_block_format())
-            label = block.label or ""
-            stub = f"{_FIGURE_PREFIX}{block.path}|{block.caption}|{label}|{block.width}"
+            stub = _figure_stub(block)
             cursor.insertText(stub, _typed_stub_char_format("#2e7d32"))
             self._insert_figure_thumbnail(cursor, block.path)
         elif isinstance(block, Table):
             cursor.block().setUserState(_STATE_TABLE)
             cursor.setBlockFormat(_table_block_format())
-            label = block.label or ""
-            # rows separated by U+2028 (LINE SEPARATOR) instead of '\n' so
-            # the entire stub stays in one QTextBlock — '\n' would split
-            # the row sequence across QTextBlocks and the readback would
-            # only see the first row.
-            rows_tsv = _LINE_SEP.join("\t".join(r) for r in block.rows)
-            stub = f"{_TABLE_PREFIX}{rows_tsv}||{block.caption}|{label}|{block.alignment}"
+            stub = _table_stub(block)
             cursor.insertText(stub, _typed_stub_char_format("#e65100"))
         elif isinstance(block, RawLatex):
-            # Pick the visual style from the content so code listings,
-            # bibliography blocks and generic raw LaTeX are each
-            # immediately recognisable.
+            # Pick the background colour from the content so code
+            # listings, bibliography blocks and generic raw LaTeX are
+            # each immediately recognisable. The block's userState +
+            # background style already says "this is raw LaTeX", so we
+            # don't prepend a "[RAW] " / "[CODE] " label any more — it
+            # was developer noise on screen.
             cursor.block().setUserState(_STATE_RAW)
             text = block.text
             if "\\begin{lstlisting}" in text or "\\begin{verbatim}" in text:
                 cursor.setBlockFormat(_code_block_format())
-                prefix, color = _CODE_PREFIX, "#1a3a8c"      # slate / blue
+                color = "#1a3a8c"      # slate / blue
             elif "\\begin{thebibliography}" in text:
                 cursor.setBlockFormat(_bibliography_block_format())
-                prefix, color = _BIB_PREFIX, "#6a1b9a"       # purple
+                color = "#6a1b9a"      # purple
             else:
                 cursor.setBlockFormat(_raw_block_format())
-                prefix, color = _RAW_PREFIX, "#b71c1c"       # red
+                color = "#b71c1c"      # red
             # Multi-line content: substitute U+2028 for '\n' so Qt keeps
             # every line in the same block; the readback undoes it.
             visible = text.replace("\n", _LINE_SEP)
-            cursor.insertText(prefix + visible, _typed_stub_char_format(color))
+            cursor.insertText(visible, _typed_stub_char_format(color))
 
     # ---------- figure thumbnail ----------
 
@@ -837,30 +904,54 @@ class DocumentEditor(QWidget):
         return "left"
 
     def _figure_from_stub(self, text: str) -> Figure:
-        body = text[len(_FIGURE_PREFIX):] if text.startswith(_FIGURE_PREFIX) else text
-        # Strip trailing image object char (U+FFFC) and newline from thumbnail.
-        body = body.rstrip("\n\ufffc")
-        parts = body.split("|")
-        while len(parts) < 4: parts.append("")
-        return Figure(path=parts[0], caption=parts[1], label=parts[2] or None,
-                      width=parts[3] or "0.8\\textwidth")
+        # Strip the trailing image object char (U+FFFC) Qt inserts for
+        # the thumbnail and any trailing newlines.
+        body = text.rstrip("\n\ufffc")
+        # Legacy format: "[FIGURE] path | caption | label | width".
+        if body.startswith(_FIGURE_PREFIX):
+            legacy = body[len(_FIGURE_PREFIX):]
+            parts = legacy.split("|")
+            while len(parts) < 4: parts.append("")
+            return Figure(path=parts[0], caption=parts[1],
+                          label=parts[2] or None,
+                          width=parts[3] or "0.8\\textwidth")
+        # New format: path on the first line, then Caption/Label/Width
+        # meta lines. _split_stub_meta peels the meta lines off the end.
+        lines, meta = _split_stub_meta(body)
+        path = lines[0] if lines else ""
+        return Figure(
+            path=path,
+            caption=meta.get("Caption", ""),
+            label=(meta.get("Label", "") or None),
+            width=meta.get("Width", "") or "0.8\\textwidth",
+        )
 
     def _table_from_stub(self, text: str) -> Table:
-        body = text[len(_TABLE_PREFIX):] if text.startswith(_TABLE_PREFIX) else text
-        rows_str, sep, meta = body.partition("||")
-        # Rows are LINE_SEP-separated (matches what set_document writes);
-        # tolerate the legacy '\n' form for older sessions.
-        if rows_str:
-            row_sources = rows_str.split(_LINE_SEP)
-            if len(row_sources) == 1 and "\n" in rows_str:
-                row_sources = rows_str.split("\n")
-            rows = [r.split("\t") for r in row_sources]
-        else:
-            rows = []
-        parts = meta.split("|") if sep else []
-        while len(parts) < 3: parts.append("")
-        return Table(rows=rows, caption=parts[0], label=parts[1] or None,
-                     alignment=parts[2])
+        # Legacy format: "[TABLE] rows || cap | label | align".
+        if text.startswith(_TABLE_PREFIX):
+            legacy = text[len(_TABLE_PREFIX):]
+            rows_str, sep, meta = legacy.partition("||")
+            if rows_str:
+                row_sources = rows_str.split(_LINE_SEP)
+                if len(row_sources) == 1 and "\n" in rows_str:
+                    row_sources = rows_str.split("\n")
+                rows = [r.split("\t") for r in row_sources]
+            else:
+                rows = []
+            parts = meta.split("|") if sep else []
+            while len(parts) < 3: parts.append("")
+            return Table(rows=rows, caption=parts[0],
+                         label=parts[1] or None, alignment=parts[2])
+        # New format: rows (TAB-separated cells, U+2028-separated rows)
+        # followed by Caption/Label/Alignment meta lines.
+        lines, meta = _split_stub_meta(text)
+        rows = [r.split("\t") for r in lines] if lines else []
+        return Table(
+            rows=rows,
+            caption=meta.get("Caption", ""),
+            label=(meta.get("Label", "") or None),
+            alignment=meta.get("Alignment", ""),
+        )
 
     # ---------- formatting actions (called by mainwindow) ----------
 
@@ -1145,7 +1236,8 @@ class DocumentEditor(QWidget):
         c.insertBlock(QTextBlockFormat(), QTextCharFormat())
         c.block().setUserState(_STATE_FIGURE)
         c.setBlockFormat(_figure_block_format())
-        stub = f"{_FIGURE_PREFIX}{path}||" + "|0.6\\textwidth"
+        stub = _figure_stub(
+            Figure(path=path, caption="", label=None, width="0.6\\textwidth"))
         c.insertText(stub, _typed_stub_char_format("#2e7d32"))
         self._insert_figure_thumbnail(c, path)
         c.insertBlock(QTextBlockFormat(), QTextCharFormat())
@@ -1161,8 +1253,10 @@ class DocumentEditor(QWidget):
         c.insertBlock()
         c.block().setUserState(_STATE_FIGURE)
         c.setBlockFormat(_figure_block_format())
-        c.insertText(f"{_FIGURE_PREFIX}{path}|{cap}|{label}|0.8\\textwidth",
-                     _typed_stub_char_format("#2e7d32"))
+        stub = _figure_stub(
+            Figure(path=path, caption=cap, label=label or None,
+                   width="0.8\\textwidth"))
+        c.insertText(stub, _typed_stub_char_format("#2e7d32"))
         c.insertBlock(QTextBlockFormat(), QTextCharFormat())
         c.block().setUserState(_STATE_PARAGRAPH)
 
@@ -1172,15 +1266,14 @@ class DocumentEditor(QWidget):
         cols, ok = QInputDialog.getInt(self, "Insert table", "Columns:", 3, 1, 20)
         if not ok: return
         cap, _ = QInputDialog.getText(self, "Caption", "Caption:")
-        # Row separator must be U+2028 (LINE_SEP) so the whole stub lives
-        # in one QTextBlock; '\n' would split it into separate paragraphs.
-        empty_rows = _LINE_SEP.join("\t".join(["cell"] * cols) for _ in range(rows))
         c = self._edit.textCursor()
         c.insertBlock()
         c.block().setUserState(_STATE_TABLE)
         c.setBlockFormat(_table_block_format())
-        c.insertText(f"{_TABLE_PREFIX}{empty_rows}||{cap}||",
-                     _typed_stub_char_format("#e65100"))
+        stub = _table_stub(Table(
+            rows=[["cell"] * cols for _ in range(rows)],
+            caption=cap, label=None, alignment=""))
+        c.insertText(stub, _typed_stub_char_format("#e65100"))
         c.insertBlock(QTextBlockFormat(), QTextCharFormat())
         c.block().setUserState(_STATE_PARAGRAPH)
 
@@ -1204,21 +1297,23 @@ class DocumentEditor(QWidget):
 
     def _insert_raw_block(self, latex: str) -> None:
         """Shared helper: drop a RawLatex block at the cursor with the
-        right per-type colour based on the content."""
+        right per-type colour based on the content. No "[RAW] " /
+        "[CODE] " label is prepended — the coloured background and
+        the userState already mark this as a raw block."""
         c = self._edit.textCursor()
         c.insertBlock()
         c.block().setUserState(_STATE_RAW)
         if "\\begin{lstlisting}" in latex or "\\begin{verbatim}" in latex:
             c.setBlockFormat(_code_block_format())
-            prefix, color = _CODE_PREFIX, "#1a3a8c"
+            color = "#1a3a8c"
         elif "\\begin{thebibliography}" in latex:
             c.setBlockFormat(_bibliography_block_format())
-            prefix, color = _BIB_PREFIX, "#6a1b9a"
+            color = "#6a1b9a"
         else:
             c.setBlockFormat(_raw_block_format())
-            prefix, color = _RAW_PREFIX, "#b71c1c"
+            color = "#b71c1c"
         visible = latex.replace("\n", _LINE_SEP)
-        c.insertText(prefix + visible, _typed_stub_char_format(color))
+        c.insertText(visible, _typed_stub_char_format(color))
         c.insertBlock(QTextBlockFormat(), QTextCharFormat())
         c.block().setUserState(_STATE_PARAGRAPH)
 
