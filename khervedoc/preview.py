@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 
@@ -79,11 +79,17 @@ class PdfPreview(QWidget):
     def show_pdf(self, pdf_path: Path) -> None:
         if not _QTPDF_AVAILABLE or self._view is None:
             return
+        # Remember scroll position so a recompile doesn't jump to the top.
+        vbar = self._view.verticalScrollBar()
+        saved_scroll = vbar.value() if vbar else 0
         self._current_pdf = Path(pdf_path)
         self._doc.close()
         self._doc.load(str(pdf_path))
         self._view.setZoomFactor(self._zoom_percent / 100.0)
         self._status.hide()
+        # Restore after Qt lays out the new document.
+        if saved_scroll:
+            QTimer.singleShot(0, lambda: vbar.setValue(saved_scroll))
 
     def set_zoom_percent(self, percent: int) -> None:
         self._zoom_percent = max(25, min(400, int(percent)))
