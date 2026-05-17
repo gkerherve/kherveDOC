@@ -436,12 +436,11 @@ class MainWindow(QMainWindow):
             Path(p) for p in raw_recent if p and Path(p).exists()]
 
         screen = QGuiApplication.primaryScreen().availableGeometry()
-        # Default to 95 % of the screen so a 1080p / 1440p / 4K
-        # display lays out side-by-side mode with full-width pages
-        # on both halves instead of cramping the Formatted card into
-        # ~600 px. The user can still resize down if they want.
-        w = int(screen.width() * 0.95)
-        h = int(screen.height() * 0.92)
+        # Default to ~80 % of the screen, capped, so the window starts
+        # in a comfortable size rather than near-maximised. The user
+        # can still drag-resize bigger if they want.
+        w = min(1400, int(screen.width() * 0.80))
+        h = min(900, int(screen.height() * 0.85))
         self.resize(w, h)
         # Cascade secondary windows so they don't perfectly overlap the
         # first one. The Nth window shifts by (N-1)*30 px in both axes.
@@ -465,13 +464,14 @@ class MainWindow(QMainWindow):
         self._pdf_side_panel = PdfPreview(self)
         self._pdf_side_panel.hide()
         self._splitter.addWidget(self._pdf_side_panel)
-        # Equal split between the editor tabs (left) and the side
-        # PDF panel (right). Previously the PDF panel got the larger
-        # share (2 : 3) which cramped the Formatted tab; both panes
-        # need ~half the window to render a page card at full width
-        # without horizontal scrolling.
+        # Give the PDF side panel ~2× the width of the Formatted tab.
+        # The PDF page renders at its native typeset size (small
+        # text), so it benefits from the extra width far more than
+        # the editor (where the page card can scroll horizontally if
+        # needed but the wrapped editor lines stay readable at
+        # narrower widths).
         self._splitter.setStretchFactor(0, 1)
-        self._splitter.setStretchFactor(1, 1)
+        self._splitter.setStretchFactor(1, 2)
 
         # Find bar (hidden until Ctrl+F).
         self._find_bar = _FindBar(self)
