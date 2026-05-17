@@ -64,15 +64,15 @@ _MATH_ENVS = (
 
 # Precompiled regexes for \begin{env} / \end{env}.
 _BEGIN_MATH_RE = QRegularExpression(
-    r"\\begin\{(" + "|".join(_MATH_ENVS).replace("*", r"\*") + r")\}")
+    r"^\s*\\begin\{(" + "|".join(_MATH_ENVS).replace("*", r"\*") + r")\}")
 _END_MATH_RE = QRegularExpression(
-    r"\\end\{(" + "|".join(_MATH_ENVS).replace("*", r"\*") + r")\}")
-_BEGIN_FIGURE_RE = QRegularExpression(r"\\begin\{figure\*?\}")
-_END_FIGURE_RE = QRegularExpression(r"\\end\{figure\*?\}")
-_BEGIN_TABLE_RE = QRegularExpression(r"\\begin\{table\*?\}")
-_END_TABLE_RE = QRegularExpression(r"\\end\{table\*?\}")
+    r"^\s*\\end\{(" + "|".join(_MATH_ENVS).replace("*", r"\*") + r")\}")
+_BEGIN_FIGURE_RE = QRegularExpression(r"^\s*\\begin\{figure\*?\}")
+_END_FIGURE_RE = QRegularExpression(r"^\s*\\end\{figure\*?\}")
+_BEGIN_TABLE_RE = QRegularExpression(r"^\s*\\begin\{table\*?\}")
+_END_TABLE_RE = QRegularExpression(r"^\s*\\end\{table\*?\}")
 _SECTION_RE = QRegularExpression(
-    r"\\(section|subsection|subsubsection|paragraph|subparagraph|chapter|part)\*?"
+    r"^\s*\\(section|subsection|subsubsection|paragraph|subparagraph|chapter|part)\*?"
     r"(\{|\[)")
 
 
