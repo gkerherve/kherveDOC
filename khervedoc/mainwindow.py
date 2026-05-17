@@ -691,6 +691,24 @@ class MainWindow(QMainWindow):
                                       checkable=True, triggered=self._toggle_theme)
         self.act_dark_theme.setChecked(
             self._settings.value("theme_dark", False, type=bool))
+        # Spell-check toggle. Disabled (greyed out) when pyspellchecker
+        # isn't installed so the user knows the feature exists even on
+        # a stripped-down environment.
+        from . import spellcheck
+        self.act_spell_check = QAction("Check &spelling", self,
+                                       checkable=True,
+                                       triggered=self._toggle_spell_check)
+        spell_available = spellcheck.is_available()
+        self.act_spell_check.setEnabled(spell_available)
+        wanted = self._settings.value("spell_check", spell_available, type=bool)
+        # Apply persisted preference up front so the highlighter starts
+        # in the right state (default ON when available).
+        self.act_spell_check.setChecked(wanted and spell_available)
+        self._editor.set_spell_check_enabled(wanted and spell_available)
+        if not spell_available:
+            self.act_spell_check.setToolTip(
+                "Install pyspellchecker (pip install pyspellchecker) to "
+                "enable live spell checking.")
 
         # Git
         self.act_commit_now = QAction(icons.commit(), "&Commit && push now", self,
@@ -787,6 +805,7 @@ class MainWindow(QMainWindow):
         m_view.addSeparator()
         m_view.addAction(self.act_side_by_side)
         m_view.addSeparator()
+        m_view.addAction(self.act_spell_check)
         m_view.addAction(self.act_dark_theme)
 
         # Renamed History → Git so it advertises the actual scope
@@ -924,25 +943,37 @@ class MainWindow(QMainWindow):
                     self.act_align_right, self.act_align_justify):
             tb.addAction(act)
         tb.addSeparator()
-        for act in (self.act_cols_1, self.act_cols_2, self.act_cols_3):
-            tb.addAction(act)
-        tb.addSeparator()
         for act in (self.act_bullet, self.act_numbered):
             tb.addAction(act)
         tb.addSeparator()
-        for act in (self.act_math_inline, self.act_math_block, self.act_symbol,
-                    self.act_equation_builder):
-            tb.addAction(act)
-        tb.addSeparator()
-        for act in (self.act_link, self.act_footnote, self.act_citation,
-                    self.act_crossref):
-            tb.addAction(act)
-        tb.addSeparator()
-        for act in (self.act_figure, self.act_table, self.act_pagebreak,
-                    self.act_hrule):
-            tb.addAction(act)
-        tb.addSeparator()
         tb.addAction(self.act_commit_now); tb.addAction(self.act_history)
+
+        # Left vertical toolbar for Insert / layout actions.
+        self._side_tb = QToolBar("Insert", self)
+        self._side_tb.setMovable(False)
+        self._side_tb.setOrientation(Qt.Vertical)
+        self._side_tb.setIconSize(tb.iconSize())
+        self.addToolBar(Qt.LeftToolBarArea, self._side_tb)
+
+        self._side_tb.addAction(self.act_math_inline)
+        self._side_tb.addAction(self.act_math_block)
+        self._side_tb.addAction(self.act_symbol)
+        self._side_tb.addAction(self.act_equation_builder)
+        self._side_tb.addSeparator()
+        self._side_tb.addAction(self.act_link)
+        self._side_tb.addAction(self.act_footnote)
+        self._side_tb.addAction(self.act_citation)
+        self._side_tb.addAction(self.act_crossref)
+        self._side_tb.addSeparator()
+        self._side_tb.addAction(self.act_figure)
+        self._side_tb.addAction(self.act_table)
+        self._side_tb.addSeparator()
+        self._side_tb.addAction(self.act_cols_1)
+        self._side_tb.addAction(self.act_cols_2)
+        self._side_tb.addAction(self.act_cols_3)
+        self._side_tb.addSeparator()
+        self._side_tb.addAction(self.act_pagebreak)
+        self._side_tb.addAction(self.act_hrule)
 
     # ----- title -----
 
@@ -1340,6 +1371,10 @@ class MainWindow(QMainWindow):
         self._zoom_in_btn.setIcon(icons.zoom_in())
         self._pdf_zoom_out_btn.setIcon(icons.zoom_out())
         self._pdf_zoom_in_btn.setIcon(icons.zoom_in())
+
+    def _toggle_spell_check(self, enabled: bool) -> None:
+        self._editor.set_spell_check_enabled(enabled)
+        self._settings.setValue("spell_check", enabled)
 
     def _toggle_theme(self, dark: bool) -> None:
         from .__main__ import apply_theme
