@@ -5,7 +5,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QSettings, QSize, QThread, QTimer, Signal
+from PySide6.QtCore import Qt, QSettings, QThread, QTimer, Signal
 from PySide6.QtGui import (
     QAction, QActionGroup, QGuiApplication, QKeySequence, QTextCursor,
     QTextDocument,
@@ -436,8 +436,12 @@ class MainWindow(QMainWindow):
             Path(p) for p in raw_recent if p and Path(p).exists()]
 
         screen = QGuiApplication.primaryScreen().availableGeometry()
-        w = min(1500, int(screen.width() * 0.85))
-        h = min(950, int(screen.height() * 0.85))
+        # Default to 95 % of the screen so a 1080p / 1440p / 4K
+        # display lays out side-by-side mode with full-width pages
+        # on both halves instead of cramping the Formatted card into
+        # ~600 px. The user can still resize down if they want.
+        w = int(screen.width() * 0.95)
+        h = int(screen.height() * 0.92)
         self.resize(w, h)
         # Cascade secondary windows so they don't perfectly overlap the
         # first one. The Nth window shifts by (N-1)*30 px in both axes.
@@ -461,8 +465,13 @@ class MainWindow(QMainWindow):
         self._pdf_side_panel = PdfPreview(self)
         self._pdf_side_panel.hide()
         self._splitter.addWidget(self._pdf_side_panel)
-        self._splitter.setStretchFactor(0, 2)
-        self._splitter.setStretchFactor(1, 3)
+        # Equal split between the editor tabs (left) and the side
+        # PDF panel (right). Previously the PDF panel got the larger
+        # share (2 : 3) which cramped the Formatted tab; both panes
+        # need ~half the window to render a page card at full width
+        # without horizontal scrolling.
+        self._splitter.setStretchFactor(0, 1)
+        self._splitter.setStretchFactor(1, 1)
 
         # Find bar (hidden until Ctrl+F).
         self._find_bar = _FindBar(self)
@@ -1075,19 +1084,12 @@ class MainWindow(QMainWindow):
         tb.addSeparator()
         tb.addAction(self.act_commit_now); tb.addAction(self.act_history)
 
-        # Left vertical toolbar for Insert / layout actions. Uses a
-        # narrower icon size than the top toolbar (18px vs the
-        # default 24) so the column doesn't eat 50px of horizontal
-        # writing area on a small laptop screen.
+        # Left vertical toolbar for Insert / layout actions. Matches
+        # the top toolbar's 24px icon size for a consistent look.
         self._side_tb = QToolBar("Insert", self)
         self._side_tb.setMovable(False)
         self._side_tb.setOrientation(Qt.Vertical)
-        self._side_tb.setIconSize(QSize(18, 18))
-        self._side_tb.setStyleSheet(
-            # Shrink the padding around each tool button so the column
-            # itself is as narrow as the icons require.
-            "QToolButton { padding: 2px; margin: 0px; }"
-            "QToolBar { padding: 1px; spacing: 0px; }")
+        self._side_tb.setIconSize(tb.iconSize())
         self.addToolBar(Qt.LeftToolBarArea, self._side_tb)
 
         self._side_tb.addAction(self.act_math_inline)
