@@ -1422,6 +1422,15 @@ class DocumentEditor(QWidget):
 
     def _show_context_menu(self, pos) -> None:
         menu = self._edit.createStandardContextMenu()
+        # Spell-check suggestions for the word at the right-click. The
+        # word boundary is found via Qt's WordUnderCursor selection;
+        # if the cursor is in whitespace this just produces an empty
+        # selection and we skip the suggestion block entirely.
+        word_cursor = self._edit.cursorForPosition(pos)
+        word_cursor.select(QTextCursor.WordUnderCursor)
+        word = word_cursor.selectedText().strip()
+        if word and self._spell_highlighter.is_misspelled(word):
+            self._prepend_spell_suggestions(menu, word_cursor, word)
         qtable = self._current_table()
         if qtable is not None:
             menu.addSeparator()
@@ -1445,6 +1454,46 @@ class DocumentEditor(QWidget):
                 menu.addAction("Delete column",
                                lambda: self._table_delete_col(qtable, col))
         menu.exec(self._edit.viewport().mapToGlobal(pos))
+
+    def _prepend_spell_suggestions(self, menu, word_cursor, word: str) -> None:
+        """Insert spell-check suggestions at the top of the context
+        menu for a misspelled `word`. Selecting a suggestion replaces
+        the word in place; the "Add to dictionary" entry stops
+        flagging it for the rest of the session."""
+        suggestions = self._spell_highlighter.suggestions(word)
+        # Capture the start/end of the word so the action callbacks
+        # can replace it even if the user clicks elsewhere first.
+        start = word_cursor.selectionStart()
+        end = word_cursor.selectionEnd()
+        existing_actions = menu.actions()
+        first = existing_actions[0] if existing_actions else None
+
+        def _replace_with(new_word: str):
+            c = QTextCursor(self._edit.document())
+            c.setPosition(start)
+            c.setPosition(end, QTextCursor.KeepAnchor)
+            # Preserve the existing char format of the word — bold,
+            # italic, font — so the correction inherits the same
+            # styling instead of falling back to a plain insert.
+            fmt = c.charFormat()
+            c.insertText(new_word, fmt)
+
+        if suggestions:
+            for s in suggestions:
+                act = QAction(s, menu)
+                act.triggered.connect(lambda checked=False, w=s: _replace_with(w))
+                menu.insertAction(first, act)
+        else:
+            no_sug = QAction("(no suggestions)", menu)
+            no_sug.setEnabled(False)
+            menu.insertAction(first, no_sug)
+
+        menu.insertSeparator(first)
+        add_act = QAction(f"Add “{word}” to dictionary", menu)
+        add_act.triggered.connect(
+            lambda checked=False, w=word: self._spell_highlighter.add_to_dictionary(w))
+        menu.insertAction(first, add_act)
+        menu.insertSeparator(first)
 
     def _table_insert_row(self, qtable: QTextTable, at: int) -> None:
         qtable.insertRows(at, 1)

@@ -95,7 +95,60 @@ class SpellHighlighter(QSyntaxHighlighter):
         if not word:
             return
         self._ignored.add(word.lower())
+        # Invalidate the unknown-cache entry so it isn't re-flagged
+        # by the very next highlight pass.
+        self._unknown_cache.pop(word.lower(), None)
         self.rehighlight()
+
+    def is_misspelled(self, word: str) -> bool:
+        """True if `word` looks like a checkable English word that the
+        dictionary doesn't know. Used by the editor's context menu to
+        decide whether to offer suggestion actions on right-click."""
+        if not self._enabled or not _AVAILABLE or not word:
+            return False
+        if not _is_checkable(word):
+            return False
+        key = word.lower().strip("’'’")
+        if not key or key in self._ignored:
+            return False
+        cached = self._unknown_cache.get(key)
+        if cached is None:
+            if self._checker is None:
+                self._checker = SpellChecker()
+            cached = bool(self._checker.unknown([key]))
+            self._unknown_cache[key] = cached
+        return cached
+
+    def suggestions(self, word: str, limit: int = 7) -> list[str]:
+        """Top correction suggestions for `word`, ordered by
+        pyspellchecker's confidence. Empty list if the dictionary has
+        nothing — happens for very long nonsense strings."""
+        if not self._enabled or not _AVAILABLE or not word:
+            return []
+        if self._checker is None:
+            self._checker = SpellChecker()
+        key = word.lower().strip("’'’")
+        try:
+            candidates = self._checker.candidates(key)
+        except Exception:
+            return []
+        if not candidates:
+            return []
+        # Best-first ordering by usage frequency from the bundled
+        # corpus — more common candidates come first. Fall back to
+        # alphabetical when frequencies tie.
+        ranked = sorted(
+            candidates,
+            key=lambda w: (-self._checker.word_usage_frequency(w), w),
+        )
+        # Match the case of the input: ALL CAPS, Capitalised, lower.
+        def _case_match(w: str) -> str:
+            if word.isupper():
+                return w.upper()
+            if word[:1].isupper():
+                return w.capitalize()
+            return w
+        return [_case_match(w) for w in ranked[:limit]]
 
     # ---- highlight implementation ------------------------------------
 
