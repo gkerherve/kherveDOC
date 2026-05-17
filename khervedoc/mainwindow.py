@@ -757,8 +757,8 @@ class MainWindow(QMainWindow):
         # isn't installed so the user knows the feature exists even on
         # a stripped-down environment.
         from . import spellcheck
-        self.act_spell_check = QAction("Check &spelling", self,
-                                       checkable=True,
+        self.act_spell_check = QAction(icons.spell_check(), "Check &spelling",
+                                       self, checkable=True,
                                        triggered=self._toggle_spell_check)
         spell_available = spellcheck.is_available()
         self.act_spell_check.setEnabled(spell_available)
@@ -767,10 +767,23 @@ class MainWindow(QMainWindow):
         # in the right state (default ON when available).
         self.act_spell_check.setChecked(wanted and spell_available)
         self._editor.set_spell_check_enabled(wanted and spell_available)
-        if not spell_available:
+        if spell_available:
             self.act_spell_check.setToolTip(
-                "Install pyspellchecker (pip install pyspellchecker) to "
-                "enable live spell checking.")
+                "Underline misspelled English words in red. "
+                "Toggle from the toolbar or View menu.")
+        else:
+            # Greyed-out menu entry, plus a one-shot status-bar
+            # message so the user sees the install hint without
+            # having to hunt for it in the menu.
+            self.act_spell_check.setToolTip(
+                "Install pyspellchecker to enable live spell checking:\n"
+                "  pip install pyspellchecker")
+            # Defer the status message so it fires after the status
+            # bar exists; QTimer.singleShot(0) puts it on the event
+            # queue after __init__ finishes.
+            QTimer.singleShot(0, lambda: self._status.showMessage(
+                "Spell check off — install pyspellchecker "
+                "(pip install pyspellchecker) to enable it.", 10000))
 
         # Git
         self.act_commit_now = QAction(icons.commit(), "&Commit && push now", self,
@@ -1009,6 +1022,8 @@ class MainWindow(QMainWindow):
         tb.addSeparator()
         for act in (self.act_bullet, self.act_numbered):
             tb.addAction(act)
+        tb.addSeparator()
+        tb.addAction(self.act_spell_check)
         tb.addSeparator()
         tb.addAction(self.act_commit_now); tb.addAction(self.act_history)
 
@@ -1400,7 +1415,18 @@ class MainWindow(QMainWindow):
                 cursor.movePosition(QTextCursor.End)
             widget.setTextCursor(cursor)
             found = widget.find(text, flags)
-        if not found:
+        if found:
+            widget.ensureCursorVisible()
+            # In the Formatted tab the text edit sits inside an outer
+            # QScrollArea ("desk").  ensureCursorVisible scrolls only the
+            # QTextEdit's own viewport — we also need to scroll the outer
+            # container so the matched line is on-screen.
+            if tab == 0:
+                cursor_rect = widget.cursorRect()
+                global_pos = widget.mapTo(self._editor, cursor_rect.center())
+                self._editor._scroll.ensureVisible(
+                    global_pos.x(), global_pos.y(), 50, 80)
+        else:
             self._status.showMessage(f'"{text}" not found', 3000)
 
     def _on_fontsize_changed(self, *_) -> None:
@@ -1465,6 +1491,7 @@ class MainWindow(QMainWindow):
         self.act_hrule.setIcon(icons.horizontal_rule())
         self.act_commit_now.setIcon(icons.commit())
         self.act_history.setIcon(icons.history())
+        self.act_spell_check.setIcon(icons.spell_check())
         for i, a in enumerate(self.heading_actions, start=1):
             a.setIcon(icons.heading(i))
         self._zoom_out_btn.setIcon(icons.zoom_out())
