@@ -66,7 +66,42 @@ class InlineRaw:
     type: str = "InlineRaw"
 
 
-Inline = Union[Text, MathInline, Link, Footnote, Citation, CrossRef, InlineRaw]
+# Preset highlight colours (name → hex) used by the editor colour picker
+# and the serialiser \definecolor preamble injection.
+HIGHLIGHT_COLORS = {
+    "yellow": "#FFFF00",
+    "green": "#90EE90",
+    "blue": "#ADD8E6",
+    "pink": "#FFB6C1",
+    "orange": "#FFD700",
+}
+
+
+@dataclass
+class Highlight:
+    """Highlighted text span with a chosen colour. Serialises to
+    \\colorbox{hlColor}{...} and renders as a coloured background in the
+    editor."""
+    children: list["Inline"] = field(default_factory=list)
+    color: str = "yellow"
+    type: str = "Highlight"
+
+
+@dataclass
+class Comment:
+    """Reviewer comment anchored to a text range. The children are the
+    annotated (visible) text; `note` is the comment body shown in the
+    margin (\\todo) and as a tooltip in the editor."""
+    children: list["Inline"] = field(default_factory=list)
+    note: str = ""
+    author: str = ""
+    timestamp: str = ""
+    resolved: bool = False
+    type: str = "Comment"
+
+
+Inline = Union[Text, MathInline, Link, Footnote, Citation, CrossRef,
+               InlineRaw, Highlight, Comment]
 
 
 # ---------------- Block nodes ----------------
@@ -261,6 +296,19 @@ def _build_inline(d: dict) -> Inline:
         return CrossRef(label=d.get("label", ""), kind=d.get("kind", "ref"))
     if t == "InlineRaw":
         return InlineRaw(latex=d.get("latex", ""))
+    if t == "Highlight":
+        return Highlight(
+            children=_build_inlines(d.get("children", [])),
+            color=d.get("color", "yellow"),
+        )
+    if t == "Comment":
+        return Comment(
+            children=_build_inlines(d.get("children", [])),
+            note=d.get("note", ""),
+            author=d.get("author", ""),
+            timestamp=d.get("timestamp", ""),
+            resolved=d.get("resolved", False),
+        )
     raise ValueError(f"Unknown inline node type: {t!r}")
 
 

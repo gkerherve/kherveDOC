@@ -7,9 +7,10 @@ from __future__ import annotations
 import re
 
 from .model import (
-    Abstract, Author, Block, Citation, CrossRef, Document, Figure, Footnote,
-    Inline, InlineRaw, Keywords, Link, List as ListNode, ListItem, MathBlock,
-    MathInline, Paragraph, RawLatex, Section, Table, Text, Title,
+    Abstract, Author, Block, Citation, Comment, CrossRef, Document, Figure,
+    Footnote, Highlight, HIGHLIGHT_COLORS, Inline, InlineRaw, Keywords, Link,
+    List as ListNode, ListItem, MathBlock, MathInline, Paragraph, RawLatex,
+    Section, Table, Text, Title,
 )
 
 
@@ -69,6 +70,15 @@ def serialize_inline(node: Inline) -> str:
         return f"\\{node.kind}{{{node.label}}}"
     if isinstance(node, InlineRaw):
         return node.latex
+    if isinstance(node, Highlight):
+        body = serialize_inlines(node.children)
+        color_name = f"hl{node.color.capitalize()}"
+        return f"\\colorbox{{{color_name}}}{{{body}}}"
+    if isinstance(node, Comment):
+        body = serialize_inlines(node.children)
+        escaped_note = node.note.replace("{", "\\{").replace("}", "\\}")
+        author_opt = f", author={{{node.author}}}" if node.author else ""
+        return f"{body}\\todo[color=blue!20{author_opt}]{{{escaped_note}}}"
     raise TypeError(f"Unknown inline node: {type(node).__name__}")
 
 
@@ -198,6 +208,52 @@ def serialize_block(node: Block) -> str:
     raise TypeError(f"Unknown block node: {type(node).__name__}")
 
 
+# --- Review-feature helpers (highlight / comment package injection) ---
+
+def _collect_review_usage(doc: Document) -> tuple[set[str], bool]:
+    """Walk the document tree and return (highlight_colors_used, has_comments)."""
+    colors: set[str] = set()
+    has_comments = False
+
+    def _walk_inlines(nodes: list[Inline]) -> None:
+        nonlocal has_comments
+        for node in nodes:
+            if isinstance(node, Highlight):
+                colors.add(node.color)
+                _walk_inlines(node.children)
+            elif isinstance(node, Comment):
+                has_comments = True
+                _walk_inlines(node.children)
+            elif isinstance(node, (Link, Footnote)):
+                _walk_inlines(node.children)
+
+    from .model import (List as ListModel, ListItem as LI,
+                        Paragraph as P, Section as S, Title as T,
+                        Author as Au, Abstract as Ab, Keywords as Kw)
+    for block in doc.children:
+        if hasattr(block, "children") and not isinstance(block, (Figure, Table)):
+            if isinstance(block, ListModel):
+                for item in block.items:
+                    _walk_inlines(item.children)
+            else:
+                _walk_inlines(block.children)
+    return colors, has_comments
+
+
+def _review_preamble(colors_used: set[str], has_comments: bool) -> str:
+    """Return extra preamble lines for review features (definecolor, packages)."""
+    lines: list[str] = []
+    if colors_used:
+        lines.append("\\usepackage{xcolor}")
+        for name, hexval in HIGHLIGHT_COLORS.items():
+            if name in colors_used:
+                clean = hexval.lstrip("#")
+                lines.append(f"\\definecolor{{hl{name.capitalize()}}}{{HTML}}{{{clean}}}")
+    if has_comments:
+        lines.append("\\usepackage[colorinlistoftodos]{todonotes}")
+    return "\n".join(lines)
+
+
 _FONT_FAMILY_PACKAGES = {
     "default":  "",                  # Computer Modern, LaTeX default
     "times":    "\\usepackage{times}",
@@ -302,6 +358,12 @@ def serialize_document(doc: Document) -> str:
     # already defined" error because \newcommand (unlike
     # \providecommand) refuses to redefine an existing macro.
     packages += "\n" + _KSTROKE_PROVIDE
+
+    # Review features: highlight colours + todonotes
+    hl_colors, has_comments = _collect_review_usage(doc)
+    review_preamble = _review_preamble(hl_colors, has_comments)
+    if review_preamble:
+        packages += "\n" + review_preamble
 
     # Pull title / author content out of the body (or fall back to meta).
     inline_title: str | None = None

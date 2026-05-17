@@ -33,9 +33,10 @@ from .paged_edit import PagedTextEdit
 TEMPLATE_CHOICES = ["article", "report", "book", "letter", "beamer", "memoir"]
 
 from .model import (
-    Abstract, Author, Citation, CrossRef, Document, DocMeta, Figure, Footnote,
-    InlineRaw, Keywords, Link, List as ListNode, ListItem, MathBlock, MathInline,
-    Paragraph, RawLatex, Section, Table, Text, Title,
+    Abstract, Author, Citation, Comment, CrossRef, Document, DocMeta, Figure,
+    Footnote, Highlight, HIGHLIGHT_COLORS, InlineRaw, Keywords, Link,
+    List as ListNode, ListItem, MathBlock, MathInline, Paragraph, RawLatex,
+    Section, Table, Text, Title,
 )
 
 
@@ -142,6 +143,8 @@ _P_FOOTNOTE = QTextCharFormat.UserProperty + 3  # value = note text
 _P_CITATION = QTextCharFormat.UserProperty + 4  # value = "key1,key2|style"
 _P_CROSSREF = QTextCharFormat.UserProperty + 5  # value = "label|kind"
 _P_RAW = QTextCharFormat.UserProperty + 6       # value = raw LaTeX source
+_P_HIGHLIGHT = QTextCharFormat.UserProperty + 7  # value = color name
+_P_COMMENT = QTextCharFormat.UserProperty + 8    # value = "note|author|timestamp|resolved"
 
 
 # ---- block payload storage (figures/tables/raw) ----
@@ -394,6 +397,28 @@ def _raw_inline_format(latex: str) -> QTextCharFormat:
     fmt.setFont(f)
     fmt.setForeground(QColor("#0a3d62")); fmt.setBackground(QColor("#e8f0fb"))
     fmt.setToolTip(latex); fmt.setProperty(_P_RAW, latex)
+    return fmt
+
+
+def _highlight_format(color: str) -> QTextCharFormat:
+    fmt = QTextCharFormat()
+    hex_color = HIGHLIGHT_COLORS.get(color, "#FFFF00")
+    fmt.setBackground(QColor(hex_color))
+    fmt.setProperty(_P_HIGHLIGHT, color)
+    return fmt
+
+
+def _comment_format(note: str, author: str, timestamp: str,
+                    resolved: bool) -> QTextCharFormat:
+    fmt = QTextCharFormat()
+    fmt.setBackground(QColor("#FFE4B5"))
+    fmt.setUnderlineStyle(QTextCharFormat.DashUnderline)
+    fmt.setUnderlineColor(QColor("#d96b00"))
+    resolved_str = "1" if resolved else "0"
+    payload = f"{note}|{author}|{timestamp}|{resolved_str}"
+    fmt.setProperty(_P_COMMENT, payload)
+    tip = f"{author}: {note}" if author else note
+    fmt.setToolTip(tip)
     return fmt
 
 
@@ -1103,6 +1128,36 @@ class DocumentEditor(QWidget):
             cursor.insertText(display, _crossref_format(payload))
         elif isinstance(node, InlineRaw):
             cursor.insertText(node.latex, _raw_inline_format(node.latex))
+        elif isinstance(node, Highlight):
+            fmt = _highlight_format(node.color)
+            for child in node.children:
+                if isinstance(child, Text):
+                    child_fmt = QTextCharFormat(fmt)
+                    f = child_fmt.font()
+                    if "bold" in child.marks: f.setBold(True)
+                    if "italic" in child.marks: f.setItalic(True)
+                    if "underline" in child.marks: f.setUnderline(True)
+                    if "strikethrough" in child.marks: f.setStrikeOut(True)
+                    if "smallcaps" in child.marks: f.setCapitalization(QFont.SmallCaps)
+                    if "code" in child.marks:
+                        f.setFamily("Consolas"); f.setStyleHint(QFont.Monospace)
+                    child_fmt.setFont(f)
+                    cursor.insertText(child.text, child_fmt)
+                else:
+                    self._insert_inline(cursor, child, fmt)
+        elif isinstance(node, Comment):
+            fmt = _comment_format(node.note, node.author,
+                                  node.timestamp, node.resolved)
+            for child in node.children:
+                if isinstance(child, Text):
+                    child_fmt = QTextCharFormat(fmt)
+                    f = child_fmt.font()
+                    if "bold" in child.marks: f.setBold(True)
+                    if "italic" in child.marks: f.setItalic(True)
+                    child_fmt.setFont(f)
+                    cursor.insertText(child.text, child_fmt)
+                else:
+                    self._insert_inline(cursor, child, fmt)
 
     # ---------- model rebuilding ----------
 
@@ -1131,6 +1186,35 @@ class DocumentEditor(QWidget):
                     out.append(CrossRef(label=label, kind=kind or "ref"))
                 elif fmt.property(_P_RAW):
                     out.append(InlineRaw(latex=fmt.property(_P_RAW)))
+                elif fmt.property(_P_HIGHLIGHT):
+                    color = fmt.property(_P_HIGHLIGHT)
+                    marks: list = []
+                    f = fmt.font()
+                    if f.bold(): marks.append("bold")
+                    if f.italic(): marks.append("italic")
+                    if f.underline(): marks.append("underline")
+                    if f.strikeOut(): marks.append("strikethrough")
+                    if f.capitalization() == QFont.SmallCaps: marks.append("smallcaps")
+                    if f.styleHint() == QFont.Monospace and f.family().lower() == "consolas":
+                        marks.append("code")
+                    out.append(Highlight(
+                        children=[Text(text=text, marks=marks)],
+                        color=color,
+                    ))
+                elif fmt.property(_P_COMMENT):
+                    raw = fmt.property(_P_COMMENT)
+                    parts = raw.split("|")
+                    note = parts[0] if len(parts) > 0 else ""
+                    author = parts[1] if len(parts) > 1 else ""
+                    timestamp = parts[2] if len(parts) > 2 else ""
+                    resolved = (parts[3] == "1") if len(parts) > 3 else False
+                    out.append(Comment(
+                        children=[Text(text=text)],
+                        note=note,
+                        author=author,
+                        timestamp=timestamp,
+                        resolved=resolved,
+                    ))
                 else:
                     marks: list = []
                     f = fmt.font()
@@ -1643,6 +1727,116 @@ class DocumentEditor(QWidget):
         self._edit.textCursor().insertText(
             f"<{kind}:{label}>", _crossref_format(f"{label}|{kind}"))
 
+    # ---- review: highlight & comments ----
+
+    def insert_highlight(self, color: str = "yellow") -> None:
+        """Apply a highlight to the current selection."""
+        cursor = self._edit.textCursor()
+        if not cursor.hasSelection():
+            return
+        fmt = _highlight_format(color)
+        cursor.mergeCharFormat(fmt)
+        self._edit.setTextCursor(cursor)
+
+    def remove_highlight(self) -> None:
+        """Remove highlight from the current selection."""
+        cursor = self._edit.textCursor()
+        if not cursor.hasSelection():
+            return
+        fmt = QTextCharFormat()
+        fmt.setBackground(QColor(Qt.transparent))
+        fmt.setProperty(_P_HIGHLIGHT, "")
+        cursor.mergeCharFormat(fmt)
+        self._edit.setTextCursor(cursor)
+
+    def insert_comment(self, author: str = "") -> None:
+        """Insert a reviewer comment on the selected text."""
+        from datetime import datetime
+        cursor = self._edit.textCursor()
+        if not cursor.hasSelection():
+            return
+        note, ok = QInputDialog.getMultiLineText(
+            self, "New comment", "Comment:")
+        if not ok or not note.strip():
+            return
+        ts = datetime.now().isoformat(timespec="seconds")
+        fmt = _comment_format(note.strip(), author, ts, False)
+        cursor.mergeCharFormat(fmt)
+        self._edit.setTextCursor(cursor)
+
+    def accept_comment(self) -> None:
+        """Accept (resolve) the comment at cursor — remove comment
+        formatting but keep the text."""
+        cursor = self._edit.textCursor()
+        if not cursor.hasSelection():
+            cursor.select(QTextCursor.WordUnderCursor)
+        # Walk the selection and clear comment properties
+        start = cursor.selectionStart()
+        end = cursor.selectionEnd()
+        cursor.setPosition(start)
+        cursor.setPosition(end, QTextCursor.KeepAnchor)
+        fmt = QTextCharFormat()
+        fmt.setBackground(QColor(Qt.transparent))
+        fmt.setProperty(_P_COMMENT, "")
+        fmt.setUnderlineStyle(QTextCharFormat.NoUnderline)
+        fmt.setToolTip("")
+        cursor.mergeCharFormat(fmt)
+        self._edit.setTextCursor(cursor)
+
+    def reject_comment(self) -> None:
+        """Reject the comment at cursor — delete the commented text."""
+        cursor = self._edit.textCursor()
+        if not cursor.hasSelection():
+            cursor.select(QTextCursor.WordUnderCursor)
+        cursor.removeSelectedText()
+
+    def _find_comment_span(self, forward: bool = True) -> bool:
+        """Move cursor to the next/previous comment span. Returns True
+        if a comment was found."""
+        doc = self._edit.document()
+        cursor = self._edit.textCursor()
+        pos = cursor.position()
+        block = doc.begin() if forward else doc.end().previous()
+        found_pos = -1
+        while block.isValid():
+            it = block.begin()
+            while not it.atEnd():
+                frag = it.fragment()
+                if frag.isValid() and frag.charFormat().property(_P_COMMENT):
+                    frag_start = frag.position()
+                    frag_end = frag_start + frag.length()
+                    if forward and frag_start > pos:
+                        found_pos = frag_start
+                        break
+                    elif not forward and frag_end < pos:
+                        found_pos = frag_start
+                it += 1
+            if found_pos >= 0:
+                break
+            block = block.next() if forward else block.previous()
+        if found_pos >= 0:
+            cursor.setPosition(found_pos)
+            cursor.movePosition(QTextCursor.NextCharacter,
+                                QTextCursor.KeepAnchor, 1)
+            # Extend to cover the full comment span
+            while (cursor.position() < doc.characterCount() - 1):
+                test = QTextCursor(cursor)
+                test.movePosition(QTextCursor.NextCharacter)
+                fmt = test.charFormat()
+                if not fmt.property(_P_COMMENT):
+                    break
+                cursor.movePosition(QTextCursor.NextCharacter,
+                                    QTextCursor.KeepAnchor)
+            self._edit.setTextCursor(cursor)
+            return True
+        return False
+
+    def next_comment(self) -> None:
+        self._find_comment_span(forward=True)
+
+    def prev_comment(self) -> None:
+        self._find_comment_span(forward=False)
+
     def _on_image_received(self, path: str) -> None:
         """Slot for PagedTextEdit.imageReceived. Drops a Figure block at
         the cursor pointing at the freshly-saved image."""
@@ -1660,6 +1854,28 @@ class DocumentEditor(QWidget):
         fig = Figure(path=path, caption=cap, label=label or None,
                      width="0.8\\textwidth")
         self._insert_figure_widget(c, fig)
+
+    def insert_drawing(self) -> None:
+        """Open the freehand drawing dialog. On OK, write the result
+        into the document's images folder and drop a Figure block at
+        the cursor pointing at it — same as a normal figure, just
+        the source happens to be a sketch the user made in-app."""
+        from .drawing_dialog import DrawingDialog
+        dlg = DrawingDialog(self._images_dir, self)
+        if dlg.exec() != dlg.Accepted:
+            return
+        path = dlg.saved_path()
+        if path is None:
+            return
+        cap, _ = QInputDialog.getText(
+            self, "Drawing caption", "Caption (optional):")
+        label, _ = QInputDialog.getText(
+            self, "Drawing label", "Label (optional, for cross-references):")
+        c = self._edit.textCursor()
+        fig = Figure(path=str(path), caption=cap, label=label or None,
+                     width="0.7\\textwidth")
+        self._insert_figure_widget(c, fig)
+        self._on_text_changed()
 
     def insert_table(self) -> None:
         rows, ok = QInputDialog.getInt(self, "Insert table", "Rows:", 3, 1, 50)

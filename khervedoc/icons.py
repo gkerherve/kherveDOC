@@ -237,6 +237,33 @@ def table() -> QIcon:
     return QIcon(px)
 
 
+def drawing() -> QIcon:
+    """Pencil over a small wavy line — "freehand drawing"."""
+    px, p = _new_canvas()
+    # Wavy line below to suggest a sketch.
+    p.setPen(QPen(_accent(), 1.8, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    path = QPainterPath()
+    path.moveTo(3, 18)
+    path.cubicTo(QPointF(7, 14), QPointF(11, 22), QPointF(15, 18))
+    path.cubicTo(QPointF(18, 16), QPointF(20, 20), QPointF(22, 18))
+    p.drawPath(path)
+    # Pencil — angled rectangle + triangular tip.
+    p.setPen(QPen(_fg(), 1.4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    p.setBrush(QBrush(_accent2()))
+    pencil = QPolygonF([
+        QPointF(15, 3), QPointF(19, 7), QPointF(9, 17),
+        QPointF(5, 13),
+    ])
+    p.drawPolygon(pencil)
+    # Pencil tip
+    p.setBrush(QBrush(_fg()))
+    p.drawPolygon(QPolygonF([
+        QPointF(5, 13), QPointF(9, 17), QPointF(4, 18),
+    ]))
+    p.end()
+    return QIcon(px)
+
+
 # ----- file ops + history -----
 
 def file_new() -> QIcon:
@@ -597,5 +624,86 @@ def eq_environments() -> QIcon:
     p.drawLine(10, 8, 20, 8)
     p.drawLine(10, 12, 18, 12)
     p.drawLine(10, 16, 20, 16)
+    p.end()
+    return QIcon(px)
+
+
+# ----- review -----
+
+def highlight(color: str = "#FFFF00") -> QIcon:
+    """Marker pen icon filled with the given highlight colour."""
+    px, p = _new_canvas()
+    # Marker pen body (tilted rectangle)
+    pen_path = QPainterPath()
+    pen_path.moveTo(6, 18)
+    pen_path.lineTo(10, 4)
+    pen_path.lineTo(18, 6)
+    pen_path.lineTo(14, 20)
+    pen_path.closeSubpath()
+    p.setBrush(QBrush(QColor(color)))
+    p.setPen(QPen(_fg(), 1.2, Qt.SolidLine, Qt.RoundJoin))
+    p.drawPath(pen_path)
+    # Tip
+    p.setPen(QPen(_fg(), 1.5, Qt.SolidLine, Qt.RoundCap))
+    p.drawLine(QPointF(6, 18), QPointF(4, 22))
+    p.end()
+    return QIcon(px)
+
+
+def comment() -> QIcon:
+    """Speech bubble icon for reviewer comments."""
+    px, p = _new_canvas()
+    p.setPen(QPen(_fg(), 1.5, Qt.SolidLine, Qt.RoundJoin))
+    p.setBrush(QBrush(QColor("#e0ecff") if not _dark else QColor("#2a4060")))
+    # Bubble body
+    bubble = QPainterPath()
+    bubble.addRoundedRect(QRectF(2, 3, 20, 14), 3, 3)
+    p.drawPath(bubble)
+    # Tail
+    tail = QPolygonF([QPointF(6, 17), QPointF(10, 17), QPointF(5, 22)])
+    p.drawPolygon(tail)
+    # Lines inside bubble
+    p.setPen(QPen(_fg(), 1.0, Qt.SolidLine, Qt.RoundCap))
+    p.drawLine(6, 8, 18, 8)
+    p.drawLine(6, 12, 15, 12)
+    p.end()
+    return QIcon(px)
+
+
+def accept_change() -> QIcon:
+    """Green checkmark for accepting a comment/change."""
+    px, p = _new_canvas()
+    p.setPen(QPen(QColor("#2e7d32"), 2.5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    p.drawPolyline([QPointF(5, 13), QPointF(10, 18), QPointF(19, 6)])
+    p.end()
+    return QIcon(px)
+
+
+def reject_change() -> QIcon:
+    """Red X for rejecting a comment/change."""
+    px, p = _new_canvas()
+    p.setPen(QPen(QColor("#c62828"), 2.5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    p.drawLine(QPointF(6, 6), QPointF(18, 18))
+    p.drawLine(QPointF(18, 6), QPointF(6, 18))
+    p.end()
+    return QIcon(px)
+
+
+def prev_comment() -> QIcon:
+    """Left arrow for navigating to previous comment."""
+    px, p = _new_canvas()
+    p.setPen(QPen(_fg(), 2.0, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    p.drawPolyline([QPointF(14, 6), QPointF(7, 12), QPointF(14, 18)])
+    p.drawLine(QPointF(7, 12), QPointF(20, 12))
+    p.end()
+    return QIcon(px)
+
+
+def next_comment() -> QIcon:
+    """Right arrow for navigating to next comment."""
+    px, p = _new_canvas()
+    p.setPen(QPen(_fg(), 2.0, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    p.drawPolyline([QPointF(10, 6), QPointF(17, 12), QPointF(10, 18)])
+    p.drawLine(QPointF(4, 12), QPointF(17, 12))
     p.end()
     return QIcon(px)

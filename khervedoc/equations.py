@@ -183,3 +183,76 @@ def render_template_preview(latex: str, font_size: int = 16):
     except Exception:
         _PREVIEW_CACHE[latex] = None
         return None
+
+
+_LIVE_CACHE: dict[str, object] = {}
+
+
+def render_live_preview(latex: str, font_size: int = 20):
+    """Render LaTeX to a large QPixmap for the live equation editor.
+
+    Same pipeline as ``render_template_preview`` but tuned for a bigger,
+    higher-quality display.  Results are cached separately.
+    """
+    from PySide6.QtGui import QImage, QPixmap
+
+    if latex in _LIVE_CACHE:
+        return _LIVE_CACHE[latex]
+    try:
+        from matplotlib.figure import Figure as MplFigure
+    except ImportError:
+        _LIVE_CACHE[latex] = None
+        return None
+
+    raw = latex.strip()
+    for env in ("equation", "align", "gather", "multline",
+                "cases", "pmatrix", "bmatrix", "vmatrix"):
+        raw = raw.replace(f"\\begin{{{env}}}" + "\\n",
+                          f"\\begin{{{env}}}\n")
+        raw = raw.replace("\\n" + f"\\end{{{env}}}",
+                          f"\n\\end{{{env}}}")
+    raw = raw.replace("\\n", "\n")
+    m = _ENV_RE.search(raw)
+    if m:
+        raw = m.group(2).strip()
+    raw = raw.strip("$").strip()
+    raw = raw.replace(r"\square", r"\bullet")
+    raw = raw.replace("\\tfrac", "\\frac")
+    raw = raw.replace("\\dfrac", "\\frac")
+    raw = raw.replace("\\text{", "\\mathrm{")
+    raw = raw.replace("\\operatorname{", "\\mathrm{")
+    raw = raw.replace("\\displaystyle", "")
+    raw = raw.replace("\\textstyle", "")
+    raw = raw.replace("\\liminf", "\\lim\\inf")
+    raw = raw.replace("\\limsup", "\\lim\\sup")
+    lines = _re.split(r"\\\\", raw)
+    lines = [ln.replace("&", " ").strip() for ln in lines]
+    lines = [ln for ln in lines if ln]
+    if not lines:
+        _LIVE_CACHE[latex] = None
+        return None
+    try:
+        n = len(lines)
+        line_height = 0.45
+        fig_h = max(0.5, n * line_height)
+        fig = MplFigure(figsize=(5.0, fig_h), dpi=150)
+        fig.patch.set_alpha(0)
+        for i, line in enumerate(lines):
+            y = 1.0 - (i + 0.5) / n
+            fig.text(0.5, y, f"${line}$", fontsize=font_size,
+                     ha="center", va="center", math_fontfamily="cm")
+        buf = _BytesIO()
+        fig.savefig(buf, format="png", bbox_inches="tight",
+                    pad_inches=0.05, transparent=True)
+        buf.seek(0)
+        img = QImage()
+        img.loadFromData(buf.read())
+        if img.isNull():
+            _LIVE_CACHE[latex] = None
+            return None
+        px = QPixmap.fromImage(img)
+        _LIVE_CACHE[latex] = px
+        return px
+    except Exception:
+        _LIVE_CACHE[latex] = None
+        return None

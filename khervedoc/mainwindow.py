@@ -7,8 +7,8 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QSettings, QSize, QThread, QTimer, Signal
 from PySide6.QtGui import (
-    QAction, QActionGroup, QGuiApplication, QIcon, QKeySequence, QTextCursor,
-    QTextDocument,
+    QAction, QActionGroup, QGuiApplication, QIcon, QKeySequence, QPixmap,
+    QTextCursor, QTextDocument,
 )
 from PySide6.QtWidgets import (
     QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog,
@@ -334,19 +334,52 @@ class SymbolPickerWindow(QWidget):
 SymbolPickerDialog = SymbolPickerWindow
 
 
-class EquationBuilderWindow(QWidget):
-    """Word-style equation builder with a category toolbar and rendered
-    template previews.
+class _EquationLatexEdit(QPlainTextEdit):
+    """LaTeX input field that intercepts Tab/Shift+Tab to navigate
+    between \\square placeholders instead of inserting tab chars."""
 
-    The top strip shows category icons (fractions, integrals, etc.) in a
-    compact 2-row grid. Clicking a category swaps the panel below to
-    show rendered previews of the available templates. Clicking a
-    template emits ``templatePicked`` with the LaTeX code.
+    _PLACEHOLDER = r"\square"
+
+    def keyPressEvent(self, ev):
+        if ev.key() == Qt.Key_Tab and not ev.modifiers():
+            self._jump_placeholder(forward=True)
+            return
+        if ev.key() == Qt.Key_Backtab or (
+                ev.key() == Qt.Key_Tab
+                and ev.modifiers() == Qt.ShiftModifier):
+            self._jump_placeholder(forward=False)
+            return
+        super().keyPressEvent(ev)
+
+    def _jump_placeholder(self, forward: bool) -> None:
+        text = self.toPlainText()
+        cursor = self.textCursor()
+        pos = cursor.position()
+        ph = self._PLACEHOLDER
+        if forward:
+            idx = text.find(ph, pos)
+            if idx < 0:
+                idx = text.find(ph)  # wrap around
+        else:
+            idx = text.rfind(ph, 0, pos)
+            if idx < 0:
+                idx = text.rfind(ph)  # wrap around
+        if idx < 0:
+            return
+        cursor.setPosition(idx)
+        cursor.setPosition(idx + len(ph), QTextCursor.KeepAnchor)
+        self.setTextCursor(cursor)
+
+
+class EquationEditorDialog(QDialog):
+    """Live-preview equation editor.
+
+    Shows a rendered preview that updates as you type, a category
+    toolbar with template buttons, and a LaTeX input field with
+    Tab-navigable placeholders. Clicking Insert emits the final
+    LaTeX for insertion into the document.
     """
 
-    templatePicked = Signal(str)
-
-    # Map category index → icon function
     _CATEGORY_ICONS = [
         icons.eq_fractions, icons.eq_sums, icons.eq_integrals,
         icons.eq_scripts, icons.eq_derivatives, icons.eq_greek,
@@ -354,26 +387,36 @@ class EquationBuilderWindow(QWidget):
         icons.eq_environments,
     ]
 
-    def __init__(self, parent: QWidget | None = None):
+    def __init__(self, parent: QWidget | None = None,
+                 initial_latex: str = ""):
         super().__init__(parent)
-        self.setWindowFlags(Qt.Tool | Qt.WindowStaysOnTopHint)
-        self.setWindowTitle("Equation builder")
-        self.resize(540, 380)
+        self.setWindowTitle("Equation editor")
+        self.resize(640, 560)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(4, 4, 4, 4)
-        root.setSpacing(4)
+        root.setContentsMargins(8, 8, 8, 8)
+        root.setSpacing(6)
 
-        # ---- category toolbar strip (2 rows x 5 cols) ----
+        # ---- live preview ----
+        self._preview = QLabel()
+        self._preview.setAlignment(Qt.AlignCenter)
+        self._preview.setMinimumHeight(80)
+        self._preview.setStyleSheet(
+            "QLabel { background: white; border: 1px solid #ccc; "
+            "border-radius: 4px; padding: 12px; }")
+        self._preview.setText(
+            "<span style='color:#999;'>Click a template to start "
+            "building your equation</span>")
+        root.addWidget(self._preview)
+
+        # ---- category toolbar (2 rows x 5 cols) ----
         toolbar = QFrame()
         toolbar.setFrameShape(QFrame.StyledPanel)
         tb_grid = QGridLayout(toolbar)
         tb_grid.setSpacing(2)
         tb_grid.setContentsMargins(4, 4, 4, 4)
-
         self._btn_group = QButtonGroup(self)
         self._btn_group.setExclusive(True)
-
         groups = equations.EQUATION_GROUPS
         cols = 5
         for idx, (group_name, _items) in enumerate(groups):
@@ -393,7 +436,6 @@ class EquationBuilderWindow(QWidget):
                 "background: #e0edfa; }")
             self._btn_group.addButton(btn, idx)
             tb_grid.addWidget(btn, idx // cols, idx % cols)
-
         root.addWidget(toolbar)
 
         # ---- category label ----
@@ -402,22 +444,59 @@ class EquationBuilderWindow(QWidget):
             "font-weight: bold; color: #444; padding: 2px 4px;")
         root.addWidget(self._cat_label)
 
-        # ---- stacked template panels ----
+        # ---- template panel (stacked, one page per category) ----
         self._stack = QStackedWidget()
         self._populated: set[int] = set()
         for _ in groups:
             page = QWidget()
-            QVBoxLayout(page)  # placeholder layout
+            QVBoxLayout(page)
             self._stack.addWidget(page)
-        root.addWidget(self._stack, 1)
+        self._stack.setMaximumHeight(160)
+        root.addWidget(self._stack)
 
         self._btn_group.idClicked.connect(self._show_category)
-
-        # Select first category
-        first_btn = self._btn_group.button(0)
-        if first_btn:
-            first_btn.setChecked(True)
+        first = self._btn_group.button(0)
+        if first:
+            first.setChecked(True)
             self._show_category(0)
+
+        # ---- LaTeX input field ----
+        latex_label = QLabel("LaTeX source:")
+        latex_label.setStyleSheet("color: #666; font-size: 9pt;")
+        root.addWidget(latex_label)
+        self._edit = _EquationLatexEdit()
+        self._edit.setMaximumHeight(72)
+        from PySide6.QtGui import QFont as _QFont
+        mf = _QFont("Consolas"); mf.setStyleHint(_QFont.Monospace)
+        mf.setPointSize(10)
+        self._edit.setFont(mf)
+        self._edit.setPlaceholderText(
+            r"e.g.  \frac{x+1}{2} + \sqrt{y}")
+        root.addWidget(self._edit)
+
+        # ---- Insert / Cancel buttons ----
+        btn_box = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btn_box.button(QDialogButtonBox.Ok).setText("Insert")
+        btn_box.accepted.connect(self.accept)
+        btn_box.rejected.connect(self.reject)
+        root.addWidget(btn_box)
+
+        # ---- debounced live preview ----
+        self._preview_timer = QTimer(self)
+        self._preview_timer.setSingleShot(True)
+        self._preview_timer.setInterval(300)
+        self._preview_timer.timeout.connect(self._update_preview)
+        self._edit.textChanged.connect(self._preview_timer.start)
+
+        # Seed with initial LaTeX if provided
+        if initial_latex:
+            self._edit.setPlainText(initial_latex)
+
+    def latex(self) -> str:
+        return self._edit.toPlainText().strip()
+
+    # ---- category / template plumbing (reused from old builder) ----
 
     def _show_category(self, index: int) -> None:
         groups = equations.EQUATION_GROUPS
@@ -433,11 +512,9 @@ class EquationBuilderWindow(QWidget):
     def _populate_page(self, index: int, items: list) -> None:
         page = self._stack.widget(index)
         old_layout = page.layout()
-        # Clear placeholder layout
         if old_layout:
             while old_layout.count():
                 old_layout.takeAt(0)
-
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -446,8 +523,7 @@ class EquationBuilderWindow(QWidget):
         grid = QGridLayout(inner)
         grid.setSpacing(4)
         grid.setContentsMargins(4, 4, 4, 4)
-        btn_cols = 4
-
+        btn_cols = 5
         for i, (latex, preview_text) in enumerate(items):
             btn = QToolButton()
             btn.setToolTip(f"{preview_text}\n{latex}")
@@ -455,23 +531,48 @@ class EquationBuilderWindow(QWidget):
             if pixmap and not pixmap.isNull():
                 btn.setIcon(QIcon(pixmap))
                 pw, ph = pixmap.width(), pixmap.height()
-                btn.setIconSize(QSize(min(pw, 120), min(ph, 60)))
-                btn.setFixedSize(min(pw + 14, 134), min(ph + 10, 70))
+                btn.setIconSize(QSize(min(pw, 100), min(ph, 50)))
+                btn.setFixedSize(min(pw + 12, 112), min(ph + 8, 58))
             else:
                 btn.setText(preview_text)
-                btn.setFixedSize(90, 44)
+                btn.setFixedSize(80, 40)
             btn.setStyleSheet(
                 "QToolButton { border: 1px solid #ccc; "
                 "border-radius: 3px; padding: 2px; }"
                 "QToolButton:hover { border: 1px solid #1a6dd8; "
                 "background: #e8f0fa; }")
             btn.clicked.connect(
-                lambda checked=False, tex=latex:
-                    self.templatePicked.emit(tex))
+                lambda checked=False, tex=latex: self._insert_template(tex))
             grid.addWidget(btn, i // btn_cols, i % btn_cols)
-
         scroll.setWidget(inner)
         old_layout.addWidget(scroll)
+
+    def _insert_template(self, latex: str) -> None:
+        """Insert a template at the cursor, replacing the selected
+        placeholder if one is selected."""
+        cursor = self._edit.textCursor()
+        cursor.insertText(latex)
+        self._edit.setFocus()
+        # Jump to first placeholder in what we just inserted
+        self._edit._jump_placeholder(forward=True)
+
+    def _update_preview(self) -> None:
+        text = self._edit.toPlainText().strip()
+        if not text:
+            self._preview.setPixmap(QPixmap())
+            self._preview.setText(
+                "<span style='color:#999;'>Click a template to start "
+                "building your equation</span>")
+            return
+        px = equations.render_live_preview(text)
+        if px and not px.isNull():
+            self._preview.setText("")
+            self._preview.setPixmap(px)
+        else:
+            self._preview.setPixmap(QPixmap())
+            self._preview.setText(
+                f"<span style='color:#c00;'>Cannot render: check "
+                f"LaTeX syntax</span>")
 
 
 # ---------- main window ----------
@@ -881,6 +982,8 @@ class MainWindow(QMainWindow):
                                   triggered=e.insert_figure)
         self.act_table = QAction(icons.table(), "&Table...", self,
                                  triggered=e.insert_table)
+        self.act_drawing = QAction(icons.drawing(), "&Drawing…", self,
+                                   triggered=e.insert_drawing)
         self.act_raw = QAction("Raw LaTeX...", self, triggered=e.insert_raw_latex)
         self.act_code_block = QAction("&Code block...", self,
                                       triggered=e.insert_code_block)
@@ -1052,6 +1155,7 @@ class MainWindow(QMainWindow):
         m_insert.addAction(self.act_citation); m_insert.addAction(self.act_crossref)
         m_insert.addSeparator()
         m_insert.addAction(self.act_figure); m_insert.addAction(self.act_table)
+        m_insert.addAction(self.act_drawing)
         m_insert.addSeparator()
         m_insert.addAction(self.act_pagebreak); m_insert.addAction(self.act_hrule)
         m_insert.addAction(self.act_multicol)
@@ -1315,6 +1419,7 @@ class MainWindow(QMainWindow):
         self._side_tb.addSeparator()
         self._side_tb.addAction(self.act_figure)
         self._side_tb.addAction(self.act_table)
+        self._side_tb.addAction(self.act_drawing)
         self._side_tb.addSeparator()
         self._side_tb.addAction(self.act_cols_1)
         self._side_tb.addAction(self.act_cols_2)
@@ -1841,19 +1946,14 @@ class MainWindow(QMainWindow):
             self._editor.insert_inline_math_with(latex)
 
     def _insert_equation_template(self) -> None:
-        """Open the floating equation-builder palette. Picks drop the
-        template at the cursor — multi-line templates go in as math
-        blocks; everything else as inline math."""
-        if not hasattr(self, "_equation_window") or self._equation_window is None:
-            self._equation_window = EquationBuilderWindow(self)
-            self._equation_window.templatePicked.connect(self._apply_equation_template)
-        self._equation_window.show()
-        self._equation_window.raise_()
-        self._equation_window.activateWindow()
+        """Open the live equation editor dialog."""
+        dlg = EquationEditorDialog(self)
+        if dlg.exec() == QDialog.Accepted:
+            latex = dlg.latex()
+            if latex:
+                self._apply_equation_template(latex)
 
     def _apply_equation_template(self, latex: str) -> None:
-        # Templates that contain a \begin{...} get their own math block
-        # (display math). Single-line templates are inserted inline.
         if "\\begin{" in latex:
             self._editor.insert_math_block_with(latex)
         else:
