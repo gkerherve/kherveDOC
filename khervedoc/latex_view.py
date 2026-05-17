@@ -7,9 +7,9 @@ and its LaTeX source.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QRegularExpression, QStringListModel, QTimer, Qt, Signal
+from PySide6.QtCore import QRect, QRegularExpression, QSize, QStringListModel, QTimer, Qt, Signal
 from PySide6.QtGui import (
-    QColor, QFont, QSyntaxHighlighter, QTextCharFormat, QTextCursor,
+    QColor, QFont, QPainter, QSyntaxHighlighter, QTextCharFormat, QTextCursor,
     QTextDocument,
 )
 from PySide6.QtWidgets import (
@@ -302,6 +302,85 @@ _LATEX_COMMANDS = [
 ]
 
 
+class _LineNumberArea(QWidget):
+    """Gutter widget that draws line numbers alongside a QPlainTextEdit."""
+
+    def __init__(self, editor: "_NumberedPlainTextEdit"):
+        super().__init__(editor)
+        self._editor = editor
+
+    def sizeHint(self) -> QSize:
+        return QSize(self._editor.line_number_area_width(), 0)
+
+    def paintEvent(self, event) -> None:
+        self._editor.line_number_area_paint(event)
+
+
+class _NumberedPlainTextEdit(QPlainTextEdit):
+    """QPlainTextEdit with a line-number gutter on the left."""
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self._line_area = _LineNumberArea(self)
+        self._dark = False
+        self.blockCountChanged.connect(lambda _: self._update_line_area_width())
+        self.updateRequest.connect(self._update_line_area)
+        self._update_line_area_width()
+
+    def set_dark(self, dark: bool) -> None:
+        self._dark = dark
+        self._line_area.update()
+
+    def line_number_area_width(self) -> int:
+        digits = max(1, len(str(self.blockCount())))
+        return 8 + self.fontMetrics().horizontalAdvance("9") * (digits + 1)
+
+    def _update_line_area_width(self) -> None:
+        self.setViewportMargins(self.line_number_area_width(), 0, 0, 0)
+
+    def _update_line_area(self, rect, dy) -> None:
+        if dy:
+            self._line_area.scroll(0, dy)
+        else:
+            self._line_area.update(0, rect.y(),
+                                   self._line_area.width(), rect.height())
+        if rect.contains(self.viewport().rect()):
+            self._update_line_area_width()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        cr = self.contentsRect()
+        self._line_area.setGeometry(
+            QRect(cr.left(), cr.top(),
+                  self.line_number_area_width(), cr.height()))
+
+    def line_number_area_paint(self, event) -> None:
+        painter = QPainter(self._line_area)
+        if self._dark:
+            painter.fillRect(event.rect(), QColor("#252526"))
+            num_color = QColor("#858585")
+        else:
+            painter.fillRect(event.rect(), QColor("#f0f0f0"))
+            num_color = QColor("#999999")
+        painter.setPen(num_color)
+        block = self.firstVisibleBlock()
+        block_num = block.blockNumber()
+        top = int(self.blockBoundingGeometry(block)
+                  .translated(self.contentOffset()).top())
+        bottom = top + int(self.blockBoundingRect(block).height())
+        while block.isValid() and top <= event.rect().bottom():
+            if block.isVisible() and bottom >= event.rect().top():
+                painter.drawText(0, top,
+                                 self._line_area.width() - 4,
+                                 self.fontMetrics().height(),
+                                 Qt.AlignRight, str(block_num + 1))
+            block = block.next()
+            top = bottom
+            bottom = top + int(self.blockBoundingRect(block).height())
+            block_num += 1
+        painter.end()
+
+
 class LatexView(QWidget):
     """Two-way editable LaTeX source view with autocomplete."""
 
@@ -309,7 +388,7 @@ class LatexView(QWidget):
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self._edit = QPlainTextEdit(self)
+        self._edit = _NumberedPlainTextEdit(self)
         f = QFont("Consolas"); f.setStyleHint(QFont.Monospace); f.setPointSize(11)
         self._edit.setFont(f)
         self._highlighter = LatexHighlighter(self._edit.document())
@@ -356,6 +435,7 @@ class LatexView(QWidget):
 
     def set_dark(self, dark: bool) -> None:
         self._highlighter.set_dark(dark)
+        self._edit.set_dark(dark)
         if dark:
             self._edit.setStyleSheet(
                 "QPlainTextEdit { background: #1e1e1e; color: #d4d4d4; }")
