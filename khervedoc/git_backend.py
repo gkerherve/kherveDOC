@@ -167,8 +167,8 @@ def history(repo_dir: Path, limit: int = 50) -> list[tuple[str, str, str]]:
     """Return [(short_oid, iso_time, message_first_line), ...] newest first."""
     if not _PYGIT2_OK or not (repo_dir / ".git").exists():
         return []
-    repo = pygit2.Repository(str(repo_dir))
-    if repo.head_is_unborn:
+    repo = _repo_for(repo_dir)
+    if repo is None or repo.head_is_unborn:
         return []
     out: list[tuple[str, str, str]] = []
     for commit in repo.walk(repo.head.target, pygit2.GIT_SORT_TIME):
@@ -180,3 +180,78 @@ def history(repo_dir: Path, limit: int = 50) -> list[tuple[str, str, str]]:
         if len(out) >= limit:
             break
     return out
+
+
+def history_detailed(repo_dir: Path,
+                     limit: int = 200) -> list[dict]:
+    """Richer version of `history` for the GUI commit-browser.
+
+    Each entry is a dict with the keys the history dialog needs:
+      - oid:        full hex OID (str)
+      - short_oid:  first 8 chars
+      - timestamp:  ISO-8601 local time (str)
+      - epoch:      Unix epoch (int) — for sorting if a caller needs it
+      - author:     "Name <email>"
+      - subject:    first line of the commit message
+      - body:       lines 2+ of the commit message (may be empty)
+
+    Empty list if pygit2 is missing or the repo has no commits."""
+    if not _PYGIT2_OK or not (repo_dir / ".git").exists():
+        return []
+    repo = _repo_for(repo_dir)
+    if repo is None or repo.head_is_unborn:
+        return []
+    out: list[dict] = []
+    for commit in repo.walk(repo.head.target, pygit2.GIT_SORT_TIME):
+        msg = (commit.message or "").rstrip()
+        lines = msg.splitlines()
+        subject = lines[0] if lines else ""
+        body = "\n".join(lines[1:]).strip("\n") if len(lines) > 1 else ""
+        author = commit.author
+        out.append({
+            "oid": str(commit.id),
+            "short_oid": str(commit.id)[:8],
+            "timestamp": datetime.fromtimestamp(commit.commit_time).isoformat(
+                timespec="seconds"),
+            "epoch": int(commit.commit_time),
+            "author": f"{author.name} <{author.email}>",
+            "subject": subject,
+            "body": body,
+        })
+        if len(out) >= limit:
+            break
+    return out
+
+
+def diff_for_commit(repo_dir: Path, oid: str) -> str:
+    """Return the unified diff produced by the given commit, as a single
+    str. For a root commit (no parents) the diff is against an empty
+    tree, so the whole initial state shows up as additions. Empty
+    string if pygit2 is missing or the oid can't be resolved."""
+    if not _PYGIT2_OK or not (repo_dir / ".git").exists():
+        return ""
+    repo = _repo_for(repo_dir)
+    if repo is None:
+        return ""
+    try:
+        commit = repo.get(oid)
+        if commit is None:
+            return ""
+        # Resolve through tags / annotated tags etc. to the actual commit.
+        commit = commit.peel(pygit2.Commit)
+    except Exception:
+        return ""
+    parents = list(commit.parents)
+    try:
+        if parents:
+            # Compare against the first parent — same as `git show` does
+            # for non-merge commits. Merges show diff vs first parent
+            # which is the conventional "what landed" view.
+            diff = repo.diff(parents[0], commit, context_lines=3)
+        else:
+            # Root commit: diff against an empty tree so the initial
+            # file contents appear as additions instead of an empty diff.
+            diff = commit.tree.diff_to_tree(swap=True, context_lines=3)
+    except Exception:
+        return ""
+    return diff.patch or ""

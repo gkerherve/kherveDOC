@@ -1392,12 +1392,17 @@ class MainWindow(QMainWindow):
         if self._current_path is None:
             QMessageBox.information(self, "History", "Save the document first.")
             return
-        rows = git_backend.history(self._current_path.parent)
-        if not rows:
+        if not git_backend.is_available():
+            QMessageBox.warning(
+                self, "History",
+                "pygit2 is not installed, so commit history isn't available.")
+            return
+        if not git_backend.history_detailed(self._current_path.parent, limit=1):
             QMessageBox.information(self, "History", "No commits yet.")
             return
-        text = "\n".join(f"{oid}  {ts}  {msg}" for oid, ts, msg in rows)
-        QMessageBox.information(self, "Commit history", text)
+        from .history_dialog import HistoryDialog
+        dlg = HistoryDialog(self._current_path.parent, self)
+        dlg.exec()
 
     def _about(self) -> None:
         QMessageBox.about(
