@@ -16,7 +16,8 @@ from pathlib import Path
 from PySide6.QtCore import QTimer, QUrl, Qt, Signal
 from PySide6.QtGui import (
     QAction, QColor, QFont, QImage, QKeySequence, QTextBlockFormat,
-    QTextCharFormat, QTextCursor, QTextImageFormat, QTextListFormat,
+    QTextCharFormat, QTextCursor, QTextFrameFormat, QTextImageFormat,
+    QTextLength, QTextListFormat, QTextTable, QTextTableFormat,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -335,6 +336,30 @@ def _table_block_format() -> QTextBlockFormat:
     return bfmt
 
 
+def _make_table_format(ncols: int) -> QTextTableFormat:
+    """Build a QTextTableFormat for a table with *ncols* columns."""
+    tfmt = QTextTableFormat()
+    tfmt.setBorderBrush(QColor("#c0c0c0"))
+    tfmt.setBorderStyle(QTextFrameFormat.BorderStyle_Solid)
+    tfmt.setBorder(1)
+    tfmt.setCellPadding(6)
+    tfmt.setCellSpacing(0)
+    tfmt.setBackground(QColor("#fff3e0"))
+    tfmt.setMargin(8)
+    # Distribute columns evenly.
+    constraints = [QTextLength(QTextLength.PercentageLength, 100 / ncols)
+                   for _ in range(ncols)]
+    tfmt.setColumnWidthConstraints(constraints)
+    return tfmt
+
+
+# Custom property to store table metadata (caption, label, alignment)
+# on the QTextTable's frame format so we can read it back.
+_P_TABLE_CAPTION = QTextCharFormat.UserProperty + 20
+_P_TABLE_LABEL = QTextCharFormat.UserProperty + 21
+_P_TABLE_ALIGNMENT = QTextCharFormat.UserProperty + 22
+
+
 def _code_block_format() -> QTextBlockFormat:
     bfmt = QTextBlockFormat()
     bfmt.setTopMargin(6); bfmt.setBottomMargin(6)
@@ -529,8 +554,22 @@ class DocumentEditor(QWidget):
         blocks: list = []
         # QTextLists span multiple QTextBlocks. We coalesce them.
         seen_lists: dict[int, list] = {}
+        seen_tables: set[int] = set()
         block = qdoc.firstBlock()
         while block.isValid():
+            # Detect QTextTable frames — all blocks inside a table belong
+            # to the same QTextTable object. We extract the whole table on
+            # the first block we encounter and skip the rest.
+            cursor = QTextCursor(block)
+            qtable = cursor.currentTable()
+            if qtable is not None:
+                tid = id(qtable)
+                if tid not in seen_tables:
+                    seen_tables.add(tid)
+                    blocks.append(self._table_from_qtexttable(qtable))
+                block = block.next()
+                continue
+
             text_list = block.textList()
             if text_list is not None:
                 tl_id = id(text_list)
@@ -554,6 +593,7 @@ class DocumentEditor(QWidget):
                 elif state == _STATE_FIGURE:
                     blocks.append(self._figure_from_stub(text))
                 elif state == _STATE_TABLE:
+                    # Legacy stub-based tables (from older documents).
                     blocks.append(self._table_from_stub(text))
                 elif state == _STATE_RAW:
                     # Strip whichever prefix is present; supports
@@ -653,10 +693,7 @@ class DocumentEditor(QWidget):
             cursor.insertText(stub, _typed_stub_char_format("#2e7d32"))
             self._insert_figure_thumbnail(cursor, block.path)
         elif isinstance(block, Table):
-            cursor.block().setUserState(_STATE_TABLE)
-            cursor.setBlockFormat(_table_block_format())
-            stub = _table_stub(block)
-            cursor.insertText(stub, _typed_stub_char_format("#e65100"))
+            self._insert_table_widget(cursor, block)
         elif isinstance(block, RawLatex):
             # Pick the background colour from the content so code
             # listings, bibliography blocks and generic raw LaTeX are
@@ -706,6 +743,43 @@ class DocumentEditor(QWidget):
         img_fmt.setWidth(img.width())
         img_fmt.setHeight(img.height())
         cursor.insertImage(img_fmt)
+
+    def _insert_table_widget(self, cursor: QTextCursor, table: Table) -> None:
+        """Insert a Table model node as a real QTextTable in the editor."""
+        nrows = len(table.rows) if table.rows else 1
+        ncols = max((len(r) for r in table.rows), default=1) if table.rows else 1
+        tfmt = _make_table_format(ncols)
+        tfmt.setProperty(_P_TABLE_CAPTION, table.caption or "")
+        tfmt.setProperty(_P_TABLE_LABEL, table.label or "")
+        tfmt.setProperty(_P_TABLE_ALIGNMENT, table.alignment or "")
+        # Add an extra row for caption if present.
+        has_caption = bool(table.caption)
+        total_rows = nrows + (1 if has_caption else 0)
+        qtable = cursor.insertTable(total_rows, ncols, tfmt)
+        # Header row: bold.
+        header_fmt = QTextCharFormat()
+        header_fmt.setFontWeight(QFont.Bold)
+        header_fmt.setForeground(QColor("#e65100"))
+        cell_fmt = QTextCharFormat()
+        cell_fmt.setForeground(QColor("#333333"))
+        for r, row in enumerate(table.rows):
+            for c in range(ncols):
+                cell = qtable.cellAt(r, c)
+                cell_cursor = cell.firstCursorPosition()
+                text = row[c] if c < len(row) else ""
+                fmt = header_fmt if r == 0 else cell_fmt
+                cell_cursor.insertText(text, fmt)
+        if has_caption:
+            # Merge all cells in the last row for the caption.
+            qtable.mergeCells(nrows, 0, 1, ncols)
+            cap_cell = qtable.cellAt(nrows, 0)
+            cap_cursor = cap_cell.firstCursorPosition()
+            cap_fmt = QTextCharFormat()
+            cap_fmt.setFontItalic(True)
+            cap_fmt.setForeground(QColor("#888888"))
+            cap_cursor.insertText(f"Caption: {table.caption}", cap_fmt)
+        # Move the cursor past the table so subsequent content goes after it.
+        cursor.movePosition(QTextCursor.End)
 
     def _resolve_image_path(self, img_path: str) -> Path | None:
         """Resolve a figure path to an absolute file, checking common bases."""
@@ -952,6 +1026,32 @@ class DocumentEditor(QWidget):
             label=(meta.get("Label", "") or None),
             alignment=meta.get("Alignment", ""),
         )
+
+    def _table_from_qtexttable(self, qtable: QTextTable) -> Table:
+        """Extract a Table model node from a live QTextTable widget."""
+        tfmt = qtable.format()
+        caption = tfmt.property(_P_TABLE_CAPTION) or ""
+        label = tfmt.property(_P_TABLE_LABEL) or None
+        alignment = tfmt.property(_P_TABLE_ALIGNMENT) or ""
+        nrows = qtable.rows()
+        ncols = qtable.columns()
+        # If last row is a merged caption row, exclude it from data rows.
+        has_caption_row = False
+        if caption and nrows > 1:
+            cell = qtable.cellAt(nrows - 1, 0)
+            text = cell.firstCursorPosition().block().text()
+            if text.startswith("Caption: "):
+                has_caption_row = True
+        data_rows = nrows - (1 if has_caption_row else 0)
+        rows: list[list[str]] = []
+        for r in range(data_rows):
+            row: list[str] = []
+            for c in range(ncols):
+                cell = qtable.cellAt(r, c)
+                row.append(cell.firstCursorPosition().block().text())
+            rows.append(row)
+        return Table(rows=rows, caption=caption, label=label,
+                     alignment=alignment)
 
     # ---------- formatting actions (called by mainwindow) ----------
 
@@ -1267,15 +1367,9 @@ class DocumentEditor(QWidget):
         if not ok: return
         cap, _ = QInputDialog.getText(self, "Caption", "Caption:")
         c = self._edit.textCursor()
-        c.insertBlock()
-        c.block().setUserState(_STATE_TABLE)
-        c.setBlockFormat(_table_block_format())
-        stub = _table_stub(Table(
-            rows=[["cell"] * cols for _ in range(rows)],
-            caption=cap, label=None, alignment=""))
-        c.insertText(stub, _typed_stub_char_format("#e65100"))
-        c.insertBlock(QTextBlockFormat(), QTextCharFormat())
-        c.block().setUserState(_STATE_PARAGRAPH)
+        table = Table(rows=[["cell"] * cols for _ in range(rows)],
+                      caption=cap, label=None, alignment="")
+        self._insert_table_widget(c, table)
 
     def insert_raw_latex(self) -> None:
         text, ok = QInputDialog.getMultiLineText(self, "Insert raw LaTeX",
