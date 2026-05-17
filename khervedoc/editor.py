@@ -68,11 +68,16 @@ def _render_math_image(latex: str, font_size: int = 14) -> Path | None:
     ``\\\\`` and rendering each line separately, stacked vertically.
     Returns the path to the PNG file, or None on failure. Results are
     cached on disk."""
+    _diag = Path(tempfile.gettempdir()) / "khervedoc_math_diag.txt"
     if latex in _MATH_IMAGE_CACHE:
+        with open(_diag, "a", encoding="utf-8") as _f:
+            _f.write(f"  [cache hit] latex={latex[:50]!r} → {_MATH_IMAGE_CACHE[latex]}\n")
         return _MATH_IMAGE_CACHE[latex]
     try:
         from matplotlib.figure import Figure as MplFigure
-    except ImportError:
+    except ImportError as exc:
+        with open(_diag, "a", encoding="utf-8") as _f:
+            _f.write(f"  [FAIL] matplotlib import: {exc}\n")
         _MATH_IMAGE_CACHE[latex] = None
         return None
     # Strip environment wrappers to get bare math.
@@ -82,6 +87,8 @@ def _render_math_image(latex: str, font_size: int = 14) -> Path | None:
         raw = m.group(2).strip()
     raw = raw.strip("$").strip()
     if not raw:
+        with open(_diag, "a", encoding="utf-8") as _f:
+            _f.write(f"  [FAIL] raw empty after strip\n")
         _MATH_IMAGE_CACHE[latex] = None
         return None
     # Translate LaTeX commands that mathtext doesn't know about.
@@ -99,6 +106,8 @@ def _render_math_image(latex: str, font_size: int = 14) -> Path | None:
     lines = [ln.replace("&", " ").strip() for ln in lines]
     lines = [ln for ln in lines if ln]
     if not lines:
+        with open(_diag, "a", encoding="utf-8") as _f:
+            _f.write(f"  [FAIL] no lines after split, raw={raw[:60]!r}\n")
         _MATH_IMAGE_CACHE[latex] = None
         return None
     try:
@@ -118,7 +127,9 @@ def _render_math_image(latex: str, font_size: int = 14) -> Path | None:
                     pad_inches=0.04, transparent=True)
         _MATH_IMAGE_CACHE[latex] = png_path
         return png_path
-    except Exception:
+    except Exception as exc:
+        with open(_diag, "a", encoding="utf-8") as _f:
+            _f.write(f"  [FAIL] render exception: {type(exc).__name__}: {exc}\n")
         _MATH_IMAGE_CACHE[latex] = None
         return None
 
