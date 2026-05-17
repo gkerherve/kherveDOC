@@ -39,6 +39,57 @@ from .model import (
 )
 
 
+# ---- rendered math (matplotlib mathtext) ----
+import re as _re
+from io import BytesIO as _BytesIO
+
+_MATH_IMAGE_CACHE: dict[str, QImage | None] = {}
+
+_ENV_STRIP_RE = _re.compile(
+    r"\\begin\{(equation|align|gather|multline|displaymath|eqnarray"
+    r"|alignat|split)\*?\}(.*?)\\end\{\1\*?\}",
+    _re.DOTALL)
+
+
+def _render_math_image(latex: str, font_size: int = 14) -> QImage | None:
+    """Render a LaTeX math expression to a QImage using matplotlib.
+
+    Returns None if matplotlib is unavailable or the expression fails to
+    render. Results are cached in memory."""
+    if latex in _MATH_IMAGE_CACHE:
+        return _MATH_IMAGE_CACHE[latex]
+    try:
+        from matplotlib.figure import Figure as MplFigure
+    except ImportError:
+        _MATH_IMAGE_CACHE[latex] = None
+        return None
+    # Strip environment wrappers to get bare math.
+    raw = latex.strip()
+    m = _ENV_STRIP_RE.search(raw)
+    if m:
+        raw = m.group(2).strip()
+    raw = raw.strip("$").strip()
+    if not raw:
+        _MATH_IMAGE_CACHE[latex] = None
+        return None
+    try:
+        fig = MplFigure(dpi=150)
+        fig.patch.set_alpha(0)
+        fig.text(0.5, 0.5, f"${raw}$", fontsize=font_size,
+                 ha="center", va="center", math_fontfamily="cm")
+        buf = _BytesIO()
+        fig.savefig(buf, format="png", bbox_inches="tight",
+                    pad_inches=0.02, transparent=True)
+        buf.seek(0)
+        img = QImage()
+        img.loadFromData(buf.read())
+        _MATH_IMAGE_CACHE[latex] = img if not img.isNull() else None
+        return _MATH_IMAGE_CACHE[latex]
+    except Exception:
+        _MATH_IMAGE_CACHE[latex] = None
+        return None
+
+
 # ---- per-block user state encoding ----
 _STATE_PARAGRAPH = 0
 _STATE_TITLE = 7        # Word-style "Title" paragraph; emits \maketitle
@@ -360,6 +411,29 @@ _P_TABLE_CAPTION = QTextCharFormat.UserProperty + 20
 _P_TABLE_LABEL = QTextCharFormat.UserProperty + 21
 _P_TABLE_ALIGNMENT = QTextCharFormat.UserProperty + 22
 
+# Figure-table properties (figures rendered as 1-column QTextTable).
+_P_FIGURE_PATH = QTextCharFormat.UserProperty + 30
+_P_FIGURE_LABEL = QTextCharFormat.UserProperty + 31
+_P_FIGURE_WIDTH = QTextCharFormat.UserProperty + 32
+_P_IS_FIGURE = QTextCharFormat.UserProperty + 33
+
+
+def _make_figure_table_format() -> QTextTableFormat:
+    """QTextTableFormat for a figure widget (1-column table)."""
+    tfmt = QTextTableFormat()
+    tfmt.setBorderBrush(QColor("#c8e6c9"))
+    tfmt.setBorderStyle(QTextFrameFormat.BorderStyle_Solid)
+    tfmt.setBorder(1)
+    tfmt.setCellPadding(8)
+    tfmt.setCellSpacing(0)
+    tfmt.setBackground(QColor("#e8f5e9"))
+    tfmt.setMargin(10)
+    tfmt.setAlignment(Qt.AlignHCenter)
+    tfmt.setColumnWidthConstraints(
+        [QTextLength(QTextLength.PercentageLength, 100)])
+    tfmt.setProperty(_P_IS_FIGURE, True)
+    return tfmt
+
 
 def _code_block_format() -> QTextBlockFormat:
     bfmt = QTextBlockFormat()
@@ -576,7 +650,11 @@ class DocumentEditor(QWidget):
                 tid = id(qtable)
                 if tid not in seen_tables:
                     seen_tables.add(tid)
-                    blocks.append(self._table_from_qtexttable(qtable))
+                    tfmt = qtable.format()
+                    if tfmt.property(_P_IS_FIGURE):
+                        blocks.append(self._figure_from_qtexttable(qtable))
+                    else:
+                        blocks.append(self._table_from_qtexttable(qtable))
                 block = block.next()
                 continue
 
@@ -599,7 +677,8 @@ class DocumentEditor(QWidget):
                 state = block.userState()
                 text = block.text()
                 if state == _STATE_MATH_BLOCK:
-                    blocks.append(MathBlock(latex=text.replace(_LINE_SEP, "\n")))
+                    raw = text.replace("\ufffc", "").strip(_LINE_SEP).strip()
+                    blocks.append(MathBlock(latex=raw.replace(_LINE_SEP, "\n")))
                 elif state == _STATE_FIGURE:
                     blocks.append(self._figure_from_stub(text))
                 elif state == _STATE_TABLE:
@@ -680,12 +759,18 @@ class DocumentEditor(QWidget):
                 self._insert_inline(cursor, inline, base_format=body_fmt)
         elif isinstance(block, MathBlock):
             cursor.block().setUserState(_STATE_MATH_BLOCK)
-            # Multi-line bodies (\begin{align}\n...\n\end{align}, split
-            # envs, etc.) must be kept inside ONE QTextBlock or Qt will
-            # split on '\n' and the readback at _STATE_MATH_BLOCK only
-            # captures the first line — losing the closing \end{align}
-            # and breaking compilation with "\begin{align} ... ended by
-            # \end{document}". U+2028 is the same trick RawLatex uses.
+            # Try to render a visual math image above the LaTeX source.
+            math_img = _render_math_image(block.latex)
+            if math_img is not None and not math_img.isNull():
+                url_str = f"math://{id(math_img)}"
+                url = QUrl(url_str)
+                self._edit.document().addResource(2, url, math_img)
+                img_fmt = QTextImageFormat()
+                img_fmt.setName(url_str)
+                img_fmt.setWidth(math_img.width())
+                img_fmt.setHeight(math_img.height())
+                cursor.insertImage(img_fmt)
+                cursor.insertText(_LINE_SEP)
             visible = block.latex.replace("\n", _LINE_SEP)
             cursor.insertText(visible, _math_block_char_format())
         elif isinstance(block, ListNode):
@@ -706,11 +791,7 @@ class DocumentEditor(QWidget):
                 for inline in item.children:
                     self._insert_inline(cursor, inline)
         elif isinstance(block, Figure):
-            cursor.block().setUserState(_STATE_FIGURE)
-            cursor.setBlockFormat(_figure_block_format())
-            stub = _figure_stub(block)
-            cursor.insertText(stub, _typed_stub_char_format("#2e7d32"))
-            self._insert_figure_thumbnail(cursor, block.path)
+            self._insert_figure_widget(cursor, block)
         elif isinstance(block, Table):
             self._insert_table_widget(cursor, block)
         elif isinstance(block, RawLatex):
@@ -803,6 +884,84 @@ class DocumentEditor(QWidget):
             cap_cursor.insertText(f"Caption: {table.caption}", cap_fmt)
         # Move the cursor past the table so subsequent content goes after it.
         cursor.movePosition(QTextCursor.End)
+
+    def _insert_figure_widget(self, cursor: QTextCursor, figure: Figure) -> None:
+        """Insert a Figure model node as a centered QTextTable with image,
+        caption, and label rows."""
+        has_caption = bool(figure.caption)
+        has_label = bool(figure.label)
+        total_rows = 1 + int(has_caption) + int(has_label)
+        tfmt = _make_figure_table_format()
+        tfmt.setProperty(_P_FIGURE_PATH, figure.path or "")
+        tfmt.setProperty(_P_FIGURE_LABEL, figure.label or "")
+        tfmt.setProperty(_P_FIGURE_WIDTH, figure.width or "0.8\\textwidth")
+        qtable = cursor.insertTable(total_rows, 1, tfmt)
+        # Row 0: centered image.
+        img_cursor = qtable.cellAt(0, 0).firstCursorPosition()
+        bf = img_cursor.blockFormat()
+        bf.setAlignment(Qt.AlignHCenter)
+        img_cursor.setBlockFormat(bf)
+        resolved = self._resolve_image_path(figure.path)
+        if resolved is not None:
+            img = QImage(str(resolved))
+            if not img.isNull():
+                max_w, max_h = 400, 300
+                if img.width() > max_w or img.height() > max_h:
+                    img = img.scaled(max_w, max_h, Qt.KeepAspectRatio,
+                                     Qt.SmoothTransformation)
+                url = QUrl.fromLocalFile(str(resolved))
+                self._edit.document().addResource(2, url, img)
+                img_fmt = QTextImageFormat()
+                img_fmt.setName(url.toString())
+                img_fmt.setWidth(img.width())
+                img_fmt.setHeight(img.height())
+                img_cursor.insertImage(img_fmt)
+            else:
+                img_cursor.insertText(
+                    f"[Image not found: {figure.path}]",
+                    _typed_stub_char_format("#999999"))
+        else:
+            img_cursor.insertText(
+                f"[Image: {figure.path}]",
+                _typed_stub_char_format("#999999"))
+        # Row 1: caption (if present).
+        row_idx = 1
+        if has_caption:
+            cap_cursor = qtable.cellAt(row_idx, 0).firstCursorPosition()
+            bf = cap_cursor.blockFormat()
+            bf.setAlignment(Qt.AlignHCenter)
+            cap_cursor.setBlockFormat(bf)
+            cap_fmt = QTextCharFormat()
+            cap_fmt.setFontItalic(True)
+            cap_fmt.setForeground(QColor("#555555"))
+            cap_cursor.insertText(f"Figure: {figure.caption}", cap_fmt)
+            row_idx += 1
+        # Row 2: label (if present).
+        if has_label:
+            lbl_cursor = qtable.cellAt(row_idx, 0).firstCursorPosition()
+            bf = lbl_cursor.blockFormat()
+            bf.setAlignment(Qt.AlignHCenter)
+            lbl_cursor.setBlockFormat(bf)
+            lbl_fmt = QTextCharFormat()
+            lbl_fmt.setForeground(QColor("#999999"))
+            f = lbl_fmt.font(); f.setPointSize(9); lbl_fmt.setFont(f)
+            lbl_cursor.insertText(f"Label: {figure.label}", lbl_fmt)
+        cursor.movePosition(QTextCursor.End)
+
+    def _figure_from_qtexttable(self, qtable: QTextTable) -> Figure:
+        """Read a Figure model back from its QTextTable representation."""
+        tfmt = qtable.format()
+        path = tfmt.property(_P_FIGURE_PATH) or ""
+        label = tfmt.property(_P_FIGURE_LABEL) or None
+        width = tfmt.property(_P_FIGURE_WIDTH) or "0.8\\textwidth"
+        caption = ""
+        # Caption is in a row after the image row; look for "Figure: " prefix.
+        for r in range(1, qtable.rows()):
+            cell_text = qtable.cellAt(r, 0).firstCursorPosition().block().text()
+            if cell_text.startswith("Figure: "):
+                caption = cell_text[len("Figure: "):]
+                break
+        return Figure(path=path, caption=caption, label=label or None, width=width)
 
     def _resolve_image_path(self, img_path: str) -> Path | None:
         """Resolve a figure path to an absolute file, checking common bases."""
@@ -1328,9 +1487,18 @@ class DocumentEditor(QWidget):
         c.insertBlock()
         c.block().setUserState(_STATE_MATH_BLOCK)
         c.setBlockFormat(QTextBlockFormat())
-        # Keep multi-line math (align envs, split, etc.) inside ONE
-        # QTextBlock; the readback in get_document substitutes _LINE_SEP
-        # back to '\n' before serialization.
+        # Render math image above the LaTeX source.
+        math_img = _render_math_image(latex)
+        if math_img is not None and not math_img.isNull():
+            url_str = f"math://{id(math_img)}"
+            url = QUrl(url_str)
+            self._edit.document().addResource(2, url, math_img)
+            img_fmt = QTextImageFormat()
+            img_fmt.setName(url_str)
+            img_fmt.setWidth(math_img.width())
+            img_fmt.setHeight(math_img.height())
+            c.insertImage(img_fmt)
+            c.insertText(_LINE_SEP)
         c.insertText(latex.replace("\n", _LINE_SEP), _math_block_char_format())
         c.insertBlock(); c.block().setUserState(_STATE_PARAGRAPH)
 
@@ -1376,15 +1544,8 @@ class DocumentEditor(QWidget):
         """Slot for PagedTextEdit.imageReceived. Drops a Figure block at
         the cursor pointing at the freshly-saved image."""
         c = self._edit.textCursor()
-        c.insertBlock(QTextBlockFormat(), QTextCharFormat())
-        c.block().setUserState(_STATE_FIGURE)
-        c.setBlockFormat(_figure_block_format())
-        stub = _figure_stub(
-            Figure(path=path, caption="", label=None, width="0.6\\textwidth"))
-        c.insertText(stub, _typed_stub_char_format("#2e7d32"))
-        self._insert_figure_thumbnail(c, path)
-        c.insertBlock(QTextBlockFormat(), QTextCharFormat())
-        c.block().setUserState(_STATE_PARAGRAPH)
+        fig = Figure(path=path, caption="", label=None, width="0.6\\textwidth")
+        self._insert_figure_widget(c, fig)
         self._on_text_changed()
 
     def insert_figure(self) -> None:
@@ -1393,15 +1554,9 @@ class DocumentEditor(QWidget):
         cap, _ = QInputDialog.getText(self, "Figure caption", "Caption:")
         label, _ = QInputDialog.getText(self, "Figure label", "Label (optional):")
         c = self._edit.textCursor()
-        c.insertBlock()
-        c.block().setUserState(_STATE_FIGURE)
-        c.setBlockFormat(_figure_block_format())
-        stub = _figure_stub(
-            Figure(path=path, caption=cap, label=label or None,
-                   width="0.8\\textwidth"))
-        c.insertText(stub, _typed_stub_char_format("#2e7d32"))
-        c.insertBlock(QTextBlockFormat(), QTextCharFormat())
-        c.block().setUserState(_STATE_PARAGRAPH)
+        fig = Figure(path=path, caption=cap, label=label or None,
+                     width="0.8\\textwidth")
+        self._insert_figure_widget(c, fig)
 
     def insert_table(self) -> None:
         rows, ok = QInputDialog.getInt(self, "Insert table", "Rows:", 3, 1, 50)
