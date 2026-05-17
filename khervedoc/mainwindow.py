@@ -370,6 +370,7 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(self._editor, "Formatted")
         self._tabs.addTab(self._latex_view, "LaTeX")
         self._tabs.addTab(self._preview, "PDF")
+        self._tabs.currentChanged.connect(self._on_tab_changed)
 
         # Splitter: left = tabs, right = PDF panel (hidden until toggled).
         self._splitter = QSplitter(Qt.Horizontal, self)
@@ -468,6 +469,13 @@ class MainWindow(QMainWindow):
             "tectonic: OK" if tectonic_available() else "tectonic: NOT FOUND — preview disabled",
             self)
         self._status.addPermanentWidget(self._tectonic_label)
+
+        # Initially on Formatted tab — hide PDF zoom, show editor zoom.
+        self._pdf_zoom_sep.hide()
+        self._pdf_zoom_out_btn.hide()
+        self._pdf_zoom_slider.hide()
+        self._pdf_zoom_in_btn.hide()
+        self._pdf_zoom_label.hide()
 
         # Set icon colors before building actions so they render correctly.
         self._is_dark = self._settings.value("theme_dark", False, type=bool)
@@ -1211,6 +1219,23 @@ class MainWindow(QMainWindow):
     def _nudge_pdf_zoom(self, delta: int) -> None:
         self._pdf_zoom_slider.setValue(self._pdf_zoom_slider.value() + delta)
 
+    def _on_tab_changed(self, index: int) -> None:
+        self._update_zoom_visibility()
+
+    def _update_zoom_visibility(self) -> None:
+        on_pdf_tab = self._tabs.currentIndex() == 2
+        show_editor_zoom = not on_pdf_tab
+        show_pdf_zoom = on_pdf_tab or self._side_by_side
+        self._zoom_out_btn.setVisible(show_editor_zoom)
+        self._zoom_slider.setVisible(show_editor_zoom)
+        self._zoom_in_btn.setVisible(show_editor_zoom)
+        self._zoom_label.setVisible(show_editor_zoom)
+        self._pdf_zoom_sep.setVisible(show_pdf_zoom)
+        self._pdf_zoom_out_btn.setVisible(show_pdf_zoom)
+        self._pdf_zoom_slider.setVisible(show_pdf_zoom)
+        self._pdf_zoom_in_btn.setVisible(show_pdf_zoom)
+        self._pdf_zoom_label.setVisible(show_pdf_zoom)
+
     def _on_fontsize_changed(self, *_) -> None:
         try:
             pt = int(float(self._fontsize_combo.currentText().strip().rstrip("pt")))
@@ -1229,10 +1254,10 @@ class MainWindow(QMainWindow):
         self._side_by_side = checked
         if checked:
             self._pdf_side_panel.show()
-            # Push current PDF state to the side panel.
             self._kick_compile()
         else:
             self._pdf_side_panel.hide()
+        self._update_zoom_visibility()
 
     def _refresh_icons(self) -> None:
         """Recreate every toolbar icon so colours match the active theme."""
