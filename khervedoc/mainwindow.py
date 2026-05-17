@@ -12,7 +12,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox,
-    QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox,
+    QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMainWindow, QMessageBox,
     QPlainTextEdit, QPushButton, QScrollArea, QSlider, QSpinBox,
     QSplitter, QStatusBar, QTabWidget, QToolBar, QToolButton,
     QVBoxLayout, QWidget,
@@ -495,6 +495,11 @@ class MainWindow(QMainWindow):
         if self._is_dark:
             self._toggle_theme(True)
 
+        # Restore side-by-side panel state.
+        if self._settings.value("side_by_side", False, type=bool):
+            self.act_side_by_side.setChecked(True)
+            self._toggle_side_by_side(True)
+
         self._editor.set_document(_starter_document())
         self._update_title()
         self._kick_compile()
@@ -687,9 +692,14 @@ class MainWindow(QMainWindow):
         self.act_dark_theme.setChecked(
             self._settings.value("theme_dark", False, type=bool))
 
-        # History
-        self.act_commit_now = QAction(icons.commit(), "Commit && push now", self,
+        # Git
+        self.act_commit_now = QAction(icons.commit(), "&Commit && push now", self,
                                       triggered=self._commit_and_maybe_push)
+        self.act_pull = QAction("&Pull from remote", self,
+                                triggered=self._pull_from_remote)
+        self.act_configure_remotes = QAction(
+            "Configure &remotes…", self,
+            triggered=self._configure_remotes)
         self.act_history = QAction(icons.history(), "Show commit &history...", self,
                                    triggered=self._show_history)
 
@@ -779,9 +789,16 @@ class MainWindow(QMainWindow):
         m_view.addSeparator()
         m_view.addAction(self.act_dark_theme)
 
-        m_history = mb.addMenu("&History")
-        m_history.addAction(self.act_commit_now)
-        m_history.addAction(self.act_history)
+        # Renamed History → Git so it advertises the actual scope
+        # (pull / configure remotes, not just history). The old name
+        # didn't suggest you could push to GitHub from here.
+        m_git = mb.addMenu("&Git")
+        m_git.addAction(self.act_commit_now)
+        m_git.addAction(self.act_pull)
+        m_git.addSeparator()
+        m_git.addAction(self.act_configure_remotes)
+        m_git.addSeparator()
+        m_git.addAction(self.act_history)
 
         # Examples menu — each entry opens that example in a new window
         # so the user's current document isn't replaced.
@@ -982,6 +999,8 @@ class MainWindow(QMainWindow):
             w._refresh_window_menu()
 
     def closeEvent(self, event) -> None:
+        self._settings.setValue("theme_dark", self._is_dark)
+        self._settings.setValue("side_by_side", self._side_by_side)
         # Persist document-default preferences so new documents start
         # with the user's preferred font size, family, margins etc.
         meta = self._editor.meta()
@@ -1429,6 +1448,76 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Commit", "Save the document first.")
             return
         self._write_to(self._current_path)
+
+    def _pull_from_remote(self) -> None:
+        if self._current_path is None:
+            QMessageBox.information(
+                self, "Pull",
+                "Save the document first so kherveDOC knows which folder "
+                "to pull into.")
+            return
+        if not git_backend.is_available():
+            QMessageBox.warning(
+                self, "Pull",
+                "pygit2 is not installed, so pull isn't available.")
+            return
+        remotes = git_backend.get_remotes(self._current_path.parent)
+        if not remotes:
+            ask = QMessageBox.question(
+                self, "Pull",
+                "No git remote is configured for this document. "
+                "Open the remotes dialog now?")
+            if ask == QMessageBox.Yes:
+                self._configure_remotes()
+            return
+        # If there's only one remote, just use it. Otherwise let the
+        # user pick.
+        if len(remotes) == 1:
+            remote_name = remotes[0][0]
+        else:
+            names = [n for n, _ in remotes]
+            chosen, ok = QInputDialog.getItem(
+                self, "Pull from remote", "Remote:", names, 0, False)
+            if not ok:
+                return
+            remote_name = chosen
+        ok, msg = git_backend.pull(self._current_path.parent, remote_name)
+        if ok:
+            self._status.showMessage(msg, 6000)
+            # Reload the document from disk so any incoming changes
+            # appear immediately in the editor.
+            self._reload_current()
+        else:
+            QMessageBox.warning(self, "Pull", msg)
+
+    def _configure_remotes(self) -> None:
+        if self._current_path is None:
+            QMessageBox.information(
+                self, "Configure remotes",
+                "Save the document first so kherveDOC knows which folder "
+                "to configure remotes for.")
+            return
+        if not git_backend.is_available():
+            QMessageBox.warning(
+                self, "Configure remotes",
+                "pygit2 is not installed, so remote configuration isn't "
+                "available.")
+            return
+        from .remote_dialog import RemoteDialog
+        dlg = RemoteDialog(self._current_path.parent, self)
+        dlg.exec()
+
+    def _reload_current(self) -> None:
+        """Re-read the current document from disk after an external
+        change (e.g. a successful pull). Best-effort: silently no-ops
+        if the file has gone away."""
+        if self._current_path is None or not self._current_path.exists():
+            return
+        try:
+            self._open_path(self._current_path)
+        except Exception as exc:
+            self._status.showMessage(
+                f"Reload after pull failed: {exc}", 6000)
 
     def _show_history(self) -> None:
         if self._current_path is None:
