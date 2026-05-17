@@ -1614,6 +1614,10 @@ class MainWindow(QMainWindow):
         icons.set_dark(dark)
         self._refresh_icons()
         self._latex_view.set_dark(dark)
+        # Re-render tables / figures so their hard-coded cell
+        # colours match the new theme (light text on pale orange
+        # was invisible in dark mode, etc.).
+        self._editor.set_dark(dark)
         # Update the editor page styling for dark mode.
         if dark:
             self._editor.text_edit.setStyleSheet(

@@ -407,31 +407,68 @@ def _stub_block_format() -> QTextBlockFormat:
     return bfmt
 
 
-def _figure_block_format() -> QTextBlockFormat:
+# Theme-aware palettes for table/figure/raw block widgets. The editor
+# stores its current theme on self._dark and looks up the matching
+# palette here. Keys match the field name; values are QColor strings.
+_LIGHT_PALETTE = {
+    "figure_block_bg":  "#e8f5e9",
+    "table_block_bg":   "#fff3e0",
+    "table_border":     "#e6a85c",
+    "table_bg":         "#fff3e0",
+    "table_header_bg":  "#ffe0b2",
+    "table_header_fg":  "#e65100",
+    "table_cell_fg":    "#333333",
+    "table_caption_fg": "#888888",
+    "figure_border":    "#c8e6c9",
+    "figure_bg":        "#e8f5e9",
+    "figure_caption_fg": "#2e7d32",
+}
+_DARK_PALETTE = {
+    # Backgrounds tuned to be clearly visible against the editor's
+    # #2d2d2d dark page while keeping enough lightness to read text on.
+    "figure_block_bg":  "#1f3d2a",
+    "table_block_bg":   "#3d2e1a",
+    "table_border":     "#a37745",
+    "table_bg":         "#3d2e1a",
+    "table_header_bg":  "#5a3f1f",
+    "table_header_fg":  "#ffab40",
+    "table_cell_fg":    "#e8e0d4",
+    "table_caption_fg": "#b0a99a",
+    "figure_border":    "#5a8a5a",
+    "figure_bg":        "#1f3d2a",
+    "figure_caption_fg": "#a5d6a7",
+}
+
+
+def _palette(dark: bool) -> dict:
+    return _DARK_PALETTE if dark else _LIGHT_PALETTE
+
+
+def _figure_block_format(dark: bool = False) -> QTextBlockFormat:
     bfmt = QTextBlockFormat()
     bfmt.setTopMargin(6); bfmt.setBottomMargin(6)
-    bfmt.setBackground(QColor("#e8f5e9"))   # pale green — "media"
+    bfmt.setBackground(QColor(_palette(dark)["figure_block_bg"]))
     return bfmt
 
 
-def _table_block_format() -> QTextBlockFormat:
+def _table_block_format(dark: bool = False) -> QTextBlockFormat:
     bfmt = QTextBlockFormat()
     bfmt.setTopMargin(6); bfmt.setBottomMargin(6)
-    bfmt.setBackground(QColor("#fff3e0"))   # pale orange — "tabular data"
+    bfmt.setBackground(QColor(_palette(dark)["table_block_bg"]))
     return bfmt
 
 
-def _make_table_format(ncols: int) -> QTextTableFormat:
+def _make_table_format(ncols: int, dark: bool = False) -> QTextTableFormat:
     """Build a QTextTableFormat for a table with *ncols* columns."""
+    p = _palette(dark)
     tfmt = QTextTableFormat()
-    tfmt.setBorderBrush(QColor("#e6a85c"))
+    tfmt.setBorderBrush(QColor(p["table_border"]))
     tfmt.setBorderStyle(QTextFrameFormat.BorderStyle_Solid)
     tfmt.setBorder(1)
     tfmt.setCellPadding(6)
     tfmt.setCellSpacing(0)
-    tfmt.setBackground(QColor("#fff3e0"))
+    tfmt.setBackground(QColor(p["table_bg"]))
     tfmt.setMargin(8)
-    # Distribute columns evenly.
     constraints = [QTextLength(QTextLength.PercentageLength, 100 / ncols)
                    for _ in range(ncols)]
     tfmt.setColumnWidthConstraints(constraints)
@@ -451,15 +488,16 @@ _P_FIGURE_WIDTH = QTextCharFormat.UserProperty + 32
 _P_IS_FIGURE = QTextCharFormat.UserProperty + 33
 
 
-def _make_figure_table_format() -> QTextTableFormat:
+def _make_figure_table_format(dark: bool = False) -> QTextTableFormat:
     """QTextTableFormat for a figure widget (1-column table)."""
+    p = _palette(dark)
     tfmt = QTextTableFormat()
-    tfmt.setBorderBrush(QColor("#c8e6c9"))
+    tfmt.setBorderBrush(QColor(p["figure_border"]))
     tfmt.setBorderStyle(QTextFrameFormat.BorderStyle_Solid)
     tfmt.setBorder(1)
     tfmt.setCellPadding(8)
     tfmt.setCellSpacing(0)
-    tfmt.setBackground(QColor("#e8f5e9"))
+    tfmt.setBackground(QColor(p["figure_bg"]))
     tfmt.setMargin(10)
     tfmt.setAlignment(Qt.AlignHCenter)
     tfmt.setColumnWidthConstraints(
@@ -511,6 +549,11 @@ class DocumentEditor(QWidget):
         self._body_font_pt = 12   # user-controllable body text size
         self._zoom_percent = 100
         self._zoom_delta = 0
+        # Current colour theme. Block formats for tables / figures
+        # / raw blocks read this when constructing their palettes so
+        # the cells stay readable against the editor's dark / light
+        # page background.
+        self._dark = False
 
         # MS Word look: a white "page" card centered on a grey desk, sized
         # to real A4/Letter/Legal paper at 96 DPI. The text flows as one
@@ -870,7 +913,8 @@ class DocumentEditor(QWidget):
         """Insert a Table model node as a real QTextTable in the editor."""
         nrows = len(table.rows) if table.rows else 1
         ncols = max((len(r) for r in table.rows), default=1) if table.rows else 1
-        tfmt = _make_table_format(ncols)
+        p = _palette(self._dark)
+        tfmt = _make_table_format(ncols, dark=self._dark)
         tfmt.setProperty(_P_TABLE_CAPTION, table.caption or "")
         tfmt.setProperty(_P_TABLE_LABEL, table.label or "")
         tfmt.setProperty(_P_TABLE_ALIGNMENT, table.alignment or "")
@@ -878,18 +922,18 @@ class DocumentEditor(QWidget):
         has_caption = bool(table.caption)
         total_rows = nrows + (1 if has_caption else 0)
         qtable = cursor.insertTable(total_rows, ncols, tfmt)
-        # Header row: bold orange on darker orange background.
+        # Header row: bold accent colour on darker amber background.
         header_char = QTextCharFormat()
         header_char.setFontWeight(QFont.Bold)
-        header_char.setForeground(QColor("#e65100"))
+        header_char.setForeground(QColor(p["table_header_fg"]))
         cell_char = QTextCharFormat()
-        cell_char.setForeground(QColor("#333333"))
+        cell_char.setForeground(QColor(p["table_cell_fg"]))
         for r, row in enumerate(table.rows):
             for c in range(ncols):
                 cell = qtable.cellAt(r, c)
                 if r == 0:
                     cf = cell.format()
-                    cf.setBackground(QColor("#ffe0b2"))
+                    cf.setBackground(QColor(p["table_header_bg"]))
                     cell.setFormat(cf)
                 cell_cursor = cell.firstCursorPosition()
                 text = row[c] if c < len(row) else ""
@@ -902,7 +946,7 @@ class DocumentEditor(QWidget):
             cap_cursor = cap_cell.firstCursorPosition()
             cap_fmt = QTextCharFormat()
             cap_fmt.setFontItalic(True)
-            cap_fmt.setForeground(QColor("#888888"))
+            cap_fmt.setForeground(QColor(p["table_caption_fg"]))
             cap_cursor.insertText(f"Caption: {table.caption}", cap_fmt)
         # Move the cursor past the table so subsequent content goes after it.
         cursor.movePosition(QTextCursor.End)
@@ -930,7 +974,8 @@ class DocumentEditor(QWidget):
         has_caption = bool(figure.caption)
         has_label = bool(figure.label)
         total_rows = 1 + int(has_caption) + int(has_label)
-        tfmt = _make_figure_table_format()
+        p = _palette(self._dark)
+        tfmt = _make_figure_table_format(dark=self._dark)
         tfmt.setProperty(_P_FIGURE_PATH, figure.path or "")
         tfmt.setProperty(_P_FIGURE_LABEL, figure.label or "")
         tfmt.setProperty(_P_FIGURE_WIDTH, figure.width or "0.8\\textwidth")
@@ -972,7 +1017,7 @@ class DocumentEditor(QWidget):
             cap_cursor.setBlockFormat(bf)
             cap_fmt = QTextCharFormat()
             cap_fmt.setFontItalic(True)
-            cap_fmt.setForeground(QColor("#555555"))
+            cap_fmt.setForeground(QColor(p["figure_caption_fg"]))
             cap_cursor.insertText(f"Figure: {figure.caption}", cap_fmt)
             row_idx += 1
         # Row 2: label (if present).
@@ -982,7 +1027,7 @@ class DocumentEditor(QWidget):
             bf.setAlignment(Qt.AlignHCenter)
             lbl_cursor.setBlockFormat(bf)
             lbl_fmt = QTextCharFormat()
-            lbl_fmt.setForeground(QColor("#999999"))
+            lbl_fmt.setForeground(QColor(p["table_caption_fg"]))
             f = lbl_fmt.font(); f.setPointSize(9); lbl_fmt.setFont(f)
             lbl_cursor.insertText(f"Label: {figure.label}", lbl_fmt)
         cursor.movePosition(QTextCursor.End)
@@ -1335,6 +1380,36 @@ class DocumentEditor(QWidget):
 
     def body_font_pt(self) -> int:
         return self._body_font_pt
+
+    def is_dark(self) -> bool:
+        return self._dark
+
+    def set_dark(self, dark: bool) -> None:
+        """Switch the colour theme used by table / figure block
+        widgets. Rebuilds the document so existing tables and
+        figures get re-rendered with the new palette — their cell
+        backgrounds and text colours otherwise remain stuck on the
+        theme they were created under, which is what made tables
+        invisible in dark mode (light text on light-orange cells).
+
+        Preserves cursor position and scroll offset across the
+        rebuild so the user isn't bounced to the top of the
+        document when they toggle the theme."""
+        dark = bool(dark)
+        if dark == self._dark:
+            return
+        self._dark = dark
+        # Snapshot, rebuild, restore.
+        cursor_pos = self._edit.textCursor().position()
+        scroll_y = self._edit.verticalScrollBar().value()
+        doc = self.get_document()
+        self.set_document(doc)
+        # Restore cursor + scroll.
+        new_cursor = self._edit.textCursor()
+        new_cursor.setPosition(min(cursor_pos,
+                                   self._edit.document().characterCount() - 1))
+        self._edit.setTextCursor(new_cursor)
+        self._edit.verticalScrollBar().setValue(scroll_y)
 
     def is_spell_check_enabled(self) -> bool:
         return self._spell_highlighter.is_enabled()
