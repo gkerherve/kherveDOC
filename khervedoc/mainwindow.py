@@ -377,8 +377,8 @@ class MainWindow(QMainWindow):
         self._pdf_side_panel = PdfPreview(self)
         self._pdf_side_panel.hide()
         self._splitter.addWidget(self._pdf_side_panel)
-        self._splitter.setStretchFactor(0, 3)
-        self._splitter.setStretchFactor(1, 2)
+        self._splitter.setStretchFactor(0, 2)
+        self._splitter.setStretchFactor(1, 3)
         self.setCentralWidget(self._splitter)
         self._side_by_side = False
 
@@ -426,6 +426,43 @@ class MainWindow(QMainWindow):
         self._zoom_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self._zoom_label.setStyleSheet("padding-right: 6px; color: #444;")
         self._status.addPermanentWidget(self._zoom_label)
+
+        # PDF-specific zoom (separate from the editor zoom).
+        self._pdf_zoom_sep = QLabel(" | PDF:", self)
+        self._pdf_zoom_sep.setStyleSheet("color: #888; padding: 0 2px;")
+        self._status.addPermanentWidget(self._pdf_zoom_sep)
+
+        self._pdf_zoom_out_btn = QToolButton(self)
+        self._pdf_zoom_out_btn.setIcon(icons.zoom_out())
+        self._pdf_zoom_out_btn.setToolTip("PDF zoom out")
+        self._pdf_zoom_out_btn.setAutoRaise(True)
+        self._pdf_zoom_out_btn.clicked.connect(lambda: self._nudge_pdf_zoom(-10))
+        self._status.addPermanentWidget(self._pdf_zoom_out_btn)
+
+        self._pdf_zoom_slider = QSlider(Qt.Horizontal, self)
+        self._pdf_zoom_slider.setRange(25, 400)
+        self._pdf_zoom_slider.setValue(100)
+        self._pdf_zoom_slider.setMinimumWidth(100)
+        self._pdf_zoom_slider.setMaximumWidth(180)
+        self._pdf_zoom_slider.setSingleStep(10)
+        self._pdf_zoom_slider.setPageStep(25)
+        self._pdf_zoom_slider.setTickPosition(QSlider.TicksBelow)
+        self._pdf_zoom_slider.setTickInterval(25)
+        self._pdf_zoom_slider.valueChanged.connect(self._on_pdf_zoom_changed)
+        self._status.addPermanentWidget(self._pdf_zoom_slider)
+
+        self._pdf_zoom_in_btn = QToolButton(self)
+        self._pdf_zoom_in_btn.setIcon(icons.zoom_in())
+        self._pdf_zoom_in_btn.setToolTip("PDF zoom in")
+        self._pdf_zoom_in_btn.setAutoRaise(True)
+        self._pdf_zoom_in_btn.clicked.connect(lambda: self._nudge_pdf_zoom(+10))
+        self._status.addPermanentWidget(self._pdf_zoom_in_btn)
+
+        self._pdf_zoom_label = QLabel("100%", self)
+        self._pdf_zoom_label.setMinimumWidth(42)
+        self._pdf_zoom_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self._pdf_zoom_label.setStyleSheet("padding-right: 6px; color: #444;")
+        self._status.addPermanentWidget(self._pdf_zoom_label)
 
         self._tectonic_label = QLabel(
             "tectonic: OK" if tectonic_available() else "tectonic: NOT FOUND — preview disabled",
@@ -1157,10 +1194,22 @@ class MainWindow(QMainWindow):
             self._zoom_slider.blockSignals(False)
         self._zoom_label.setText(f"{snapped}%")
         self._editor.set_zoom_percent(snapped)
-        self._preview.set_zoom_percent(snapped)
 
     def _nudge_zoom(self, delta: int) -> None:
         self._zoom_slider.setValue(self._zoom_slider.value() + delta)
+
+    def _on_pdf_zoom_changed(self, pct: int) -> None:
+        snapped = max(25, min(400, 5 * round(pct / 5)))
+        if snapped != pct:
+            self._pdf_zoom_slider.blockSignals(True)
+            self._pdf_zoom_slider.setValue(snapped)
+            self._pdf_zoom_slider.blockSignals(False)
+        self._pdf_zoom_label.setText(f"{snapped}%")
+        self._preview.set_zoom_percent(snapped)
+        self._pdf_side_panel.set_zoom_percent(snapped)
+
+    def _nudge_pdf_zoom(self, delta: int) -> None:
+        self._pdf_zoom_slider.setValue(self._pdf_zoom_slider.value() + delta)
 
     def _on_fontsize_changed(self, *_) -> None:
         try:
@@ -1228,6 +1277,8 @@ class MainWindow(QMainWindow):
             a.setIcon(icons.heading(i))
         self._zoom_out_btn.setIcon(icons.zoom_out())
         self._zoom_in_btn.setIcon(icons.zoom_in())
+        self._pdf_zoom_out_btn.setIcon(icons.zoom_out())
+        self._pdf_zoom_in_btn.setIcon(icons.zoom_in())
 
     def _toggle_theme(self, dark: bool) -> None:
         from .__main__ import apply_theme
