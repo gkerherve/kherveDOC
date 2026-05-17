@@ -177,11 +177,16 @@ class PagedTextEdit(QTextEdit):
 
     def page_anchor_positions(self) -> list[tuple[int, float]]:
         """Lazily resolve the stored (page_no, snippet) anchors to
-        (page_no, y_doc) on each request. We resolve at paint time
-        rather than at set_page_anchors time because the QTextDocument
-        layout hasn't necessarily run yet when the compiler hands us
-        the anchors — calling blockBoundingRect before the first
-        paint would return (0,0,…) for every block."""
+        (page_no, y_doc) on each request. Layout-dependent values
+        like QTextLine geometry only become real after the editor
+        has actually been painted, so we resolve at paint time
+        rather than at set_page_anchors time.
+
+        Returns the Y of the WRAPPED LINE the snippet sits on, not
+        just the block top — that's the difference between "page
+        break in the middle of this paragraph" (right) and "page
+        break at the start of this paragraph" (wrong, what the
+        previous version did)."""
         if not self._page_anchors:
             return []
         qdoc = self.document()
@@ -193,10 +198,24 @@ class PagedTextEdit(QTextEdit):
                 continue
             block = qdoc.firstBlock()
             while block.isValid():
-                if key in block.text():
-                    rect = layout.blockBoundingRect(block)
-                    if rect.height() > 0 or rect.top() > 0:
-                        resolved.append((int(page_no), float(rect.top())))
+                text = block.text()
+                idx = text.find(key)
+                if idx >= 0:
+                    block_rect = layout.blockBoundingRect(block)
+                    if block_rect.height() > 0 or block_rect.top() > 0:
+                        y_doc = block_rect.top()
+                        # Refine with QTextLine: where inside this
+                        # block is the matched substring drawn?
+                        # A long paragraph that wraps over 5 lines
+                        # in the editor needs the break line on the
+                        # exact wrapped line that starts the PDF
+                        # page, not the block's top.
+                        blk_layout = block.layout()
+                        if blk_layout is not None:
+                            line = blk_layout.lineForTextPosition(idx)
+                            if line.isValid():
+                                y_doc = block_rect.top() + line.y()
+                        resolved.append((int(page_no), float(y_doc)))
                     break
                 block = block.next()
         return resolved
