@@ -20,8 +20,9 @@ from PySide6.QtGui import (
     QColor, QFont, QSyntaxHighlighter, QTextCharFormat,
 )
 from PySide6.QtWidgets import (
-    QAbstractItemView, QDialog, QHBoxLayout, QHeaderView, QLabel, QPlainTextEdit,
-    QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QAbstractItemView, QDialog, QHBoxLayout, QHeaderView, QLabel, QMessageBox,
+    QPlainTextEdit, QPushButton, QSplitter, QTableWidget, QTableWidgetItem,
+    QVBoxLayout, QWidget,
 )
 
 from . import git_backend
@@ -156,11 +157,27 @@ class HistoryDialog(QDialog):
         # every block reload gets re-coloured automatically.
         self._highlighter = _DiffHighlighter(self._diff.document())
 
+        # ---- Restore button ---------------------------------------------
+        # Brings the selected commit's files back into the working tree
+        # without rewriting history. The user can then save normally and
+        # auto-commit produces a fresh commit on top — like Word's
+        # "Restore version" in Document History.
+        self._restore_btn = QPushButton("↩ Restore this version")
+        self._restore_btn.setToolTip(
+            "Roll the document files back to the selected commit. "
+            "Your current state stays in the history — restoring just "
+            "creates a new commit on top with the older contents.")
+        self._restore_btn.clicked.connect(self._on_restore_clicked)
+        # Remember the parent window so we can hand the restored
+        # document back to it for reload.
+        self._parent_window = parent
+
         right = QWidget()
         rlay = QVBoxLayout(right)
         rlay.setContentsMargins(0, 0, 0, 0)
         rlay.addWidget(self._meta_label)
         rlay.addWidget(self._diff, 1)
+        rlay.addWidget(self._restore_btn)
 
         # ---- Splitter ----------------------------------------------------
         split = QSplitter(Qt.Horizontal)
@@ -203,6 +220,47 @@ class HistoryDialog(QDialog):
         if not diff:
             diff = "(no diff — empty commit or root commit with no tree)"
         self._diff.setPlainText(diff)
+
+    # ---- restore handling -----------------------------------------------
+
+    def _on_restore_clicked(self) -> None:
+        row = self._table.currentRow()
+        if row < 0 or row >= len(self._commits):
+            return
+        c = self._commits[row]
+        # Confirm — restoring overwrites whatever is in the working
+        # tree right now. We don't lose history (HEAD doesn't move),
+        # but unsaved edits to the current file would vanish.
+        confirm = QMessageBox.question(
+            self, "Restore this version",
+            f"<b>Roll the document back to this version?</b><br><br>"
+            f"<code>{_html_escape(c['short_oid'])}</code> &middot; "
+            f"{_html_escape(c['timestamp'])}<br>"
+            f"<i>{_html_escape(c['subject'])}</i><br><br>"
+            f"<span style='color:#666;'>"
+            f"Your current document state isn't lost — every saved "
+            f"version is still in the history. The next Ctrl+S will "
+            f"record the restored contents as a new commit on top."
+            f"</span>",
+            QMessageBox.Yes | QMessageBox.Cancel)
+        if confirm != QMessageBox.Yes:
+            return
+        ok, msg = git_backend.restore_to_commit(self._repo_dir, c["oid"])
+        if not ok:
+            QMessageBox.critical(self, "Restore failed", msg)
+            return
+        # Ask the parent window (the MainWindow) to reload the doc
+        # from disk so the editor immediately shows the restored
+        # contents instead of whatever it had loaded.
+        reload_method = getattr(self._parent_window, "_reload_current", None)
+        if callable(reload_method):
+            reload_method()
+        QMessageBox.information(
+            self, "Restored",
+            f"The document was rolled back to commit "
+            f"<code>{_html_escape(c['short_oid'])}</code>.<br><br>"
+            f"Save (Ctrl+S) when you're ready — that records the "
+            f"restored contents as a new commit on top.")
 
 
 def _html_escape(s: str) -> str:

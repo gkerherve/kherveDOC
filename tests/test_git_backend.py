@@ -162,3 +162,61 @@ def test_current_branch(tmp_path: Path):
     repo = _make_repo_with_two_commits(tmp_path)
     # init_repo writes refs/heads/dev — that's what we should report.
     assert git_backend.current_branch(repo) == "dev"
+
+
+# ----- push (new tuple form) -----
+
+def test_push_with_no_remote_returns_message(tmp_path: Path):
+    repo = _make_repo_with_two_commits(tmp_path)
+    ok, msg = git_backend.push(repo, "origin")
+    assert ok is False
+    assert "no remote" in msg.lower() or "remote" in msg.lower()
+
+
+def test_push_with_unborn_head_returns_message(tmp_path: Path):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    git_backend.init_repo(empty)
+    ok, msg = git_backend.push(empty, "origin")
+    assert ok is False
+    # Either "no commits yet" or "no remote" — both indicate
+    # there's nothing to push to.
+    assert any(word in msg.lower()
+               for word in ("commit", "remote"))
+
+
+# ----- restore_to_commit -----
+
+def test_restore_to_commit_brings_old_contents_back(tmp_path: Path):
+    repo = _make_repo_with_two_commits(tmp_path)
+    commits = git_backend.history_detailed(repo)
+    root = commits[-1]  # initial commit — hello.txt has one line
+    # Sanity: current file has two lines (added in commit 2).
+    current = (repo / "hello.txt").read_text(encoding="utf-8")
+    assert "second line" in current
+    # Roll back.
+    ok, msg = git_backend.restore_to_commit(repo, root["oid"])
+    assert ok, msg
+    restored = (repo / "hello.txt").read_text(encoding="utf-8")
+    assert "second line" not in restored
+    assert "hello world" in restored
+
+
+def test_restore_to_commit_keeps_head_pointing_at_latest(tmp_path: Path):
+    """Restore is a working-tree operation; HEAD must not move.
+    Otherwise the user would lose access to commits made after the
+    restore point."""
+    import pygit2
+    repo = _make_repo_with_two_commits(tmp_path)
+    head_before = pygit2.Repository(str(repo)).head.target
+    commits = git_backend.history_detailed(repo)
+    git_backend.restore_to_commit(repo, commits[-1]["oid"])
+    head_after = pygit2.Repository(str(repo)).head.target
+    assert str(head_before) == str(head_after)
+
+
+def test_restore_unknown_oid_fails_cleanly(tmp_path: Path):
+    repo = _make_repo_with_two_commits(tmp_path)
+    ok, msg = git_backend.restore_to_commit(repo, "0" * 40)
+    assert ok is False
+    assert msg

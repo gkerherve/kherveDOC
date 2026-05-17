@@ -9,6 +9,8 @@ and returns False, so the editor still works.
 """
 from __future__ import annotations
 
+import shutil
+import subprocess
 from datetime import datetime
 from pathlib import Path
 
@@ -287,41 +289,166 @@ def pull(repo_dir: Path, remote_name: str = "origin") -> tuple[bool, str]:
     return True, f"Pulled {incoming} commit{plural} from {remote_name}/{branch}."
 
 
-def push(repo_dir: Path, remote_name: str = "origin", branch: str = "main") -> bool:
-    """Push the current branch to the given remote. Returns True on success.
+def _system_git_available() -> bool:
+    """True if the user has the system `git` CLI on PATH. We delegate
+    HTTPS push to it when libgit2 can't authenticate, because system
+    git knows how to talk to Windows Credential Manager / macOS
+    Keychain / git credential helpers transparently."""
+    return shutil.which("git") is not None
 
-    Uses libgit2 credentials helpers when available (SSH agent, Windows
-    credential manager). If no remote is configured or the push fails (auth,
-    network, etc.) returns False — the caller continues without raising.
+
+def _git_cli_push(repo_dir: Path, remote_name: str,
+                  ref: str) -> tuple[bool, str]:
+    """Run `git push <remote> <ref>` via subprocess. Captures stdout
+    and stderr so we can surface a useful error message — most
+    GitHub HTTPS failures end with a single-line "remote: ..." or
+    "fatal: Authentication failed for ..." string that the user
+    actually needs to read."""
+    try:
+        proc = subprocess.run(
+            ["git", "push", remote_name, ref],
+            cwd=str(repo_dir),
+            capture_output=True, text=True, timeout=60,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "git push timed out after 60s."
+    except FileNotFoundError:
+        return False, "System git is not on PATH."
+    if proc.returncode == 0:
+        return True, f"Pushed to {remote_name}."
+    # Distil the most useful line from stderr.
+    err = (proc.stderr or proc.stdout or "").strip()
+    for line in reversed(err.splitlines()):
+        line = line.strip()
+        if line.startswith(("fatal:", "error:", "remote:")):
+            return False, line
+    return False, err.splitlines()[-1] if err else \
+        f"git push exited with code {proc.returncode}."
+
+
+def push(repo_dir: Path, remote_name: str = "origin",
+         branch: str = "main") -> tuple[bool, str]:
+    """Push the current branch to `remote_name`. Returns (ok, message).
+
+    Strategy:
+      1. Try libgit2 with SSH-agent credentials (works for git@ URLs).
+      2. Try libgit2 with no callbacks (works for some HTTPS setups).
+      3. If both libgit2 attempts fail AND the system `git` CLI is
+         available, delegate to `git push`. This is what saves
+         GitHub-over-HTTPS users on Windows — pygit2 doesn't talk to
+         Windows Credential Manager, but the system git does, so a
+         Personal Access Token stored there will just work.
+
+    The message is intended for the user — it's the actual error from
+    git (e.g. "fatal: Authentication failed for https://github.com/…")
+    when one is available, not a generic "upload failed".
     """
     if not _PYGIT2_OK:
-        return False
+        return False, "pygit2 is not installed."
     if not (repo_dir / ".git").exists():
-        return False
+        return False, "Not a git repository."
+
+    libgit2_err = ""
+    head_ref = None
+    remote_url = ""
     try:
         repo = pygit2.Repository(str(repo_dir))
         if remote_name not in [r.name for r in repo.remotes]:
-            return False
+            return False, f"No remote named {remote_name!r} is configured."
         remote = repo.remotes[remote_name]
-        # Pick a refspec that pushes the current branch.
+        remote_url = remote.url
         if repo.head_is_unborn:
-            return False
-        head_ref = repo.head.name  # e.g. "refs/heads/main"
+            return False, "Repository has no commits yet — save first."
+        head_ref = repo.head.name  # e.g. "refs/heads/dev"
         refspec = f"{head_ref}:{head_ref}"
-        callbacks = pygit2.RemoteCallbacks(credentials=pygit2.KeypairFromAgent("git"))
+
+        # Attempt 1: SSH agent
         try:
-            remote.push([refspec], callbacks=callbacks)
-            return True
-        except Exception:
-            # Retry without explicit credentials — libgit2 may resolve via
-            # the system's git credential helper on Windows.
-            try:
-                remote.push([refspec])
-                return True
-            except Exception:
-                return False
-    except Exception:
-        return False
+            cb = pygit2.RemoteCallbacks(
+                credentials=pygit2.KeypairFromAgent("git"))
+            remote.push([refspec], callbacks=cb)
+            return True, f"Pushed to {remote_name}."
+        except Exception as exc:
+            libgit2_err = str(exc)
+        # Attempt 2: no callbacks
+        try:
+            remote.push([refspec])
+            return True, f"Pushed to {remote_name}."
+        except Exception as exc:
+            libgit2_err = str(exc)
+    except Exception as exc:
+        libgit2_err = str(exc)
+
+    # Attempt 3: system git CLI. Most useful for HTTPS URLs on
+    # Windows, where libgit2 has no Credential Manager hookup.
+    if head_ref and _system_git_available():
+        ok, msg = _git_cli_push(repo_dir, remote_name, head_ref)
+        if ok:
+            return True, msg
+        return False, msg  # surface the CLI's error, more actionable.
+
+    # No git CLI available — best we can do is hand back libgit2's
+    # complaint with a hint about credentials.
+    hint = ""
+    if remote_url.startswith("http"):
+        hint = (" Tip: GitHub no longer accepts passwords over HTTPS — "
+                "install Git for Windows so the system credential "
+                "manager handles your Personal Access Token, or switch "
+                "the remote URL to SSH (git@github.com:…).")
+    return False, f"Push failed: {libgit2_err}.{hint}"
+
+
+def restore_to_commit(repo_dir: Path, oid: str,
+                      paths: list[str] | None = None) -> tuple[bool, str]:
+    """Reset the working tree files to their state at `oid`. Does NOT
+    move HEAD — the commit history stays intact; this is a "load this
+    older version into the editor" operation, not a rebase. The user
+    can then edit and save, which auto-commits the restored contents
+    as a new commit on top.
+
+    When `paths` is given, only those files are restored. When None,
+    every tracked file at `oid` is restored.
+
+    Returns (ok, message)."""
+    if not _PYGIT2_OK:
+        return False, "pygit2 is not installed."
+    repo = _repo_for(repo_dir)
+    if repo is None:
+        return False, "Not a git repository."
+    try:
+        commit = repo.get(oid)
+        if commit is None:
+            return False, f"Commit {oid[:8]!r} not found."
+        commit = commit.peel(pygit2.Commit)
+        tree = commit.tree
+    except Exception as exc:
+        return False, f"Could not read commit: {exc}"
+    try:
+        if paths:
+            # Restore only the listed paths from the commit's tree.
+            for p in paths:
+                try:
+                    entry = tree[p]
+                except KeyError:
+                    continue  # path didn't exist at that commit
+                blob = repo.get(entry.id)
+                if blob is None:
+                    continue
+                target = repo_dir / p
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(blob.data)
+        else:
+            # Whole-tree checkout, but DON'T move HEAD — pygit2's
+            # checkout_tree with strategy SAFE | RECREATE_MISSING
+            # rewrites the working tree to match.
+            repo.checkout_tree(
+                tree,
+                strategy=(pygit2.GIT_CHECKOUT_FORCE
+                          | pygit2.GIT_CHECKOUT_RECREATE_MISSING),
+            )
+    except Exception as exc:
+        return False, f"Restore failed: {exc}"
+    return True, f"Restored files to {oid[:8]}."
 
 
 def history(repo_dir: Path, limit: int = 50) -> list[tuple[str, str, str]]:

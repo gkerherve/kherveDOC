@@ -79,9 +79,7 @@ class _GitNetworkWorker(QThread):
             if self._op == "pull":
                 ok, msg = git_backend.pull(self._repo_dir, self._remote)
             elif self._op == "push":
-                ok = git_backend.push(self._repo_dir, self._remote)
-                msg = (f"Pushed to {self._remote}." if ok
-                       else f"Push to {self._remote} failed.")
+                ok, msg = git_backend.push(self._repo_dir, self._remote)
             else:
                 ok, msg = False, f"Unknown git op: {self._op!r}"
         except Exception as exc:  # pragma: no cover — defensive
@@ -1721,10 +1719,65 @@ class MainWindow(QMainWindow):
                 self._status.showMessage(
                     "✔ Saved, snapshot created, and uploaded to cloud", 5000)
             else:
+                # Keep the brief status message, but also show a
+                # dialog with the actual git error so the user can
+                # act on it (most common: "Authentication failed").
                 self._status.showMessage(
                     "✔ Saved and snapshot created "
-                    "(⚠ upload failed — check your internet connection)", 6000)
+                    "(⚠ upload failed — see dialog)", 8000)
+                self._show_push_failure_dialog(msg)
         self._git_worker = None
+
+    def _show_push_failure_dialog(self, error_msg: str) -> None:
+        """Surface a real push failure with actionable advice. The
+        most common cause on Windows is HTTPS authentication: GitHub
+        stopped accepting passwords years ago, so the user needs a
+        Personal Access Token stored via Windows Credential Manager
+        (which the system `git` CLI talks to). If `git` isn't on
+        PATH at all, that's a separate hint."""
+        from . import git_backend
+        hints = []
+        if "Authentication" in error_msg or "authentication" in error_msg:
+            hints.append(
+                "GitHub no longer accepts your account password over "
+                "HTTPS — you need a <b>Personal Access Token</b>.<br>"
+                "&nbsp;&nbsp;1. Go to <a href='https://github.com/settings/tokens'>"
+                "github.com/settings/tokens</a> → Generate new token (classic)"
+                "<br>"
+                "&nbsp;&nbsp;2. Tick the <code>repo</code> scope, generate, "
+                "copy the token"
+                "<br>"
+                "&nbsp;&nbsp;3. Next time the editor asks for a password, "
+                "paste the token instead of your password.")
+        elif "not found" in error_msg.lower() or "404" in error_msg:
+            hints.append(
+                "GitHub says the repository does not exist. Check that "
+                "the URL in <b>Git → Connect to GitHub</b> matches the "
+                "one shown on the repo's GitHub page (Code → HTTPS).")
+        elif "rejected" in error_msg.lower() or "non-fast-forward" in error_msg:
+            hints.append(
+                "Someone else (or another machine) pushed to this "
+                "branch since you last pulled. Use "
+                "<b>Git → Download latest from cloud</b> first, then "
+                "save again.")
+        if not git_backend._system_git_available():
+            hints.append(
+                "<i>Tip: install Git for Windows so the editor can use "
+                "your Windows Credential Manager for HTTPS pushes — "
+                "<a href='https://git-scm.com/download/win'>"
+                "git-scm.com/download/win</a></i>")
+        body = (f"<b>Could not upload to cloud.</b><br><br>"
+                f"<code>{error_msg}</code>")
+        if hints:
+            body += "<br><br>" + "<br><br>".join(hints)
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle("Upload failed")
+        box.setTextFormat(Qt.RichText)
+        box.setTextInteractionFlags(
+            Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse)
+        box.setText(body)
+        box.exec()
 
     def _pull_from_remote(self) -> None:
         if self._current_path is None:
