@@ -68,16 +68,11 @@ def _render_math_image(latex: str, font_size: int = 14) -> Path | None:
     ``\\\\`` and rendering each line separately, stacked vertically.
     Returns the path to the PNG file, or None on failure. Results are
     cached on disk."""
-    _diag = Path(tempfile.gettempdir()) / "khervedoc_math_diag.txt"
     if latex in _MATH_IMAGE_CACHE:
-        with open(_diag, "a", encoding="utf-8") as _f:
-            _f.write(f"  [cache hit] latex={latex[:50]!r} → {_MATH_IMAGE_CACHE[latex]}\n")
         return _MATH_IMAGE_CACHE[latex]
     try:
         from matplotlib.figure import Figure as MplFigure
-    except ImportError as exc:
-        with open(_diag, "a", encoding="utf-8") as _f:
-            _f.write(f"  [FAIL] matplotlib import: {exc}\n")
+    except ImportError:
         _MATH_IMAGE_CACHE[latex] = None
         return None
     # Strip environment wrappers to get bare math.
@@ -87,8 +82,6 @@ def _render_math_image(latex: str, font_size: int = 14) -> Path | None:
         raw = m.group(2).strip()
     raw = raw.strip("$").strip()
     if not raw:
-        with open(_diag, "a", encoding="utf-8") as _f:
-            _f.write(f"  [FAIL] raw empty after strip\n")
         _MATH_IMAGE_CACHE[latex] = None
         return None
     # Translate LaTeX commands that mathtext doesn't know about.
@@ -106,8 +99,6 @@ def _render_math_image(latex: str, font_size: int = 14) -> Path | None:
     lines = [ln.replace("&", " ").strip() for ln in lines]
     lines = [ln for ln in lines if ln]
     if not lines:
-        with open(_diag, "a", encoding="utf-8") as _f:
-            _f.write(f"  [FAIL] no lines after split, raw={raw[:60]!r}\n")
         _MATH_IMAGE_CACHE[latex] = None
         return None
     try:
@@ -127,9 +118,7 @@ def _render_math_image(latex: str, font_size: int = 14) -> Path | None:
                     pad_inches=0.04, transparent=True)
         _MATH_IMAGE_CACHE[latex] = png_path
         return png_path
-    except Exception as exc:
-        with open(_diag, "a", encoding="utf-8") as _f:
-            _f.write(f"  [FAIL] render exception: {type(exc).__name__}: {exc}\n")
+    except Exception:
         _MATH_IMAGE_CACHE[latex] = None
         return None
 
@@ -920,37 +909,20 @@ class DocumentEditor(QWidget):
 
     def _insert_math_image(self, cursor: QTextCursor, latex: str) -> None:
         """Render math to a PNG and insert it into the document."""
-        _diag = Path(tempfile.gettempdir()) / "khervedoc_math_diag.txt"
-        with open(_diag, "a", encoding="utf-8") as _f:
-            _f.write(f"--- _insert_math_image called ---\n")
-            _f.write(f"  latex: {latex[:80]!r}\n")
-            try:
-                png_path = _render_math_image(latex)
-            except Exception as exc:
-                _f.write(f"  EXCEPTION in _render_math_image: {exc}\n")
-                return
-            _f.write(f"  png_path: {png_path}\n")
-            if png_path is None:
-                _f.write("  png_path is None — skipping\n")
-                return
-            exists = png_path.exists()
-            _f.write(f"  exists: {exists}\n")
-            if not exists:
-                return
-            img = QImage(str(png_path))
-            _f.write(f"  QImage null: {img.isNull()}, size: {img.width()}x{img.height()}\n")
-            if img.isNull():
-                return
-            url = QUrl.fromLocalFile(str(png_path))
-            _f.write(f"  url: {url.toString()}\n")
-            self._edit.document().addResource(2, url, img)
-            img_fmt = QTextImageFormat()
-            img_fmt.setName(url.toString())
-            img_fmt.setWidth(img.width())
-            img_fmt.setHeight(img.height())
-            cursor.insertImage(img_fmt)
-            cursor.insertText(_LINE_SEP)
-            _f.write(f"  INSERTED OK {img.width()}x{img.height()}\n")
+        png_path = _render_math_image(latex)
+        if png_path is None or not png_path.exists():
+            return
+        img = QImage(str(png_path))
+        if img.isNull():
+            return
+        url = QUrl.fromLocalFile(str(png_path))
+        self._edit.document().addResource(2, url, img)
+        img_fmt = QTextImageFormat()
+        img_fmt.setName(url.toString())
+        img_fmt.setWidth(img.width())
+        img_fmt.setHeight(img.height())
+        cursor.insertImage(img_fmt)
+        cursor.insertText(_LINE_SEP)
 
     def _insert_figure_widget(self, cursor: QTextCursor, figure: Figure) -> None:
         """Insert a Figure model node as a centered QTextTable with image,
