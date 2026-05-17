@@ -339,7 +339,7 @@ def _table_block_format() -> QTextBlockFormat:
 def _make_table_format(ncols: int) -> QTextTableFormat:
     """Build a QTextTableFormat for a table with *ncols* columns."""
     tfmt = QTextTableFormat()
-    tfmt.setBorderBrush(QColor("#c0c0c0"))
+    tfmt.setBorderBrush(QColor("#e6a85c"))
     tfmt.setBorderStyle(QTextFrameFormat.BorderStyle_Solid)
     tfmt.setBorder(1)
     tfmt.setCellPadding(6)
@@ -756,18 +756,22 @@ class DocumentEditor(QWidget):
         has_caption = bool(table.caption)
         total_rows = nrows + (1 if has_caption else 0)
         qtable = cursor.insertTable(total_rows, ncols, tfmt)
-        # Header row: bold.
-        header_fmt = QTextCharFormat()
-        header_fmt.setFontWeight(QFont.Bold)
-        header_fmt.setForeground(QColor("#e65100"))
-        cell_fmt = QTextCharFormat()
-        cell_fmt.setForeground(QColor("#333333"))
+        # Header row: bold orange on darker orange background.
+        header_char = QTextCharFormat()
+        header_char.setFontWeight(QFont.Bold)
+        header_char.setForeground(QColor("#e65100"))
+        cell_char = QTextCharFormat()
+        cell_char.setForeground(QColor("#333333"))
         for r, row in enumerate(table.rows):
             for c in range(ncols):
                 cell = qtable.cellAt(r, c)
+                if r == 0:
+                    cf = cell.format()
+                    cf.setBackground(QColor("#ffe0b2"))
+                    cell.setFormat(cf)
                 cell_cursor = cell.firstCursorPosition()
                 text = row[c] if c < len(row) else ""
-                fmt = header_fmt if r == 0 else cell_fmt
+                fmt = header_char if r == 0 else cell_char
                 cell_cursor.insertText(text, fmt)
         if has_caption:
             # Merge all cells in the last row for the caption.
