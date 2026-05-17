@@ -7,7 +7,8 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QSettings, QThread, QTimer, Signal
 from PySide6.QtGui import (
-    QAction, QActionGroup, QGuiApplication, QKeySequence,
+    QAction, QActionGroup, QGuiApplication, QKeySequence, QTextCursor,
+    QTextDocument,
 )
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
@@ -320,6 +321,50 @@ class EquationBuilderWindow(QWidget):
 _RECENT_FILES_MAX = 8
 
 
+class _FindBar(QWidget):
+    """Compact find bar shown at the bottom of the editor area."""
+
+    find_next = Signal()
+    find_prev = Signal()
+    closed = Signal()
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(6, 2, 6, 2)
+
+        lay.addWidget(QLabel("Find:"))
+        self.field = QLineEdit(self)
+        self.field.setPlaceholderText("Search text...")
+        self.field.setClearButtonEnabled(True)
+        self.field.returnPressed.connect(self.find_next)
+        lay.addWidget(self.field, 1)
+
+        prev_btn = QPushButton("Previous", self)
+        prev_btn.clicked.connect(self.find_prev)
+        lay.addWidget(prev_btn)
+
+        next_btn = QPushButton("Next", self)
+        next_btn.setDefault(True)
+        next_btn.clicked.connect(self.find_next)
+        lay.addWidget(next_btn)
+
+        self.case_cb = QCheckBox("Match case", self)
+        lay.addWidget(self.case_cb)
+
+        close_btn = QPushButton("x", self)
+        close_btn.setFixedWidth(28)
+        close_btn.setFlat(True)
+        close_btn.clicked.connect(self.closed)
+        lay.addWidget(close_btn)
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key_Escape:
+            self.closed.emit()
+        else:
+            super().keyPressEvent(event)
+
+
 class MainWindow(QMainWindow):
     # Module-level registry of every live MainWindow. Needed so windows
     # spawned via File > New window don't get garbage-collected the
@@ -380,7 +425,21 @@ class MainWindow(QMainWindow):
         self._splitter.addWidget(self._pdf_side_panel)
         self._splitter.setStretchFactor(0, 2)
         self._splitter.setStretchFactor(1, 3)
-        self.setCentralWidget(self._splitter)
+
+        # Find bar (hidden until Ctrl+F).
+        self._find_bar = _FindBar(self)
+        self._find_bar.hide()
+        self._find_bar.find_next.connect(lambda: self._do_find(forward=True))
+        self._find_bar.find_prev.connect(lambda: self._do_find(forward=False))
+        self._find_bar.closed.connect(self._find_bar.hide)
+
+        central = QWidget(self)
+        cl = QVBoxLayout(central)
+        cl.setContentsMargins(0, 0, 0, 0)
+        cl.setSpacing(0)
+        cl.addWidget(self._splitter, 1)
+        cl.addWidget(self._find_bar)
+        self.setCentralWidget(central)
         self._side_by_side = False
 
         self._status = QStatusBar(self)
@@ -549,6 +608,9 @@ class MainWindow(QMainWindow):
                                       shortcut=QKeySequence.SelectAll, triggered=text.selectAll)
         self.act_clear_fmt = QAction("Clear &formatting", self,
                                      triggered=e.clear_formatting)
+        self.act_find = QAction("&Find...", self,
+                                shortcut=QKeySequence.Find,
+                                triggered=self._show_find_bar)
 
         # Alignment (exclusive group — exactly one is checked at any time)
         self.alignment_group = QActionGroup(self)
@@ -762,6 +824,8 @@ class MainWindow(QMainWindow):
         m_edit.addSeparator()
         m_edit.addAction(self.act_cut); m_edit.addAction(self.act_copy)
         m_edit.addAction(self.act_paste); m_edit.addAction(self.act_select_all)
+        m_edit.addSeparator()
+        m_edit.addAction(self.act_find)
         m_edit.addSeparator()
         m_edit.addAction(self.act_clear_fmt)
 
@@ -1302,6 +1366,42 @@ class MainWindow(QMainWindow):
         self._pdf_zoom_slider.setVisible(show_pdf_zoom)
         self._pdf_zoom_in_btn.setVisible(show_pdf_zoom)
         self._pdf_zoom_label.setVisible(show_pdf_zoom)
+
+    # ----- find bar -----
+
+    def _show_find_bar(self) -> None:
+        self._find_bar.show()
+        self._find_bar.field.setFocus()
+        self._find_bar.field.selectAll()
+
+    def _do_find(self, forward: bool = True) -> None:
+        text = self._find_bar.field.text()
+        if not text:
+            return
+        tab = self._tabs.currentIndex()
+        if tab == 0:
+            widget = self._editor.text_edit
+        elif tab == 1:
+            widget = self._latex_view._edit
+        else:
+            return
+        flags = QTextDocument.FindFlags()
+        if not forward:
+            flags |= QTextDocument.FindBackward
+        if self._find_bar.case_cb.isChecked():
+            flags |= QTextDocument.FindCaseSensitively
+        found = widget.find(text, flags)
+        if not found:
+            # Wrap around: move cursor to start/end and retry once.
+            cursor = widget.textCursor()
+            if forward:
+                cursor.movePosition(QTextCursor.Start)
+            else:
+                cursor.movePosition(QTextCursor.End)
+            widget.setTextCursor(cursor)
+            found = widget.find(text, flags)
+        if not found:
+            self._status.showMessage(f'"{text}" not found', 3000)
 
     def _on_fontsize_changed(self, *_) -> None:
         try:
