@@ -434,6 +434,13 @@ class DocumentEditor(QWidget):
         page_layout.addWidget(self._edit, 1)
         self._apply_page_size(page_sizes.by_code(self._meta.page_size))
 
+        # Attach the live spell-check highlighter. The class is a
+        # graceful no-op when pyspellchecker isn't installed, so this
+        # always returns SOMETHING the View > Check spelling toggle
+        # can call into.
+        from .spellcheck import SpellHighlighter
+        self._spell_highlighter = SpellHighlighter(self._edit.document())
+
         desk = QWidget()
         desk.setObjectName("desk")
         desk.setStyleSheet("#desk { background: #d0d4d8; }")
@@ -660,8 +667,17 @@ class DocumentEditor(QWidget):
             bfmt = QTextBlockFormat()
             bfmt.setAlignment(_QT_ALIGNMENT.get(block.alignment, Qt.AlignLeft))
             cursor.setBlockFormat(bfmt)
+            # Pass an explicit body char format so every Text run
+            # carries Georgia + body_font_pt as its baseline. Without
+            # this, _insert_inline emits Text fragments with an empty
+            # font, which inherits whatever the cursor's current font
+            # happens to be — which can be the previous block's font
+            # (a heading, a code span, the last block of a different
+            # body size) and produces visibly mismatched paragraphs
+            # when the user presses Enter to start a new one.
+            body_fmt = self._body_char_format()
             for inline in block.children:
-                self._insert_inline(cursor, inline)
+                self._insert_inline(cursor, inline, base_format=body_fmt)
         elif isinstance(block, MathBlock):
             cursor.block().setUserState(_STATE_MATH_BLOCK)
             # Multi-line bodies (\begin{align}\n...\n\end{align}, split
@@ -1121,6 +1137,26 @@ class DocumentEditor(QWidget):
 
     def body_font_pt(self) -> int:
         return self._body_font_pt
+
+    def is_spell_check_enabled(self) -> bool:
+        return self._spell_highlighter.is_enabled()
+
+    def set_spell_check_enabled(self, enabled: bool) -> None:
+        self._spell_highlighter.set_enabled(enabled)
+
+    def _body_char_format(self) -> QTextCharFormat:
+        """The baseline char format every body Text fragment uses on
+        render. Carrying it explicitly (instead of letting Qt inherit
+        from the cursor) keeps fonts consistent when the user starts a
+        new paragraph after a heading or a code span. Honours the
+        current zoom so scaled-up text on screen still matches the
+        body when the user presses Enter and types."""
+        fmt = QTextCharFormat()
+        f = QFont("Georgia")
+        zoom = self._zoom_percent / 100 if self._zoom_percent else 1.0
+        f.setPointSizeF(self._body_font_pt * zoom)
+        fmt.setFont(f)
+        return fmt
 
     def set_body_font_pt(self, pt: int) -> None:
         """Change the default body text size and re-apply it to every
