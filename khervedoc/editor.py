@@ -54,6 +54,8 @@ _ENV_STRIP_RE = _re.compile(
 def _render_math_image(latex: str, font_size: int = 14) -> QImage | None:
     """Render a LaTeX math expression to a QImage using matplotlib.
 
+    Handles multi-line equations (align, gather, etc.) by splitting on
+    ``\\\\`` and rendering each line separately, stacked vertically.
     Returns None if matplotlib is unavailable or the expression fails to
     render. Results are cached in memory."""
     if latex in _MATH_IMAGE_CACHE:
@@ -72,14 +74,36 @@ def _render_math_image(latex: str, font_size: int = 14) -> QImage | None:
     if not raw:
         _MATH_IMAGE_CACHE[latex] = None
         return None
+    # Translate LaTeX commands that mathtext doesn't know about.
+    raw = raw.replace("\\tfrac", "\\frac")
+    raw = raw.replace("\\dfrac", "\\frac")
+    raw = raw.replace("\\text{", "\\mathrm{")
+    raw = raw.replace("\\operatorname{", "\\mathrm{")
+    raw = raw.replace("\\displaystyle", "")
+    raw = raw.replace("\\textstyle", "")
+    raw = raw.replace("\\nonumber", "")
+    raw = raw.replace("\\notag", "")
+    raw = raw.replace("\\label{", "\\mathrm{")  # hide labels
+    # Split multi-line math on \\ and clean up alignment markers.
+    lines = _re.split(r"\\\\", raw)
+    lines = [ln.replace("&", " ").strip() for ln in lines]
+    lines = [ln for ln in lines if ln]
+    if not lines:
+        _MATH_IMAGE_CACHE[latex] = None
+        return None
     try:
-        fig = MplFigure(dpi=150)
+        n = len(lines)
+        line_height = 0.35  # inches per line (tight)
+        fig_h = max(0.4, n * line_height)
+        fig = MplFigure(figsize=(6, fig_h), dpi=150)
         fig.patch.set_alpha(0)
-        fig.text(0.5, 0.5, f"${raw}$", fontsize=font_size,
-                 ha="center", va="center", math_fontfamily="cm")
+        for i, line in enumerate(lines):
+            y = 1.0 - (i + 0.5) / n
+            fig.text(0.5, y, f"${line}$", fontsize=font_size,
+                     ha="center", va="center", math_fontfamily="cm")
         buf = _BytesIO()
         fig.savefig(buf, format="png", bbox_inches="tight",
-                    pad_inches=0.02, transparent=True)
+                    pad_inches=0.04, transparent=True)
         buf.seek(0)
         img = QImage()
         img.loadFromData(buf.read())
