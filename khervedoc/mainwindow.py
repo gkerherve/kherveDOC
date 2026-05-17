@@ -694,6 +694,9 @@ class MainWindow(QMainWindow):
                                    triggered=self._show_history)
 
         # Help
+        self.act_help_guide = QAction("&User guide", self,
+                                      shortcut=QKeySequence("F1"),
+                                      triggered=self._show_help_guide)
         self.act_shortcuts = QAction("&Keyboard shortcuts", self,
                                      triggered=self._show_shortcuts)
         self.act_about = QAction("&About kherveDOC", self, triggered=self._about)
@@ -797,6 +800,7 @@ class MainWindow(QMainWindow):
         self._refresh_window_menu()
 
         m_help = mb.addMenu("&Help")
+        m_help.addAction(self.act_help_guide)
         m_help.addAction(self.act_shortcuts)
         m_help.addSeparator()
         m_help.addAction(self.act_about)
@@ -1457,6 +1461,218 @@ class MainWindow(QMainWindow):
             f"</table>"
             f"<p style='color: #888; margin-top: 12px;'>"
             f"Built with PySide6, tectonic, PyMuPDF and pygit2.</p>")
+
+    def _show_help_guide(self) -> None:
+        from PySide6.QtWidgets import QTextBrowser
+        dlg = QDialog(self)
+        dlg.setWindowTitle("kherveDOC User Guide")
+        dlg.resize(680, 560)
+        tabs = QTabWidget(dlg)
+
+        def _page(html: str) -> QTextBrowser:
+            b = QTextBrowser()
+            b.setOpenExternalLinks(True)
+            b.setHtml(html)
+            return b
+
+        tabs.addTab(_page(
+            "<h2>Getting started</h2>"
+            "<p>kherveDOC is a document editor that looks and feels like a "
+            "word processor but produces publication-quality LaTeX output. "
+            "Every document is stored as a structured model and can be "
+            "compiled to PDF in real time.</p>"
+
+            "<h3>The three tabs</h3>"
+            "<ul>"
+            "<li><b>Formatted</b> &mdash; WYSIWYG editor. Type, format text, "
+            "insert figures and equations just like in a word processor.</li>"
+            "<li><b>LaTeX</b> &mdash; Raw LaTeX source with syntax highlighting "
+            "and autocomplete. Edits here are parsed back into the Formatted "
+            "tab automatically.</li>"
+            "<li><b>PDF</b> &mdash; Live preview of the compiled document "
+            "(requires <i>tectonic</i>).</li>"
+            "</ul>"
+
+            "<h3>Side-by-side mode</h3>"
+            "<p>Press <code>Ctrl+4</code> or use <b>View &gt; PDF side panel</b> "
+            "to split the window: edit on the left, preview PDF on the right.</p>"
+
+            "<h3>Zoom controls</h3>"
+            "<p>Two independent zoom sliders sit in the status bar at the bottom. "
+            "The editor zoom appears on the Formatted tab; the PDF zoom appears "
+            "on the PDF tab (and whenever the side panel is open).</p>"
+        ), "Getting started")
+
+        tabs.addTab(_page(
+            "<h2>Formatting</h2>"
+            "<h3>Text styles</h3>"
+            "<p>Select text and use the toolbar or shortcuts:</p>"
+            "<table cellpadding='4'>"
+            "<tr><td><code>Ctrl+B</code></td><td>Bold</td></tr>"
+            "<tr><td><code>Ctrl+I</code></td><td>Italic</td></tr>"
+            "<tr><td><code>Ctrl+U</code></td><td>Underline</td></tr>"
+            "</table>"
+            "<p>Additional styles (strikethrough, small caps, code, sub/superscript) "
+            "are available in the toolbar and the <b>Format</b> menu.</p>"
+
+            "<h3>Paragraph styles</h3>"
+            "<p>Use the <b>Paragraph Style</b> dropdown in the toolbar to set "
+            "the current paragraph to Body text, Title, Author, Abstract, "
+            "Keywords, or Heading 1&ndash;5.</p>"
+
+            "<h3>Alignment &amp; columns</h3>"
+            "<p>Four alignment buttons (left, centre, right, justify) and "
+            "three column buttons (1, 2, 3 columns) control document layout. "
+            "These apply to the whole document.</p>"
+
+            "<h3>Lists</h3>"
+            "<p>Click the bullet or numbered list button to start a list. "
+            "Use <code>Tab</code> to increase nesting and "
+            "<code>Shift+Tab</code> to decrease it.</p>"
+        ), "Formatting")
+
+        tabs.addTab(_page(
+            "<h2>Inserting content</h2>"
+
+            "<h3>Mathematics</h3>"
+            "<p><b>Inline math</b> (<code>Ctrl+M</code>): wrap selected text "
+            "in <code>$...$</code> for inline equations.</p>"
+            "<p><b>Math block</b> (<code>Ctrl+Shift+M</code>): insert a "
+            "numbered display equation.</p>"
+            "<p><b>Equation builder</b> (<code>Ctrl+Shift+E</code>): pick from "
+            "templates (fractions, integrals, matrices, sums, etc.).</p>"
+            "<p><b>Symbol picker</b> (<code>Ctrl+Shift+S</code>): browse Greek "
+            "letters, operators, arrows and other symbols.</p>"
+
+            "<h3>Figures &amp; tables</h3>"
+            "<p>Use <b>Insert &gt; Figure</b> to add an image. The path is "
+            "resolved relative to the document folder. A thumbnail preview "
+            "appears in the Formatted tab.</p>"
+            "<p><b>Insert &gt; Table</b> opens a dialog for rows, columns, "
+            "caption and alignment.</p>"
+
+            "<h3>References</h3>"
+            "<p><b>Hyperlink</b> (<code>Ctrl+K</code>): attach a URL to "
+            "selected text.</p>"
+            "<p><b>Footnote</b>, <b>Citation</b> and <b>Cross-reference</b> "
+            "are available from the Insert menu and toolbar.</p>"
+
+            "<h3>Other elements</h3>"
+            "<ul>"
+            "<li><b>Code block</b> &mdash; monospaced, highlighted region</li>"
+            "<li><b>Raw LaTeX</b> &mdash; arbitrary LaTeX preserved verbatim</li>"
+            "<li><b>Page break</b> / <b>Horizontal rule</b></li>"
+            "<li><b>Multi-column region</b> &mdash; local 2-column area "
+            "inside a single-column document</li>"
+            "</ul>"
+        ), "Inserting content")
+
+        tabs.addTab(_page(
+            "<h2>Files &amp; formats</h2>"
+            "<h3>Saving</h3>"
+            "<p>kherveDOC saves in two native formats:</p>"
+            "<ul>"
+            "<li><b>.kdocz</b> &mdash; a ZIP archive containing the document "
+            "model and all embedded images. Portable and self-contained.</li>"
+            "<li><b>.kdoc.json</b> &mdash; plain-text JSON. Good for version "
+            "control diffs.</li>"
+            "</ul>"
+            "<p>A <code>.tex</code> file is always written alongside the save "
+            "so you can compile externally.</p>"
+
+            "<h3>Importing</h3>"
+            "<ul>"
+            "<li><b>.tex</b> &mdash; LaTeX source is parsed into the document "
+            "model. Unknown commands are preserved as Raw LaTeX blocks.</li>"
+            "<li><b>.docx</b> &mdash; Word documents (requires "
+            "<code>python-docx</code>). Embedded images are extracted next to "
+            "the file.</li>"
+            "</ul>"
+
+            "<h3>Exporting</h3>"
+            "<ul>"
+            "<li><b>.tex</b> &mdash; standalone LaTeX source ready for any "
+            "LaTeX compiler.</li>"
+            "<li><b>.pdf</b> &mdash; compiled via tectonic.</li>"
+            "</ul>"
+
+            "<h3>Document properties</h3>"
+            "<p>Open <b>File &gt; Document properties</b> to change:</p>"
+            "<ul>"
+            "<li><b>Metadata</b>: title, author, document class</li>"
+            "<li><b>Text</b>: font family, font size, line spacing, "
+            "first-line indent</li>"
+            "<li><b>Layout</b>: page margins, column count</li>"
+            "<li><b>Packages</b>: custom LaTeX packages</li>"
+            "</ul>"
+        ), "Files && formats")
+
+        tabs.addTab(_page(
+            "<h2>Version control</h2>"
+            "<p>kherveDOC has built-in Git integration via "
+            "<code>pygit2</code>.</p>"
+
+            "<h3>Automatic commits</h3>"
+            "<p>Every time you save, kherveDOC creates a Git commit in the "
+            "document's folder. If a remote is configured, it pushes "
+            "automatically. Commits use your global Git identity "
+            "(name and email from <code>git config</code>).</p>"
+
+            "<h3>Manual commit</h3>"
+            "<p>Use <b>History &gt; Commit &amp; push now</b> in the toolbar "
+            "or menu to force an immediate save, commit and push.</p>"
+
+            "<h3>Browsing history</h3>"
+            "<p><b>History &gt; Show commit history</b> opens a dialog listing "
+            "every commit with date, SHA, message and author. Click a row "
+            "to view the full diff with red/green syntax highlighting.</p>"
+
+            "<p><i>Note:</i> If <code>pygit2</code> is not installed, "
+            "documents still save normally but version history is unavailable.</p>"
+        ), "Version control")
+
+        tabs.addTab(_page(
+            "<h2>LaTeX tab</h2>"
+            "<p>The LaTeX tab gives you direct access to the document source "
+            "with full syntax highlighting and autocomplete.</p>"
+
+            "<h3>Syntax highlighting</h3>"
+            "<p>Colour-coded backgrounds mark different environments:</p>"
+            "<table cellpadding='4'>"
+            "<tr><td style='background:#eef3ff; padding:4px 8px;'>"
+            "Math (equation, align, gather&hellip;)</td></tr>"
+            "<tr><td style='background:#e8f5e9; padding:4px 8px;'>"
+            "Figures</td></tr>"
+            "<tr><td style='background:#fff3e0; padding:4px 8px;'>"
+            "Tables</td></tr>"
+            "<tr><td style='background:#f5f5f7; padding:4px 8px;'>"
+            "Lists (itemize, enumerate, description)</td></tr>"
+            "<tr><td style='background:#fff5d6; padding:4px 8px;'>"
+            "Abstract</td></tr>"
+            "<tr><td style='background:#f3e5f5; padding:4px 8px;'>"
+            "Bibliography</td></tr>"
+            "<tr><td style='background:#eef2f7; padding:4px 8px;'>"
+            "Code (verbatim, lstlisting, minted)</td></tr>"
+            "<tr><td style='background:#e8f0fe; padding:4px 8px;'>"
+            "Section headings</td></tr>"
+            "</table>"
+            "<p>Commands, braces, inline math and comments each have their "
+            "own foreground colour.</p>"
+
+            "<h3>Autocomplete</h3>"
+            "<p>Type <code>\\</code> followed by at least one letter and a "
+            "popup will suggest matching LaTeX commands. Press "
+            "<code>Enter</code> or click to accept a suggestion.</p>"
+
+            "<h3>Two-way editing</h3>"
+            "<p>Changes in the LaTeX tab are parsed back into the Formatted "
+            "tab after a short pause (1.5 s). Edits in the Formatted tab "
+            "update the LaTeX source immediately.</p>"
+        ), "LaTeX tab")
+
+        layout = QVBoxLayout(dlg)
+        layout.addWidget(tabs)
+        dlg.exec()
 
     def _show_shortcuts(self) -> None:
         rows = [
