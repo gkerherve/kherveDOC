@@ -666,6 +666,7 @@ class MainWindow(QMainWindow):
         self._import_source_dir: Path | None = None
         self._kdocz_extract_dir: Path | None = None   # set when opening a .kdocz
         self._build_dir = Path(tempfile.mkdtemp(prefix="khervedoc-"))
+        self._compiler = "latex"
         self._compile_worker: _CompileWorker | None = None
         self._pending_recompile = False
         # Background git worker for pull / push so the GUI never
@@ -1205,7 +1206,6 @@ class MainWindow(QMainWindow):
             statusTip="Compile the PDF now",
             triggered=self._kick_compile)
         self._auto_compile = True
-        self._compiler = "latex"
         self.act_auto_compile = QAction(
             icons.auto_compile_on(), "Auto-compile", self,
             checkable=True, checked=True,
