@@ -699,19 +699,25 @@ class MainWindow(QMainWindow):
         self._editor = DocumentEditor(self)
         self._latex_view = LatexView(self)
         self._preview = PdfPreview(self)
+        self._console = self._make_console()
 
         self._tabs = QTabWidget(self)
         self._tabs.addTab(self._editor, "Visual")
         self._tabs.addTab(self._latex_view, "Code")
         self._tabs.addTab(self._preview, "PDF")
+        self._tabs.addTab(self._console, "Console")
         self._tabs.currentChanged.connect(self._on_tab_changed)
 
-        # Splitter: left = tabs, right = PDF panel (hidden until toggled).
+        # Splitter: left = tabs, right = side panel (hidden until toggled).
         self._splitter = QSplitter(Qt.Horizontal, self)
         self._splitter.addWidget(self._tabs)
         self._pdf_side_panel = PdfPreview(self)
-        self._pdf_side_panel.hide()
-        self._splitter.addWidget(self._pdf_side_panel)
+        self._console_side = self._make_console()
+        self._side_tabs = QTabWidget(self)
+        self._side_tabs.addTab(self._pdf_side_panel, "PDF")
+        self._side_tabs.addTab(self._console_side, "Console")
+        self._side_tabs.hide()
+        self._splitter.addWidget(self._side_tabs)
         # Give the PDF side panel ~2× the width of the Formatted tab.
         # The PDF page renders at its native typeset size (small
         # text), so it benefits from the extra width far more than
@@ -1090,6 +1096,9 @@ class MainWindow(QMainWindow):
         self.act_view_pdf = QAction("Show &PDF tab", self,
                                     shortcut=QKeySequence("Ctrl+3"),
                                     triggered=lambda: self._tabs.setCurrentIndex(2))
+        self.act_view_console = QAction("Show Co&nsole tab", self,
+                                        shortcut=QKeySequence("Ctrl+5"),
+                                        triggered=lambda: self._tabs.setCurrentIndex(3))
         self.act_side_by_side = QAction("PDF &side panel", self,
                                         shortcut=QKeySequence("Ctrl+4"),
                                         checkable=True, triggered=self._toggle_side_by_side)
@@ -1316,6 +1325,7 @@ class MainWindow(QMainWindow):
         m_view.addAction(self.act_view_formatted)
         m_view.addAction(self.act_view_latex)
         m_view.addAction(self.act_view_pdf)
+        m_view.addAction(self.act_view_console)
         m_view.addSeparator()
         m_view.addAction(self.act_side_by_side)
         m_view.addSeparator()
@@ -2245,13 +2255,26 @@ class MainWindow(QMainWindow):
         self._editor.set_page_size(code)
         self._kick_compile()
 
+    @staticmethod
+    def _make_console() -> QPlainTextEdit:
+        w = QPlainTextEdit()
+        w.setReadOnly(True)
+        w.setLineWrapMode(QPlainTextEdit.NoWrap)
+        w.setStyleSheet(
+            "QPlainTextEdit {"
+            "  background: #1e1e1e; color: #d4d4d4;"
+            "  font-family: 'Consolas', 'Courier New', monospace;"
+            "  font-size: 10pt;"
+            "}")
+        return w
+
     def _toggle_side_by_side(self, checked: bool) -> None:
         self._side_by_side = checked
         if checked:
-            self._pdf_side_panel.show()
+            self._side_tabs.show()
             self._kick_compile()
         else:
-            self._pdf_side_panel.hide()
+            self._side_tabs.hide()
         self._update_zoom_visibility()
 
     def _toggle_fit_page_width(self, checked: bool) -> None:
@@ -2873,6 +2896,8 @@ class MainWindow(QMainWindow):
             "tab automatically.</li>"
             "<li><b>PDF</b> &mdash; Live preview of the compiled document "
             "(requires <i>tectonic</i>).</li>"
+            "<li><b>Console</b> &mdash; Full compiler output log. "
+            "Switches here automatically when compilation fails.</li>"
             "</ul>"
 
             "<h3>Side-by-side mode</h3>"
@@ -3151,6 +3176,7 @@ class MainWindow(QMainWindow):
                 ("Ctrl+2", "Code tab"),
                 ("Ctrl+3", "PDF tab"),
                 ("Ctrl+4", "PDF side panel"),
+                ("Ctrl+5", "Console tab"),
                 ("Ctrl+F", "Find (text or PDF search)"),
             ]),
         ]
@@ -3307,6 +3333,8 @@ class MainWindow(QMainWindow):
 
     def _on_compile_done(self, result: CompileResult) -> None:
         self._status.clearMessage()
+        # Always feed the full log to the console widgets.
+        self._update_console(result)
         if result.ok and result.pdf_path is not None:
             self._preview.show_pdf(result.pdf_path)
             if self._side_by_side:
@@ -3349,6 +3377,30 @@ class MainWindow(QMainWindow):
         if self._pending_recompile:
             self._pending_recompile = False
             self._kick_compile()
+
+    def _update_console(self, result: CompileResult) -> None:
+        """Populate the compiler console tabs with the full log."""
+        from datetime import datetime as _dt
+        timestamp = _dt.now().strftime("%H:%M:%S")
+        compiler = self._compiler.capitalize()
+        if result.ok:
+            header = f"[{timestamp}] {compiler} — compiled successfully"
+        else:
+            header = f"[{timestamp}] {compiler} — ERROR: {result.error}"
+        body = result.log or ""
+        text = f"{header}\n{'─' * 60}\n{body}"
+        for console in (self._console, self._console_side):
+            console.setPlainText(text)
+            # Scroll to the first error line if compilation failed
+            if not result.ok:
+                cursor = console.textCursor()
+                cursor.movePosition(QTextCursor.Start)
+                console.setTextCursor(cursor)
+        # Auto-switch to Console tab on error so the user sees the log
+        if not result.ok:
+            self._tabs.setCurrentIndex(3)
+            if self._side_by_side:
+                self._side_tabs.setCurrentIndex(1)
 
     # ----- cross-tab "Show in …" navigation -----
 
