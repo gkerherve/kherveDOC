@@ -2389,7 +2389,9 @@ class MainWindow(QMainWindow):
         self._settings.setValue("theme_dark", dark)
 
         # Tab styling
-        self._tabs.setStyleSheet(themes.tab_stylesheet(t))
+        tab_qss = themes.tab_stylesheet(t)
+        self._tabs.setStyleSheet(tab_qss)
+        self._side_tabs.setStyleSheet(tab_qss)
 
         # Icons
         icons.set_dark(dark)
