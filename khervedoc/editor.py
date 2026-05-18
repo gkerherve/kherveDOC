@@ -21,8 +21,8 @@ from PySide6.QtGui import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QInputDialog, QMenu, QScrollArea, QVBoxLayout,
-    QWidget,
+    QDialog, QFrame, QHBoxLayout, QInputDialog, QMenu, QScrollArea,
+    QVBoxLayout, QWidget,
 )
 
 from . import page_sizes
@@ -2029,7 +2029,7 @@ class DocumentEditor(QWidget):
         the source happens to be a sketch the user made in-app."""
         from .drawing_dialog import DrawingDialog
         dlg = DrawingDialog(self._images_dir, self)
-        if dlg.exec() != dlg.Accepted:
+        if dlg.exec() != QDialog.Accepted:
             return
         path = dlg.saved_path()
         if path is None:
