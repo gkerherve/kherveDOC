@@ -13,7 +13,9 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, QUrl, Qt, Signal
+import time
+
+from PySide6.QtCore import QEvent, QTimer, QUrl, Qt, Signal
 from PySide6.QtGui import (
     QAction, QColor, QFont, QImage, QKeySequence, QTextBlockFormat,
     QTextCharFormat, QTextCursor, QTextFrameFormat, QTextImageFormat,
@@ -21,8 +23,8 @@ from PySide6.QtGui import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog, QFrame, QHBoxLayout, QInputDialog, QMenu, QScrollArea,
-    QVBoxLayout, QWidget,
+    QDialog, QFrame, QHBoxLayout, QInputDialog, QMenu, QMessageBox,
+    QScrollArea, QVBoxLayout, QWidget,
 )
 
 from . import page_sizes
@@ -635,6 +637,7 @@ class DocumentEditor(QWidget):
         self._edit.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._edit.setContextMenuPolicy(Qt.CustomContextMenu)
         self._edit.customContextMenuRequested.connect(self._show_context_menu)
+        self._edit.installEventFilter(self)
         self._extra_context_actions: list[tuple[str, object]] = []
 
         self._page = QFrame()
@@ -2047,6 +2050,69 @@ class DocumentEditor(QWidget):
         fig = Figure(path=str(path), caption=cap, label=label or None,
                      width="0.7\\textwidth")
         self._insert_figure_widget(c, fig)
+        self._on_text_changed()
+
+    # ----- double-click-to-re-edit drawings ---------------------------
+
+    def eventFilter(self, obj, event):
+        if obj is self._edit and event.type() == QEvent.Type.MouseButtonDblClick:
+            cursor = self._edit.cursorForPosition(event.pos())
+            qtable = cursor.currentTable()
+            if qtable is not None:
+                tfmt = qtable.format()
+                if tfmt.property(_P_IS_FIGURE):
+                    self._edit_existing_figure(qtable)
+                    return True
+        return super().eventFilter(obj, event)
+
+    def _edit_existing_figure(self, qtable: QTextTable) -> None:
+        """Re-open the drawing dialog for a figure that has a JSON sidecar."""
+        from .drawing_dialog import DrawingDialog
+
+        tfmt = qtable.format()
+        img_path_str = tfmt.property(_P_FIGURE_PATH) or ""
+        resolved = self._resolve_image_path(img_path_str)
+        if resolved is None:
+            return
+
+        sidecar = resolved.with_suffix(".json")
+        if not sidecar.exists():
+            QMessageBox.information(
+                self, "Cannot re-edit",
+                "This figure was not created with the drawing tool, "
+                "or its drawing data is missing.")
+            return
+
+        dlg = DrawingDialog(self._images_dir, self, existing_path=resolved)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        self._refresh_figure_image(qtable, resolved)
+
+    def _refresh_figure_image(self, qtable: QTextTable,
+                              img_path: Path) -> None:
+        """Replace the image in row 0 of a figure table with the updated PNG."""
+        cell = qtable.cellAt(0, 0)
+        cursor = cell.firstCursorPosition()
+        end = cell.lastCursorPosition()
+        cursor.setPosition(end.position(), QTextCursor.KeepAnchor)
+        cursor.removeSelectedText()
+        bf = cursor.blockFormat()
+        bf.setAlignment(Qt.AlignHCenter)
+        cursor.setBlockFormat(bf)
+        img = QImage(str(img_path))
+        if not img.isNull():
+            max_w, max_h = 400, 300
+            if img.width() > max_w or img.height() > max_h:
+                img = img.scaled(max_w, max_h, Qt.KeepAspectRatio,
+                                 Qt.SmoothTransformation)
+            # Cache-buster so Qt doesn't show the stale version.
+            url = QUrl(f"figure:{img_path}?v={time.time()}")
+            self._edit.document().addResource(2, url, img)
+            img_fmt = QTextImageFormat()
+            img_fmt.setName(url.toString())
+            img_fmt.setWidth(img.width())
+            img_fmt.setHeight(img.height())
+            cursor.insertImage(img_fmt)
         self._on_text_changed()
 
     def insert_table(self) -> None:
