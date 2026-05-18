@@ -12,6 +12,7 @@ venv/
 
 # Build/preview artefacts
 build/
+dist/
 *.aux
 *.log
 *.synctex.gz

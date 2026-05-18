@@ -53,6 +53,9 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
+        # Conflicting Qt bindings — we use PySide6, not PyQt5/PyQt6.
+        "PyQt5",
+        "PyQt6",
         # Large packages we don't use — shaves ~100 MB off the bundle.
         "tkinter",
         "unittest",
@@ -60,6 +63,19 @@ a = Analysis(
         "pip",
         "setuptools",
         "numpy.testing",
+        # Heavy transitive dependencies pulled in by the global env.
+        "scipy",
+        "pandas",
+        "IPython",
+        "jedi",
+        "parso",
+        "pyarrow",
+        "zmq",
+        "tornado",
+        "notebook",
+        "jupyter",
+        "docutils",
+        "babel",
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
