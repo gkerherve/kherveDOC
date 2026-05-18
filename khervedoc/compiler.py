@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -148,6 +149,9 @@ def compile_tex(
         env["TEXINPUTS"] = sep.join(texinputs_parts) + sep + existing
 
     try:
+        kw: dict = dict(capture_output=True, text=True, timeout=120, env=env)
+        if sys.platform == "win32":
+            kw["creationflags"] = subprocess.CREATE_NO_WINDOW
         proc = subprocess.run(
             [
                 tectonic_path,
@@ -157,10 +161,7 @@ def compile_tex(
                 "--outdir", str(workdir),
                 str(tex_path),
             ],
-            capture_output=True,
-            text=True,
-            timeout=120,
-            env=env,
+            **kw,
         )
     except subprocess.TimeoutExpired:
         return CompileResult(False, None, "", "tectonic timed out after 120s")

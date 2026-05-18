@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -305,10 +306,13 @@ def _git_cli_push(repo_dir: Path, remote_name: str,
     "fatal: Authentication failed for ..." string that the user
     actually needs to read."""
     try:
+        kw: dict = dict(cwd=str(repo_dir), capture_output=True,
+                        text=True, timeout=60)
+        if sys.platform == "win32":
+            kw["creationflags"] = subprocess.CREATE_NO_WINDOW
         proc = subprocess.run(
             ["git", "push", remote_name, ref],
-            cwd=str(repo_dir),
-            capture_output=True, text=True, timeout=60,
+            **kw,
         )
     except subprocess.TimeoutExpired:
         return False, "git push timed out after 60s."
