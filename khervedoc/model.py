@@ -227,7 +227,7 @@ Block = Union[Paragraph, Section, MathBlock, List, Figure, Table, RawLatex,
 # equation-builder palette uses \square as the placeholder slot for users
 # to fill in. Without it, every freshly-inserted template raises an
 # "Undefined control sequence \square" error from tectonic.
-DEFAULT_PACKAGES = ["amsmath", "amssymb", "graphicx", "multicol"]
+DEFAULT_PACKAGES = ["amsmath", "amssymb", "graphicx", "multicol", "float"]
 
 
 @dataclass

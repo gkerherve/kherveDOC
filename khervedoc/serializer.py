@@ -153,7 +153,7 @@ def serialize_block(node: Block, *, has_chapters: bool = False) -> str:
         cap = escape_text(node.caption)
         lab = _maybe_label(node.label) if node.label else ""
         return (
-            "\\begin{figure}[h]\n"
+            "\\begin{figure}[H]\n"
             "  \\centering\n"
             f"  \\includegraphics[width={node.width}]{{{path}}}\n"
             f"  \\caption{{{cap}}}\n"
@@ -175,7 +175,7 @@ def serialize_block(node: Block, *, has_chapters: bool = False) -> str:
         cap = escape_text(node.caption)
         lab = _maybe_label(node.label) if node.label else ""
         return (
-            "\\begin{table}[h]\n"
+            "\\begin{table}[H]\n"
             "  \\centering\n"
             f"  \\begin{{tabular}}{{{align}}}\n"
             f"    \\hline\n"
@@ -355,8 +355,11 @@ def serialize_document(doc: Document) -> str:
     parindent = "" if m.paragraph_indent else "\\setlength{\\parindent}{0pt}\n\\setlength{\\parskip}{0.8em}"
 
     preamble_extras = "\n".join(p for p in (font_pkg, spacing_pkg, spacing_cmd, parindent) if p)
+    pkg_list = list(m.packages)
+    if "float" not in pkg_list:
+        pkg_list.append("float")
     packages = geometry + "\n" + "\n".join(
-        f"\\usepackage{{{p}}}" for p in m.packages)
+        f"\\usepackage{{{p}}}" for p in pkg_list)
     if preamble_extras:
         packages += "\n" + preamble_extras
     # User-supplied preamble customisation (\lstset for listings styling,
