@@ -1093,17 +1093,26 @@ def import_md(md_source: str, image_dir: Path | None = None) -> Document:
                      f"{code}\n\\end{{lstlisting}}"))
             continue
 
-        # Display math ($$...$$ spanning lines)
-        if line.strip().startswith("$$"):
-            math_lines = [line.strip().removeprefix("$$")]
+        # Display math ($$...$$ spanning lines or single-line)
+        stripped = line.strip()
+        if stripped.startswith("$$"):
+            # Single-line: $$E = mc^2$$
+            if stripped.endswith("$$") and len(stripped) > 4:
+                latex = stripped[2:-2].strip()
+                children.append(MathBlock(latex=latex))
+                i += 1
+                continue
+            # Multi-line: $$ on its own or $$ ... \n ... $$
+            math_lines = [stripped[2:]]  # text after opening $$
             i += 1
             while i < len(lines):
-                if "$$" in lines[i]:
+                mline = lines[i]
+                if mline.strip().endswith("$$"):
                     math_lines.append(
-                        lines[i].strip().removesuffix("$$"))
+                        mline.strip().removesuffix("$$"))
                     i += 1
                     break
-                math_lines.append(lines[i])
+                math_lines.append(mline)
                 i += 1
             latex = "\n".join(math_lines).strip()
             children.append(MathBlock(latex=latex))
@@ -1130,25 +1139,48 @@ def import_md(md_source: str, image_dir: Path | None = None) -> Document:
             i += 1
             continue
 
-        # Unordered list
+        # Unordered list (with multi-line continuation)
         if re.match(r"^[-*+]\s", line):
             items = []
             while i < len(lines) and re.match(r"^[-*+]\s", lines[i]):
                 item_text = re.sub(r"^[-*+]\s+", "", lines[i])
-                items.append(ListItem(
-                    children=_md_parse_inlines(item_text)))
+                item_lines = [item_text]
                 i += 1
+                while i < len(lines) and lines[i].strip() \
+                        and not re.match(r"^[-*+]\s", lines[i]):
+                    item_lines.append(lines[i].strip())
+                    i += 1
+                items.append(ListItem(
+                    children=_md_parse_inlines(" ".join(item_lines))))
             children.append(ListNode(ordered=False, items=items))
             continue
 
-        # Ordered list
+        # Ordered list (with multi-line continuation and blank-line separation)
         if re.match(r"^\d+\.\s", line):
             items = []
-            while i < len(lines) and re.match(r"^\d+\.\s", lines[i]):
-                item_text = re.sub(r"^\d+\.\s+", "", lines[i])
+            while i < len(lines):
+                ol_m = re.match(r"^\d+\.\s+(.*)", lines[i])
+                if not ol_m:
+                    # Blank line between items is OK — skip and check next
+                    if not lines[i].strip():
+                        # Peek ahead: if the next non-blank is another item, skip
+                        j = i + 1
+                        while j < len(lines) and not lines[j].strip():
+                            j += 1
+                        if j < len(lines) and re.match(r"^\d+\.\s", lines[j]):
+                            i = j
+                            continue
+                    break
+                item_lines = [ol_m.group(1)]
+                i += 1
+                # Collect continuation lines (not blank, not a new item)
+                while i < len(lines) and lines[i].strip() \
+                        and not re.match(r"^\d+\.\s", lines[i]):
+                    item_lines.append(lines[i].strip())
+                    i += 1
+                item_text = " ".join(item_lines)
                 items.append(ListItem(
                     children=_md_parse_inlines(item_text)))
-                i += 1
             children.append(ListNode(ordered=True, items=items))
             continue
 
