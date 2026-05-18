@@ -208,8 +208,17 @@ class Keywords:
     type: str = "Keywords"
 
 
+@dataclass
+class Frame:
+    """Beamer slide. Children = frame title text. Subsequent blocks
+    (paragraphs, lists, math, etc.) up to the next Frame are the
+    slide's content."""
+    children: list[Inline] = field(default_factory=list)
+    type: str = "Frame"
+
+
 Block = Union[Paragraph, Section, MathBlock, List, Figure, Table, RawLatex,
-              Title, Author, Abstract, Keywords]
+              Title, Author, Abstract, Keywords, Frame]
 
 
 # ---------------- Metadata + document ----------------
@@ -366,6 +375,8 @@ def _build_block(d: dict) -> Block:
         return Abstract(children=_build_inlines(d.get("children", [])))
     if t == "Keywords":
         return Keywords(children=_build_inlines(d.get("children", [])))
+    if t == "Frame":
+        return Frame(children=_build_inlines(d.get("children", [])))
     raise ValueError(f"Unknown block node type: {t!r}")
 
 

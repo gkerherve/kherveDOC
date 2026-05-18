@@ -34,7 +34,7 @@ TEMPLATE_CHOICES = ["article", "report", "book", "letter", "beamer", "memoir"]
 
 from .model import (
     Abstract, Author, Citation, Comment, CrossRef, Document, DocMeta, Figure,
-    Footnote, Highlight, HIGHLIGHT_COLORS, InlineRaw, Keywords, Link,
+    Footnote, Frame, Highlight, HIGHLIGHT_COLORS, InlineRaw, Keywords, Link,
     List as ListNode, ListItem, MathBlock, MathInline, Paragraph, RawLatex,
     Section, Table, Text, Title,
 )
@@ -135,6 +135,7 @@ _STATE_AUTHOR = 8       # Author of the document; pulled into \author{} preamble
 _STATE_ABSTRACT = 9     # Abstract paragraph; consecutive blocks merge
 _STATE_KEYWORDS = 10    # Keyword line; consecutive blocks merge with \sep
 _STATE_CHAPTER = 11     # \chapter — only valid in report/book/memoir classes
+_STATE_FRAME = 12       # \begin{frame} — only valid in beamer class
 _STATE_MATH_BLOCK = 99
 _STATE_FIGURE = 100
 _STATE_TABLE = 101
@@ -292,6 +293,16 @@ def _heading_char_format(level: int) -> QTextCharFormat:
     f.setBold(True)
     f.setPointSize(_HEADING_FONT_SIZES.get(level, 12))
     fmt.setFont(f)
+    return fmt
+
+
+def _frame_char_format() -> QTextCharFormat:
+    fmt = QTextCharFormat()
+    f = QFont()
+    f.setBold(True)
+    f.setPointSize(18)
+    fmt.setFont(f)
+    fmt.setForeground(QColor("#1565C0"))
     return fmt
 
 
@@ -938,6 +949,12 @@ class DocumentEditor(QWidget):
             for inline in block.children:
                 self._insert_inline(cursor, inline, base_format=_keywords_char_format())
             return
+        if isinstance(block, Frame):
+            cursor.block().setUserState(_STATE_FRAME)
+            cfmt = _frame_char_format()
+            for inline in block.children:
+                self._insert_inline(cursor, inline, base_format=cfmt)
+            return
         if isinstance(block, Section):
             # level=0 represents \chapter; the rest map directly to
             # the QTextBlock's userState (which is what _classify_
@@ -1375,8 +1392,9 @@ class DocumentEditor(QWidget):
             # Italic is implied by the Keywords style.
             return Keywords(children=self._strip_implicit_marks(children, ["italic"]))
         if state == _STATE_CHAPTER:
-            # \chapter maps to Section(level=0).
             return Section(level=0, children=self._strip_implicit_marks(children, ["bold"]))
+        if state == _STATE_FRAME:
+            return Frame(children=self._strip_implicit_marks(children, ["bold"]))
 
         # Empty block: no fragments to inspect — fall back to state.
         it = block.begin()
@@ -1517,6 +1535,7 @@ class DocumentEditor(QWidget):
         """Apply a paragraph style by level code:
             -1 = Title,  -2 = Author,  -3 = Abstract,  -4 = Keywords,
             -5 = Chapter (\\chapter — only valid in report/book/memoir),
+            -6 = Frame (\\begin{frame} — only valid in beamer),
              0 = Body,  1..5 = Heading 1..5."""
         cursor = self._edit.textCursor()
         block = cursor.block()
@@ -1539,10 +1558,13 @@ class DocumentEditor(QWidget):
             QTextCursor(block).setBlockFormat(_keywords_block_format())
             block_cursor.setCharFormat(_keywords_char_format())
         elif level == -5:
-            # Chapter: above heading 1 in the visual hierarchy.
             block.setUserState(_STATE_CHAPTER)
             QTextCursor(block).setBlockFormat(QTextBlockFormat())
             block_cursor.mergeCharFormat(_heading_char_format(0))
+        elif level == -6:
+            block.setUserState(_STATE_FRAME)
+            QTextCursor(block).setBlockFormat(QTextBlockFormat())
+            block_cursor.mergeCharFormat(_frame_char_format())
         elif level >= 1:
             block.setUserState(level)
             QTextCursor(block).setBlockFormat(QTextBlockFormat())
@@ -2204,13 +2226,15 @@ class DocumentEditor(QWidget):
 
     def current_heading_level(self) -> int:
         """Returns -1 = Title, -2 = Author, -3 = Abstract, -4 = Keywords,
-        -5 = Chapter, 0 = Body, 1..5 = Heading, -99 = non-text block."""
+        -5 = Chapter, -6 = Frame, 0 = Body, 1..5 = Heading,
+        -99 = non-text block."""
         state = self._edit.textCursor().block().userState()
         if state == _STATE_TITLE: return -1
         if state == _STATE_AUTHOR: return -2
         if state == _STATE_ABSTRACT: return -3
         if state == _STATE_KEYWORDS: return -4
         if state == _STATE_CHAPTER: return -5
+        if state == _STATE_FRAME: return -6
         if 1 <= state <= 5: return state
         if state == _STATE_PARAGRAPH: return 0
         return -99

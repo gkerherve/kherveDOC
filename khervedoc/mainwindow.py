@@ -1894,35 +1894,47 @@ class MainWindow(QMainWindow):
         self._kick_compile()
 
     def _sync_chapter_enabled(self) -> None:
-        """Grey out the heading combo's "Chapter" entry whenever the
-        current documentclass doesn't support \\chapter (article,
-        letter, beamer). The user can still see the entry — they
-        just can't pick it — which makes the constraint visible
-        without hiding the feature."""
+        """Grey out Chapter / Frame entries in the heading combo when
+        the current documentclass doesn't support them."""
         if not hasattr(self, "_heading_combo"):
-            return  # toolbar not built yet
+            return
         from .editor import class_supports_chapter
         meta = self._editor.meta()
-        allowed = class_supports_chapter(meta.documentclass)
+        chapter_ok = class_supports_chapter(meta.documentclass)
+        frame_ok = (meta.documentclass or "").lower() == "beamer"
         model = self._heading_combo.model()
         for i in range(self._heading_combo.count()):
-            if self._heading_combo.itemData(i) == -5:
-                item = model.item(i)
-                if item is not None:
-                    flags = item.flags()
-                    if allowed:
-                        item.setFlags(flags | Qt.ItemIsEnabled
-                                            | Qt.ItemIsSelectable)
-                        item.setToolTip("")
-                    else:
-                        item.setFlags(flags & ~Qt.ItemIsEnabled
-                                            & ~Qt.ItemIsSelectable)
-                        item.setToolTip(
-                            "Chapter is only available in the book, "
-                            "report and memoir document classes — "
-                            "the current class is "
-                            f"{meta.documentclass!r}.")
-                break
+            data = self._heading_combo.itemData(i)
+            item = model.item(i)
+            if item is None:
+                continue
+            if data == -5:
+                flags = item.flags()
+                if chapter_ok:
+                    item.setFlags(flags | Qt.ItemIsEnabled
+                                        | Qt.ItemIsSelectable)
+                    item.setToolTip("")
+                else:
+                    item.setFlags(flags & ~Qt.ItemIsEnabled
+                                        & ~Qt.ItemIsSelectable)
+                    item.setToolTip(
+                        "Chapter is only available in the book, "
+                        "report and memoir document classes — "
+                        "the current class is "
+                        f"{meta.documentclass!r}.")
+            elif data == -6:
+                flags = item.flags()
+                if frame_ok:
+                    item.setFlags(flags | Qt.ItemIsEnabled
+                                        | Qt.ItemIsSelectable)
+                    item.setToolTip("")
+                else:
+                    item.setFlags(flags & ~Qt.ItemIsEnabled
+                                        & ~Qt.ItemIsSelectable)
+                    item.setToolTip(
+                        "Frame is only available in the beamer "
+                        "document class — the current class is "
+                        f"{meta.documentclass!r}.")
 
     def _on_zoom_slider_changed(self, pct: int) -> None:
         # Snap to 5%-multiples so drag movements feel less twitchy.
@@ -3012,15 +3024,9 @@ class MainWindow(QMainWindow):
         align_actions.get(align, self.act_align_left).setChecked(True)
         self._sync_column_toolbar()
         level = e.current_heading_level()
-        # heading_combo indices: 0=Body, 1=Title, 2=Author, 3=Abstract,
-        # 4=Keywords, 5..9=Heading 1..5
-        if level == -1: idx = 1
-        elif level == -2: idx = 2
-        elif level == -3: idx = 3
-        elif level == -4: idx = 4
-        elif 1 <= level <= 5: idx = level + 4
-        elif level == 0: idx = 0
-        else: idx = 0
+        idx = self._heading_combo.findData(level)
+        if idx < 0:
+            idx = 0
         if self._heading_combo.currentIndex() != idx:
             self._heading_combo.blockSignals(True)
             self._heading_combo.setCurrentIndex(idx)

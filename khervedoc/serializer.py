@@ -8,9 +8,9 @@ import re
 
 from .model import (
     Abstract, Author, Block, Citation, Comment, CrossRef, Document, Figure,
-    Footnote, Highlight, HIGHLIGHT_COLORS, Inline, InlineRaw, Keywords, Link,
-    List as ListNode, ListItem, MathBlock, MathInline, Paragraph, RawLatex,
-    Section, Table, Text, Title,
+    Footnote, Frame, Highlight, HIGHLIGHT_COLORS, Inline, InlineRaw, Keywords,
+    Link, List as ListNode, ListItem, MathBlock, MathInline, Paragraph,
+    RawLatex, Section, Table, Text, Title,
 )
 
 
@@ -213,6 +213,9 @@ def serialize_block(node: Block, *, has_chapters: bool = False) -> str:
                 f"{serialize_inlines(node.children)}\n"
                 f"\\end{{keyword}}\n")
 
+    if isinstance(node, Frame):
+        return serialize_inlines(node.children)
+
     raise TypeError(f"Unknown block node: {type(node).__name__}")
 
 
@@ -330,6 +333,7 @@ def serialize_document(doc: Document) -> str:
     page = page_sizes.by_code(doc.meta.page_size)
     m = doc.meta
     is_elsarticle = (m.documentclass or "").lower().startswith("elsarticle")
+    is_beamer = (m.documentclass or "").lower() == "beamer"
     has_chapters = (m.documentclass or "").lower() in _CHAPTER_CLASSES
 
     # Margins flow into geometry per-side so users can pick asymmetric layouts.
@@ -466,35 +470,67 @@ def serialize_document(doc: Document) -> str:
     children = doc.children
     n = len(children)
     i = 0
-    while i < n:
-        block = children[i]
-        if isinstance(block, Abstract):
-            paras: list[str] = []
-            while i < n and isinstance(children[i], Abstract):
-                paras.append(serialize_inlines(children[i].children))
-                i += 1
-            joined = "\n\n".join(p for p in paras if p)
-            parts.append(f"\\begin{{abstract}}\n{joined}\n\\end{{abstract}}\n")
-            if i < n: parts.append("\n")
-            continue
-        if isinstance(block, Keywords):
-            group: list = []
-            while i < n and isinstance(children[i], Keywords):
-                group.append(children[i])
-                i += 1
-            terms = _split_keyword_inlines(group)
-            joined = " \\sep ".join(terms)
-            parts.append(f"\\begin{{keyword}}\n{joined}\n\\end{{keyword}}\n")
-            if i < n: parts.append("\n")
-            continue
 
-        rendered = serialize_block(block, has_chapters=has_chapters)
-        if isinstance(block, Title):
-            emitted_maketitle = True
-        parts.append(rendered)
-        i += 1
-        if i < n:
-            parts.append("\n")
+    if is_beamer:
+        while i < n:
+            block = children[i]
+            if isinstance(block, Title):
+                parts.append("\\begin{frame}\n\\titlepage\n\\end{frame}\n")
+                emitted_maketitle = True
+                i += 1
+                if i < n: parts.append("\n")
+                continue
+            if isinstance(block, (Author, Abstract, Keywords)):
+                i += 1
+                continue
+            if isinstance(block, Frame):
+                frame_title = serialize_inlines(block.children)
+                i += 1
+                content_parts: list[str] = []
+                while i < n and not isinstance(children[i], (Frame, Section, Title)):
+                    content_parts.append(serialize_block(children[i]))
+                    i += 1
+                content = "\n".join(p for p in content_parts if p)
+                if frame_title:
+                    parts.append(f"\\begin{{frame}}{{{frame_title}}}\n{content}\n\\end{{frame}}\n")
+                else:
+                    parts.append(f"\\begin{{frame}}\n\\titlepage\n\\end{{frame}}\n")
+                if i < n: parts.append("\n")
+                continue
+            rendered = serialize_block(block, has_chapters=has_chapters)
+            parts.append(rendered)
+            i += 1
+            if i < n: parts.append("\n")
+    else:
+        while i < n:
+            block = children[i]
+            if isinstance(block, Abstract):
+                paras: list[str] = []
+                while i < n and isinstance(children[i], Abstract):
+                    paras.append(serialize_inlines(children[i].children))
+                    i += 1
+                joined = "\n\n".join(p for p in paras if p)
+                parts.append(f"\\begin{{abstract}}\n{joined}\n\\end{{abstract}}\n")
+                if i < n: parts.append("\n")
+                continue
+            if isinstance(block, Keywords):
+                group: list = []
+                while i < n and isinstance(children[i], Keywords):
+                    group.append(children[i])
+                    i += 1
+                terms = _split_keyword_inlines(group)
+                joined = " \\sep ".join(terms)
+                parts.append(f"\\begin{{keyword}}\n{joined}\n\\end{{keyword}}\n")
+                if i < n: parts.append("\n")
+                continue
+
+            rendered = serialize_block(block, has_chapters=has_chapters)
+            if isinstance(block, Title):
+                emitted_maketitle = True
+            parts.append(rendered)
+            i += 1
+            if i < n:
+                parts.append("\n")
 
     if has_metadata and not has_title_block and not emitted_maketitle:
         parts.insert(0, "\\maketitle\n")

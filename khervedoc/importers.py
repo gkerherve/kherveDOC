@@ -16,7 +16,7 @@ from pathlib import Path
 
 from .model import (
     Abstract, Author, Citation, CrossRef, Document, DocMeta, Figure, Footnote,
-    InlineRaw, Keywords, Link, List as ListNode, ListItem, MathBlock,
+    Frame, InlineRaw, Keywords, Link, List as ListNode, ListItem, MathBlock,
     MathInline, Paragraph, RawLatex, Section, Table, Text, Title,
 )
 
@@ -218,6 +218,8 @@ _BLOCK_DISPATCH = [
     ("flushleft",       re.compile(r"\\begin\{flushleft\}(.*?)\\end\{flushleft\}", re.DOTALL)),
     ("flushright",      re.compile(r"\\begin\{flushright\}(.*?)\\end\{flushright\}", re.DOTALL)),
     ("center",          re.compile(r"\\begin\{center\}(.*?)\\end\{center\}", re.DOTALL)),
+    # Beamer frames.
+    ("frame",           re.compile(r"\\begin\{frame\}(?:\{([^}]*)\})?(.*?)\\end\{frame\}", re.DOTALL)),
     # Sections / titles.
     ("section",         _SECTION_RE),
     ("maketitle",       re.compile(r"\\maketitle\b")),
@@ -614,6 +616,16 @@ def _dispatch(kind: str, m) -> object:
         if env_name == "frontmatter":
             return _parse_blocks(m.group(2))
         return RawLatex(text=m.group(0))
+    if kind == "frame":
+        title = (m.group(1) or "").strip()
+        body = (m.group(2) or "").strip()
+        out: list = []
+        if "\\titlepage" in body:
+            out.append(Title(children=[Text(text=title)] if title else []))
+        else:
+            out.append(Frame(children=_parse_inlines(title) if title else []))
+            out.extend(_parse_blocks(body))
+        return out
     if kind == "maketitle":
         return None
     return None

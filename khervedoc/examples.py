@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from .model import (
     Abstract, Author, Citation, CrossRef, DEFAULT_PACKAGES, Document, DocMeta,
-    Figure, Footnote, Keywords, Link, List as ListNode, ListItem, MathBlock,
-    MathInline, Paragraph, RawLatex, Section, Table, Text, Title,
+    Figure, Footnote, Frame, Keywords, Link, List as ListNode, ListItem,
+    MathBlock, MathInline, Paragraph, RawLatex, Section, Table, Text, Title,
 )
 
 
@@ -1472,21 +1472,53 @@ def thesis() -> Document:
             margin_right_cm=2.5,
             margin_top_cm=2.5,
             margin_bottom_cm=2.5,
-            packages=DEFAULT_PACKAGES + ["natbib", "hyperref", "appendix"],
+            packages=DEFAULT_PACKAGES + [
+                "natbib", "hyperref", "appendix", "algorithm2e",
+            ],
         ),
         children=[
-            Title(children=[Text(text="Title of the thesis")]),
-            Author(children=[Text(text="A. Student")]),
+            Title(children=[Text(text="Title of the Thesis")]),
+            Author(children=[Text(text="A. Student — University of Somewhere")]),
             Abstract(children=[Text(text=
-                "This template uses the standard report class configured "
-                "for a typical graduate thesis or dissertation. It has "
-                "double line-spacing, a wider left margin for binding, "
-                "and chapter-level sectioning (Heading 1 = \\chapter). "
+                "This template demonstrates the report class configured "
+                "for a typical graduate thesis. It features double "
+                "line-spacing, a wider left margin for binding, and "
+                "chapter-level sectioning (Heading 1 = \\chapter). The "
+                "template showcases cross-references, citations, figures, "
+                "tables, equations, algorithms, and appendices.")]),
+            Abstract(children=[Text(text=
                 "Adapt the margins and spacing to your institution's "
-                "requirements under File > Document properties.")]),
+                "requirements under File > Document properties. Replace "
+                "the placeholder text with your own content.")]),
 
+            RawLatex(text=(
+                "\\chapter*{Dedication}\n"
+                "\\addcontentsline{toc}{chapter}{Dedication}\n"
+                "\\vspace*{3cm}\n"
+                "\\begin{center}\n"
+                "\\textit{To my family, for their unwavering support.}\n"
+                "\\end{center}\n"
+                "\\newpage"
+            )),
+
+            RawLatex(text=(
+                "\\chapter*{Acknowledgements}\n"
+                "\\addcontentsline{toc}{chapter}{Acknowledgements}"
+            )),
+            _p(
+                "I would like to thank my supervisor, Prof. J. Smith, "
+                "for their guidance throughout this research. I am also "
+                "grateful to the members of the lab for fruitful "
+                "discussions, and to the funding body for financial "
+                "support.",
+            ),
+
+            RawLatex(text="\\tableofcontents\n\\newpage"),
+
+            # --- Chapter 1: Introduction ---
             Section(level=1, children=[Text(text="Introduction")]),
-            Section(level=2, children=[Text(text="Motivation")]),
+
+            Section(level=2, children=[Text(text="Background and motivation")]),
             _p(
                 "The report class is the natural choice for any long-form "
                 "document with chapters: theses, dissertations, technical "
@@ -1494,46 +1526,258 @@ def thesis() -> Document:
                 "article class mainly in that Heading 1 produces "
                 "\\chapter (starting a new page) rather than \\section.",
             ),
-            Section(level=2, children=[Text(text="Objectives")]),
             _p(
-                "State the research questions or objectives of the work. "
-                "Number them for easy cross-referencing in later chapters.",
+                "Recent advances in the field ",
+                Citation(keys=["smith2020", "jones2021"], style="citep"),
+                " have opened new avenues for exploration. However, "
+                "several open questions remain, particularly concerning "
+                "the scalability of existing approaches and their "
+                "applicability to real-world datasets.",
+            ),
+
+            Section(level=2, children=[Text(text="Research objectives")]),
+            _p(
+                "This thesis addresses the following research questions:",
             ),
             _ord_items(
-                "First research question or objective",
-                "Second research question or objective",
-                "Third research question or objective",
+                "How does the proposed method compare to baseline "
+                "approaches on standard benchmarks?",
+                "What is the computational complexity of the algorithm, "
+                "and how does it scale with input size?",
+                "Can the method generalise to unseen domains without "
+                "re-training?",
             ),
 
-            Section(level=1, children=[Text(text="Literature review")]),
+            Section(level=2, children=[Text(text="Thesis outline")]),
             _p(
-                "Survey the relevant prior work and identify the gap your "
-                "thesis addresses. Use citations extensively: ",
-                Citation(keys=["smith2020", "jones2021"], style="citep"),
-                ". A typical thesis chapter runs 15–30 pages with dozens "
-                "of references.",
+                "The remainder of this thesis is organised as follows. "
+                "Chapter 2 reviews the relevant literature. Chapter 3 "
+                "describes the methodology and algorithm design. "
+                "Chapter 4 presents the experimental results "
+                "(see Table ", CrossRef(label="tab:results", kind="ref"),
+                " and Figure ", CrossRef(label="fig:results", kind="ref"),
+                "). Chapter 5 discusses the findings, and Chapter 6 "
+                "concludes with a summary and directions for future work.",
             ),
 
+            # --- Chapter 2: Literature Review ---
+            Section(level=1, children=[Text(text="Literature Review")]),
+
+            Section(level=2, children=[Text(text="Theoretical foundations")]),
+            _p(
+                "The mathematical framework underpinning this work builds "
+                "on the seminal contributions of ",
+                Citation(keys=["fourier1822"], style="citet"),
+                " and subsequent extensions by ",
+                Citation(keys=["shannon1948"], style="citet"),
+                ". The key insight is that any signal can be decomposed "
+                "into a linear combination of orthogonal basis functions.",
+            ),
+
+            Section(level=2, children=[Text(text="Related work")]),
+            _p(
+                "Several authors have proposed methods that are related "
+                "to ours. ",
+                Citation(keys=["doe2019"], style="citet"),
+                " introduced a variational approach that achieves "
+                "competitive accuracy but requires cubic time complexity. ",
+                Citation(keys=["lee2022"], style="citet"),
+                " later improved upon this with a linearised "
+                "approximation, though at the cost of reduced precision.",
+            ),
+
+            Section(level=2, children=[Text(text="Identified gap")]),
+            _p(
+                "Despite these advances, no existing method simultaneously "
+                "achieves sub-quadratic complexity and maintains accuracy "
+                "above 90\\% on the benchmark suite. This thesis proposes "
+                "a novel algorithm that meets both criteria (see Equation ",
+                CrossRef(label="eq:objective", kind="eqref"),
+                " in Chapter 3).",
+            ),
+
+            # --- Chapter 3: Methodology ---
             Section(level=1, children=[Text(text="Methodology")]),
+
+            Section(level=2, children=[Text(text="Problem formulation")]),
             _p(
-                "Describe your methods in enough detail for reproduction. "
-                "Mathematical notation follows the same conventions as in "
-                "a journal paper:",
+                "Let the input data be represented as a matrix ",
+                MathInline(latex="X \\in \\mathbb{R}^{n \\times d}"),
+                " and the target vector as ",
+                MathInline(latex="y \\in \\mathbb{R}^n"),
+                ". The objective is to find the parameter vector ",
+                MathInline(latex="\\beta^*"),
+                " that minimises the regularised loss:",
             ),
             MathBlock(
-                latex=r"\hat{\beta} = (X^\top X)^{-1} X^\top y",
-                numbered=True, label="eq:ols",
+                latex=r"\beta^* = \arg\min_{\beta} \|X\beta - y\|_2^2 "
+                      r"+ \lambda \|\beta\|_1",
+                numbered=True, label="eq:objective",
             ),
 
-            Section(level=1, children=[Text(text="Results")]),
-            _p("Present your results here with tables and figures."),
-
-            Section(level=1, children=[Text(text="Discussion")]),
-            _p("Interpret the results in the context of the literature."),
-
-            Section(level=1, children=[Text(text="Conclusion")]),
+            Section(level=2, children=[Text(text="Proposed algorithm")]),
             _p(
-                "Summarise the thesis contributions and suggest future work.",
+                "We introduce Algorithm 1 below, which solves Equation ",
+                CrossRef(label="eq:objective", kind="eqref"),
+                " in ", MathInline(latex="O(n \\log n)"), " time.",
+            ),
+            RawLatex(text=(
+                "\\begin{algorithm}[H]\n"
+                "\\SetAlgoLined\n"
+                "\\KwIn{Data matrix $X$, target $y$, regularisation $\\lambda$}\n"
+                "\\KwOut{Optimal parameters $\\beta^*$}\n"
+                "Initialise $\\beta_0 \\leftarrow 0$\\;\n"
+                "\\For{$t = 1$ \\KwTo $T$}{\n"
+                "  Compute gradient $g_t \\leftarrow \\nabla L(\\beta_{t-1})$\\;\n"
+                "  Update $\\beta_t \\leftarrow \\mathrm{prox}_{\\lambda}(\\beta_{t-1} - \\eta g_t)$\\;\n"
+                "}\n"
+                "\\Return $\\beta_T$\\;\n"
+                "\\caption{Proximal gradient descent}\n"
+                "\\label{alg:pgd}\n"
+                "\\end{algorithm}"
+            )),
+
+            Section(level=2, children=[Text(text="Implementation details")]),
+            _p(
+                "The algorithm was implemented in Python 3.12 using NumPy "
+                "for linear algebra operations. All experiments were run "
+                "on a workstation with an AMD Ryzen 9 CPU and 64 GB RAM. "
+                "The convergence tolerance was set to ",
+                MathInline(latex="\\epsilon = 10^{-6}"),
+                " and the maximum number of iterations to ",
+                MathInline(latex="T = 10{,}000"), ".",
+            ),
+
+            # --- Chapter 4: Results ---
+            Section(level=1, children=[Text(text="Results")]),
+
+            Section(level=2, children=[Text(text="Quantitative evaluation")]),
+            _p(
+                "Table ", CrossRef(label="tab:results", kind="ref"),
+                " summarises the performance of our method against "
+                "three baselines across four benchmark datasets.",
+            ),
+            Table(
+                rows=[
+                    ["Method", "Dataset A", "Dataset B", "Dataset C", "Dataset D"],
+                    ["Baseline 1", "82.3%", "78.1%", "85.6%", "79.4%"],
+                    ["Baseline 2", "84.7%", "80.3%", "86.2%", "81.0%"],
+                    ["Baseline 3", "86.1%", "82.5%", "87.0%", "83.2%"],
+                    ["Ours", "91.4%", "89.7%", "92.1%", "90.3%"],
+                ],
+                caption="Accuracy comparison across benchmark datasets.",
+                label="tab:results",
+                alignment="lcccc",
+            ),
+            _p(
+                "Our method outperforms all baselines on every dataset, "
+                "with the largest improvement (+7.2 pp) on Dataset B. "
+                "The gains are statistically significant at ",
+                MathInline(latex="p < 0.01"), " under a paired t-test.",
+            ),
+
+            Section(level=2, children=[Text(text="Qualitative analysis")]),
+            _p(
+                "Figure ", CrossRef(label="fig:results", kind="ref"),
+                " illustrates a typical convergence trajectory. The "
+                "algorithm reaches near-optimal loss within the first "
+                "500 iterations.",
+            ),
+            Figure(
+                path="figures/convergence.pdf",
+                caption="Convergence of the objective function over iterations.",
+                label="fig:results",
+                width="0.75\\textwidth",
+            ),
+
+            # --- Chapter 5: Discussion ---
+            Section(level=1, children=[Text(text="Discussion")]),
+
+            Section(level=2, children=[Text(text="Interpretation of results")]),
+            _p(
+                "The results in Table ",
+                CrossRef(label="tab:results", kind="ref"),
+                " confirm that the ",
+                MathInline(latex="\\ell_1"),
+                "-regularised formulation (Equation ",
+                CrossRef(label="eq:objective", kind="eqref"),
+                ") induces sufficient sparsity to improve generalisation "
+                "while maintaining computational efficiency.",
+            ),
+
+            Section(level=2, children=[Text(text="Limitations")]),
+            _items(
+                "The current method assumes the features are standardised; "
+                "non-standardised inputs may require a pre-processing step.",
+                "We evaluated on tabular data only; extension to image or "
+                "text domains remains future work.",
+                "The convergence guarantee assumes strong convexity, which "
+                "may not hold for all loss functions.",
+            ),
+
+            # --- Chapter 6: Conclusion ---
+            Section(level=1, children=[Text(text="Conclusion")]),
+
+            Section(level=2, children=[Text(text="Summary of contributions")]),
+            _ord_items(
+                "A novel proximal gradient algorithm (Algorithm 1) that "
+                "achieves sub-quadratic complexity.",
+                "Empirical validation on four standard benchmarks showing "
+                "consistent accuracy gains over existing methods.",
+                "An open-source implementation available for "
+                "reproducibility.",
+            ),
+
+            Section(level=2, children=[Text(text="Future work")]),
+            _p(
+                "Future directions include extending the algorithm to "
+                "streaming data settings, investigating non-convex "
+                "variants of the objective, and applying the method to "
+                "large-scale industrial datasets.",
+            ),
+
+            # --- Appendix ---
+            RawLatex(text="\\appendix"),
+
+            Section(level=1, children=[Text(text="Supplementary Data")]),
+            _p(
+                "This appendix contains supplementary tables and figures "
+                "referenced in the main text. Additional experimental "
+                "results, including per-fold cross-validation scores, "
+                "are available in the accompanying online repository.",
+            ),
+            Table(
+                rows=[
+                    ["Fold", "Precision", "Recall", "F1"],
+                    ["1", "0.923", "0.911", "0.917"],
+                    ["2", "0.935", "0.928", "0.931"],
+                    ["3", "0.918", "0.905", "0.911"],
+                    ["4", "0.941", "0.932", "0.936"],
+                    ["5", "0.929", "0.919", "0.924"],
+                ],
+                caption="Per-fold cross-validation results on Dataset A.",
+                label="tab:cv-results",
+                alignment="lccc",
+            ),
+
+            Section(level=1, children=[Text(text="Derivations")]),
+            _p(
+                "This appendix provides the full derivation of the "
+                "gradient expression used in Algorithm 1. Starting from "
+                "the loss function in Equation ",
+                CrossRef(label="eq:objective", kind="eqref"),
+                ":",
+            ),
+            MathBlock(
+                latex=r"\nabla L(\beta) = 2 X^\top (X\beta - y) "
+                      r"+ \lambda \, \mathrm{sign}(\beta)",
+                numbered=True, label="eq:gradient",
+            ),
+
+            _p(
+                "A complete bibliography should be placed here using "
+                "\\\\bibliography\\{refs\\} and \\\\bibliographystyle\\{\\} "
+                "commands, or managed via BibTeX / BibLaTeX.",
             ),
         ],
     )
@@ -1542,7 +1786,7 @@ def thesis() -> Document:
 # -------------------------------------------------------- beamer slides
 
 def beamer_slides() -> Document:
-    """Beamer presentation template — a skeleton slide deck."""
+    """Beamer presentation template using Frame blocks for slides."""
     return Document(
         meta=_meta(
             documentclass="beamer",
@@ -1566,38 +1810,34 @@ def beamer_slides() -> Document:
             Title(children=[Text(text="Presentation title")]),
             Author(children=[Text(text="A. Speaker — Institution")]),
 
-            Section(level=1, children=[Text(text="Introduction")]),
-            _p(
-                "This template uses the beamer class for creating PDF "
-                "presentations. Each Heading 1 creates a new section; "
-                "each Heading 2 creates a new frame (slide). The Madrid "
-                "theme is set in the preamble — change it to any of "
-                "the themes listed in the comments.",
-            ),
+            Frame(children=[Text(text="Outline")]),
+            RawLatex(text="\\tableofcontents"),
 
-            Section(level=2, children=[Text(text="What is beamer?")]),
+            Section(level=1, children=[Text(text="Introduction")]),
+
+            Frame(children=[Text(text="What is beamer?")]),
             _p(
-                "Beamer is the standard LaTeX class for slide presentations. "
-                "It supports overlays, animations, handout mode and "
-                "speaker notes. KherveTeX compiles beamer documents "
-                "to PDF — each slide becomes one page.",
+                "Beamer is the standard LaTeX class for slide "
+                "presentations. It supports overlays, animations, "
+                "handout mode and speaker notes.",
             ),
             _items(
-                "Bullet points render as standard itemize",
-                "Math works exactly as in articles",
-                "Tables and figures are supported",
+                "Each Frame block becomes one slide",
+                "Sections create outline entries",
+                "Math, tables, and figures work as in articles",
                 "Themes control the visual appearance",
             ),
 
-            Section(level=2, children=[Text(text="Mathematics in slides")]),
+            Frame(children=[Text(text="Mathematics in slides")]),
             _p("Equations work the same as in any LaTeX document:"),
             MathBlock(
                 latex=r"e^{i\pi} + 1 = 0",
                 numbered=False,
             ),
 
-            Section(level=1, children=[Text(text="Main content")]),
-            Section(level=2, children=[Text(text="Key results")]),
+            Section(level=1, children=[Text(text="Main Content")]),
+
+            Frame(children=[Text(text="Key Results")]),
             _p("Present your main results here. Keep slides concise."),
             Table(
                 rows=[
@@ -1610,7 +1850,7 @@ def beamer_slides() -> Document:
                 alignment="lrr",
             ),
 
-            Section(level=2, children=[Text(text="Summary")]),
+            Frame(children=[Text(text="Summary")]),
             _p("Conclude with your key takeaways."),
             _ord_items(
                 "First main contribution",
