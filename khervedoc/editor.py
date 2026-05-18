@@ -2114,6 +2114,25 @@ class DocumentEditor(QWidget):
         self._insert_figure_widget(c, fig)
         self._on_text_changed()
 
+    def drop_image_file(self, src: Path) -> None:
+        """Copy *src* into the images directory and insert a Figure block."""
+        import shutil
+        dest_dir = self._images_dir
+        if dest_dir is None:
+            return
+        dest = dest_dir / src.name
+        if dest.exists():
+            stem, suffix = src.stem, src.suffix
+            n = 1
+            while dest.exists():
+                dest = dest_dir / f"{stem}_{n}{suffix}"
+                n += 1
+        try:
+            shutil.copy2(src, dest)
+        except OSError:
+            return
+        self._on_image_received(str(dest))
+
     def insert_figure(self) -> None:
         path, ok = QInputDialog.getText(self, "Insert figure", "Image path:")
         if not ok or not path: return

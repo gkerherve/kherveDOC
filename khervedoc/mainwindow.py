@@ -708,6 +708,10 @@ class MainWindow(QMainWindow):
 
     _OPENABLE_SUFFIXES = {".kdocz", ".kdoc.json", ".tex", ".md",
                           ".markdown", ".docx", ".json"}
+    _IMAGE_SUFFIXES = {
+        ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff",
+        ".webp", ".svg",
+    }
 
     def __init__(self, theme_name: str | None = None):
         super().__init__()
@@ -1940,7 +1944,7 @@ class MainWindow(QMainWindow):
             for url in event.mimeData().urls():
                 if url.isLocalFile():
                     suffix = Path(url.toLocalFile()).suffix.lower()
-                    if suffix in self._OPENABLE_SUFFIXES:
+                    if suffix in self._OPENABLE_SUFFIXES | self._IMAGE_SUFFIXES:
                         event.acceptProposedAction()
                         return
         super().dragEnterEvent(event)
@@ -1949,8 +1953,13 @@ class MainWindow(QMainWindow):
         for url in event.mimeData().urls():
             if url.isLocalFile():
                 path = Path(url.toLocalFile())
-                if path.suffix.lower() in self._OPENABLE_SUFFIXES:
+                suffix = path.suffix.lower()
+                if suffix in self._OPENABLE_SUFFIXES:
                     self._open_path(path)
+                    event.acceptProposedAction()
+                    return
+                if suffix in self._IMAGE_SUFFIXES:
+                    self._editor.drop_image_file(path)
                     event.acceptProposedAction()
                     return
         super().dropEvent(event)
