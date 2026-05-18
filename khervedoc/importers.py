@@ -63,14 +63,15 @@ def _strip_balanced_command(src: str, command: str) -> str:
         pos = p
 
 
-def _extract_preamble_extras(src: str) -> str:
+def _extract_preamble_extras(src: str, *, strip_author: bool = True) -> str:
     r"""Capture everything between \documentclass and \begin{document}
     that the model doesn't already represent.
 
     Removed (already modelled):
       - \documentclass[opts]{class}
       - \usepackage[opts]{name}
-      - \title{...}, \author{...}, \journal{...}
+      - \title{...}, \author{...}, \journal{...}  (only when
+        *strip_author* is True — journal classes need these preserved)
       - line comments
 
     Kept (so they survive the round-trip and the PDF retains its
@@ -91,9 +92,10 @@ def _extract_preamble_extras(src: str) -> str:
         r"\\documentclass(?:\[[^\]]*\])?\{[^}]+\}", "", preamble)
     preamble = re.sub(
         r"\\usepackage(?:\[[^\]]*\])?\{[^}]+\}", "", preamble)
-    preamble = _strip_balanced_command(preamble, "title")
-    preamble = _strip_balanced_command(preamble, "author")
-    preamble = _strip_balanced_command(preamble, "journal")
+    if strip_author:
+        preamble = _strip_balanced_command(preamble, "title")
+        preamble = _strip_balanced_command(preamble, "author")
+        preamble = _strip_balanced_command(preamble, "journal")
     # Strip \Kstroke definitions — the serializer always emits its own.
     preamble = re.sub(
         r"\\(?:provide|renew|new)command\{?\\Kstroke\}?.*", "", preamble)
@@ -757,14 +759,20 @@ def import_tex(tex_source: str) -> Document:
     else:
         author_clean = ""
     doc_class = docclass_m.group(1) if docclass_m else "article"
+    _STANDARD_CLASSES = {
+        "article", "report", "book", "letter", "memoir", "beamer",
+        "scrartcl", "scrreprt", "scrbook",
+    }
+    is_standard = doc_class.lower() in _STANDARD_CLASSES
 
     # Parse the \documentclass[...] options so we don't drop column
     # count / body font size on every LaTeX-tab edit. Without this,
     # editing the LaTeX view round-trips `[10pt,twocolumn]` into
     # `[12pt]{article}` because the model defaults take over.
     class_opts_m = _DOCCLASS_OPTS_RE.search(tex_source)
-    doc_class_opts = [o.strip() for o in class_opts_m.group(1).split(",")] \
-        if class_opts_m else []
+    raw_class_opts = class_opts_m.group(1).strip() if class_opts_m else ""
+    doc_class_opts = [o.strip() for o in raw_class_opts.split(",")] \
+        if raw_class_opts else []
     body_font_pt = 12
     for opt in doc_class_opts:
         if opt in ("10pt", "11pt", "12pt"):
@@ -774,6 +782,10 @@ def import_tex(tex_source: str) -> Document:
     if "twocolumn" in doc_class_opts:
         column_count = 2
     # `onecolumn` is the default; leave column_count at 1.
+
+    # For non-standard classes (journal templates) preserve the raw
+    # options string so "VANCOUVER,LATO2COL" etc. survive round-trip.
+    class_options = "" if is_standard else raw_class_opts
 
     # For Elsevier classes we keep \author[opts]{...\corref{...}},
     # \ead, \cortext, \affiliation etc. as raw LaTeX in frontmatter_extras
@@ -788,11 +800,13 @@ def import_tex(tex_source: str) -> Document:
     # styling, \definecolor, \hypersetup, custom \newcommand etc.) so
     # the PDF re-compiled from KherveTeX retains the framed line-numbered
     # syntax-coloured code blocks the user authored upstream.
-    preamble_extras = _extract_preamble_extras(tex_source)
+    preamble_extras = _extract_preamble_extras(tex_source,
+                                               strip_author=is_standard)
     meta = DocMeta(
         title=(title_text or "").strip(),
         author=author_clean,
         documentclass=doc_class,
+        class_options=class_options,
         packages=packages or ["amsmath", "graphicx"],
         page_size=page_size,
         body_font_pt=body_font_pt,

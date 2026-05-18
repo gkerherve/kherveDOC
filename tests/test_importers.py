@@ -661,3 +661,29 @@ y &= 2
     # The killer assertion: no equation* wrapping the align* env.
     assert "\\begin{equation*}\n\\begin{align*}" not in out
     assert "\\begin{align*}" in out
+
+
+def test_journal_class_preserves_options_and_authors():
+    """Non-standard document classes keep their class options and
+    multi-author blocks through the round-trip."""
+    src = r"""\documentclass[VANCOUVER,LATO2COL]{WileyNJDv5}
+\usepackage{tikz}
+\author[1]{Alice}
+\author[2]{Bob}
+\address[1]{\orgname{MIT}}
+\title{My paper}
+\begin{document}
+\maketitle
+Hello world.
+\end{document}"""
+    doc = _round_trip(src)
+    assert doc.meta.class_options == "VANCOUVER,LATO2COL"
+    assert doc.meta.documentclass == "WileyNJDv5"
+    out = serialize_document(doc)
+    assert "\\documentclass[VANCOUVER,LATO2COL]{WileyNJDv5}" in out
+    # Multi-author blocks preserved in preamble_extras
+    assert "\\author[1]{Alice}" in out
+    assert "\\author[2]{Bob}" in out
+    assert "\\address[1]" in out
+    # No auto-generated geometry for journal classes
+    assert "\\usepackage[" not in out or "geometry" not in out.split("\\begin{document}")[0]

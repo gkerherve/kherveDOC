@@ -282,7 +282,14 @@ def _body_font_pt_class_option(pt: int) -> str:
 
 
 def _class_options(m) -> str:
-    """Comma-joined documentclass options: font size, twocolumn, etc."""
+    """Comma-joined documentclass options: font size, twocolumn, etc.
+
+    If `class_options` is set (journal templates), emit it verbatim
+    so options like "VANCOUVER,LATO2COL" survive the round-trip.
+    """
+    raw = getattr(m, "class_options", "")
+    if raw:
+        return raw
     opts = [_body_font_pt_class_option(m.body_font_pt)]
     if getattr(m, "column_count", 1) == 2:
         opts.append("twocolumn")
@@ -335,31 +342,41 @@ def serialize_document(doc: Document) -> str:
     is_elsarticle = (m.documentclass or "").lower().startswith("elsarticle")
     is_beamer = (m.documentclass or "").lower() == "beamer"
     has_chapters = (m.documentclass or "").lower() in _CHAPTER_CLASSES
+    # Journal classes carry their own layout — don't inject geometry,
+    # setspace, or font packages that may conflict.
+    is_journal = bool(getattr(m, "class_options", ""))
 
     # Margins flow into geometry per-side so users can pick asymmetric layouts.
-    geometry = (
-        f"\\usepackage[{page.geometry_option},"
-        f"top={m.margin_top_cm}cm,bottom={m.margin_bottom_cm}cm,"
-        f"left={m.margin_left_cm}cm,right={m.margin_right_cm}cm]{{geometry}}"
-    )
-    font_pkg = _FONT_FAMILY_PACKAGES.get(m.body_font_family, "")
-    spacing_pkg = "\\usepackage{setspace}"
-    spacing_cmd = ""
-    if abs(m.line_spacing - 1.0) > 0.01:
-        if abs(m.line_spacing - 1.5) < 0.01:
-            spacing_cmd = "\\onehalfspacing"
-        elif abs(m.line_spacing - 2.0) < 0.01:
-            spacing_cmd = "\\doublespacing"
-        else:
-            spacing_cmd = f"\\setstretch{{{m.line_spacing}}}"
-    parindent = "" if m.paragraph_indent else "\\setlength{\\parindent}{0pt}\n\\setlength{\\parskip}{0.8em}"
+    if is_journal:
+        geometry = ""
+    else:
+        geometry = (
+            f"\\usepackage[{page.geometry_option},"
+            f"top={m.margin_top_cm}cm,bottom={m.margin_bottom_cm}cm,"
+            f"left={m.margin_left_cm}cm,right={m.margin_right_cm}cm]{{geometry}}"
+        )
+    font_pkg = "" if is_journal else _FONT_FAMILY_PACKAGES.get(m.body_font_family, "")
+    if is_journal:
+        spacing_pkg = ""
+        spacing_cmd = ""
+    else:
+        spacing_pkg = "\\usepackage{setspace}"
+        spacing_cmd = ""
+        if abs(m.line_spacing - 1.0) > 0.01:
+            if abs(m.line_spacing - 1.5) < 0.01:
+                spacing_cmd = "\\onehalfspacing"
+            elif abs(m.line_spacing - 2.0) < 0.01:
+                spacing_cmd = "\\doublespacing"
+            else:
+                spacing_cmd = f"\\setstretch{{{m.line_spacing}}}"
+    parindent = "" if (m.paragraph_indent or is_journal) else "\\setlength{\\parindent}{0pt}\n\\setlength{\\parskip}{0.8em}"
 
     preamble_extras = "\n".join(p for p in (font_pkg, spacing_pkg, spacing_cmd, parindent) if p)
     pkg_list = list(m.packages)
-    if "float" not in pkg_list:
+    if "float" not in pkg_list and not is_journal:
         pkg_list.append("float")
-    packages = geometry + "\n" + "\n".join(
-        f"\\usepackage{{{p}}}" for p in pkg_list)
+    pkg_lines = "\n".join(f"\\usepackage{{{p}}}" for p in pkg_list)
+    packages = (geometry + "\n" + pkg_lines).strip() if geometry else pkg_lines
     if preamble_extras:
         packages += "\n" + preamble_extras
     # User-supplied preamble customisation (\lstset for listings styling,
@@ -463,10 +480,15 @@ def serialize_document(doc: Document) -> str:
 
     # Standard article / report / book / etc. — title and author go in
     # the preamble, abstract / keywords flow inline in the body.
+    # For journal classes preamble_extras already carries the full
+    # \title{} / \author[]{} blocks — don't emit duplicates.
+    extras_src = (m.preamble_extras or "")
     preamble_meta = ""
     if has_metadata:
-        preamble_meta += f"\\title{{{title_text or '~'}}}\n"
-        preamble_meta += f"\\author{{{author_text or '~'}}}\n"
+        if not re.search(r"\\title\b", extras_src):
+            preamble_meta += f"\\title{{{title_text or '~'}}}\n"
+        if not re.search(r"\\author\b", extras_src):
+            preamble_meta += f"\\author{{{author_text or '~'}}}\n"
 
     parts: list[str] = []
     emitted_maketitle = False

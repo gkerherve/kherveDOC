@@ -235,6 +235,11 @@ class DocMeta:
     title: str = "Untitled"
     author: str = ""
     documentclass: str = "article"
+    # Raw class options string from \documentclass[...]{...}.  Empty means
+    # the serializer builds the options from body_font_pt / column_count;
+    # non-empty is emitted verbatim so journal-specific options like
+    # "VANCOUVER,LATO2COL" survive the round-trip.
+    class_options: str = ""
     packages: list[str] = field(default_factory=lambda: list(DEFAULT_PACKAGES))
     page_size: str = "A4"        # short code from khervedoc.page_sizes
     # Page margins in centimetres, fed straight into the geometry package.
@@ -390,6 +395,7 @@ def _build_document(d: dict) -> Document:
         title=meta_d.get("title", "Untitled"),
         author=meta_d.get("author", ""),
         documentclass=meta_d.get("documentclass", "article"),
+        class_options=str(meta_d.get("class_options", "")),
         packages=list(meta_d.get("packages", list(DEFAULT_PACKAGES))),
         page_size=meta_d.get("page_size", "A4"),
         margin_top_cm=float(meta_d.get("margin_top_cm", 2.5)),
