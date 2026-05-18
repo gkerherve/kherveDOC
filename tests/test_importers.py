@@ -550,6 +550,24 @@ Visit \Kstroke herveFitting today.
     assert r"\Kstroke" in out
 
 
+def test_chapter_imports_as_section_level_0_and_round_trips():
+    src = r"""\documentclass{report}\begin{document}
+\chapter{Introduction}
+Body text after the chapter.
+\section{Background}
+\end{document}"""
+    doc = _round_trip(src)
+    sections = [b for b in doc.children if isinstance(b, Section)]
+    assert sections, "no Section blocks imported"
+    levels = [s.level for s in sections]
+    assert 0 in levels   # the \chapter
+    assert 1 in levels   # the \section
+    # Round-trip preserves \chapter literally.
+    from khervedoc.serializer import serialize_document
+    out = serialize_document(doc)
+    assert "\\chapter{Introduction}" in out
+
+
 def test_unknown_macro_with_arg_preserved():
     """Multi-arg unknown macros (e.g. \\textcolor{red}{x}) survive too."""
     src = r"""\documentclass{article}\begin{document}

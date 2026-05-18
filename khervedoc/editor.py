@@ -911,7 +911,11 @@ class DocumentEditor(QWidget):
                 self._insert_inline(cursor, inline, base_format=_keywords_char_format())
             return
         if isinstance(block, Section):
-            cursor.block().setUserState(block.level)
+            # level=0 represents \chapter; the rest map directly to
+            # the QTextBlock's userState (which is what _classify_
+            # text_block reads back).
+            state = _STATE_CHAPTER if block.level == 0 else block.level
+            cursor.block().setUserState(state)
             cfmt = _heading_char_format(block.level)
             for inline in block.children:
                 self._insert_inline(cursor, inline, base_format=cfmt)
@@ -1342,6 +1346,9 @@ class DocumentEditor(QWidget):
         if state == _STATE_KEYWORDS:
             # Italic is implied by the Keywords style.
             return Keywords(children=self._strip_implicit_marks(children, ["italic"]))
+        if state == _STATE_CHAPTER:
+            # \chapter maps to Section(level=0).
+            return Section(level=0, children=self._strip_implicit_marks(children, ["bold"]))
 
         # Empty block: no fragments to inspect — fall back to state.
         it = block.begin()
@@ -1481,6 +1488,7 @@ class DocumentEditor(QWidget):
     def apply_heading(self, level: int) -> None:
         """Apply a paragraph style by level code:
             -1 = Title,  -2 = Author,  -3 = Abstract,  -4 = Keywords,
+            -5 = Chapter (\\chapter — only valid in report/book/memoir),
              0 = Body,  1..5 = Heading 1..5."""
         cursor = self._edit.textCursor()
         block = cursor.block()
@@ -1502,6 +1510,11 @@ class DocumentEditor(QWidget):
             block.setUserState(_STATE_KEYWORDS)
             QTextCursor(block).setBlockFormat(_keywords_block_format())
             block_cursor.setCharFormat(_keywords_char_format())
+        elif level == -5:
+            # Chapter: above heading 1 in the visual hierarchy.
+            block.setUserState(_STATE_CHAPTER)
+            QTextCursor(block).setBlockFormat(QTextBlockFormat())
+            block_cursor.mergeCharFormat(_heading_char_format(0))
         elif level >= 1:
             block.setUserState(level)
             QTextCursor(block).setBlockFormat(QTextBlockFormat())
@@ -2159,12 +2172,13 @@ class DocumentEditor(QWidget):
 
     def current_heading_level(self) -> int:
         """Returns -1 = Title, -2 = Author, -3 = Abstract, -4 = Keywords,
-        0 = Body, 1..5 = Heading, -99 = non-text block."""
+        -5 = Chapter, 0 = Body, 1..5 = Heading, -99 = non-text block."""
         state = self._edit.textCursor().block().userState()
         if state == _STATE_TITLE: return -1
         if state == _STATE_AUTHOR: return -2
         if state == _STATE_ABSTRACT: return -3
         if state == _STATE_KEYWORDS: return -4
+        if state == _STATE_CHAPTER: return -5
         if 1 <= state <= 5: return state
         if state == _STATE_PARAGRAPH: return 0
         return -99

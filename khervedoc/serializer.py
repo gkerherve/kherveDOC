@@ -87,6 +87,7 @@ def serialize_inlines(nodes: list[Inline]) -> str:
 
 
 _SECTION_COMMANDS = {
+    0: "chapter",  # only valid in report / book / memoir classes
     1: "section", 2: "subsection", 3: "subsubsection",
     4: "paragraph", 5: "subparagraph",
 }
@@ -113,7 +114,11 @@ def serialize_block(node: Block) -> str:
         return body + "\n"
 
     if isinstance(node, Section):
-        cmd = _SECTION_COMMANDS.get(max(1, min(5, node.level)), "section")
+        # level 0 is \chapter (only legal in book / report / memoir),
+        # 1..5 cover section / subsection / subsubsection / paragraph /
+        # subparagraph. Anything outside this range falls back to
+        # \section so an unexpected value still produces valid LaTeX.
+        cmd = _SECTION_COMMANDS.get(max(0, min(5, node.level)), "section")
         star = "" if node.numbered else "*"
         body = serialize_inlines(node.children)
         return f"\\{cmd}{star}{{{body}}}\n{_maybe_label(node.label)}"

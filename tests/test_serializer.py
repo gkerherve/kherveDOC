@@ -486,6 +486,19 @@ def test_inline_raw_serializes_verbatim():
     assert out == r"\textcolor{red}{x}"
 
 
+def test_section_level_0_serialises_to_chapter():
+    """Section(level=0) is reserved for \\chapter. Anything higher
+    drops through to section / subsection / etc."""
+    block = Section(level=0, children=[Text(text="Introduction")])
+    out = serialize_block(block)
+    assert "\\chapter{Introduction}" in out
+    # And level 1 is still \section, not \chapter.
+    block1 = Section(level=1, children=[Text(text="Background")])
+    out1 = serialize_block(block1)
+    assert "\\section{Background}" in out1
+    assert "\\chapter" not in out1
+
+
 def test_kstroke_uses_providecommand_not_newcommand():
     """Importers may carry the user's own \\newcommand{\\Kstroke}{...}
     in preamble_extras; \\providecommand lets ours coexist without a

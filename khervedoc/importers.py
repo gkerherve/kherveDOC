@@ -26,7 +26,8 @@ from .model import (
 # ============================================================
 
 _SECTION_RE = re.compile(
-    r"\\(section|subsection|subsubsection|paragraph|subparagraph)(\*?)\{([^}]*)\}")
+    r"\\(chapter|section|subsection|subsubsection|paragraph|subparagraph)"
+    r"(\*?)\{([^}]*)\}")
 
 
 _FRONTMATTER_BLOCK_RE = re.compile(
@@ -157,6 +158,7 @@ def _extract_braced(src: str, command: str) -> str | None:
     content, _ = _consume_braced(src, pos)
     return content
 _SECTION_LEVEL = {
+    "chapter": 0,
     "section": 1, "subsection": 2, "subsubsection": 3,
     "paragraph": 4, "subparagraph": 5,
 }
