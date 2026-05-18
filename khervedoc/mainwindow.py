@@ -1446,10 +1446,7 @@ class MainWindow(QMainWindow):
         self._heading_combo.addItem("Author", -2)
         self._heading_combo.addItem("Abstract", -3)
         self._heading_combo.addItem("Keywords", -4)
-        # Chapter sits between Keywords and Heading 1 because in
-        # LaTeX it outranks every \section / \subsection in the
-        # outline. Only valid for book / report / memoir classes;
-        # _sync_chapter_enabled greys it out for everything else.
+        self._heading_combo.addItem("Frame (slide)", -6)
         self._heading_combo.addItem("Chapter", -5)
         for level in range(1, 6):
             self._heading_combo.addItem(f"Heading {level}", level)
@@ -1991,6 +1988,9 @@ class MainWindow(QMainWindow):
     # ----- find bar -----
 
     def _show_find_bar(self) -> None:
+        if self._tabs.currentIndex() == 2:
+            self._preview.show_find_bar()
+            return
         self._find_bar.show()
         self._find_bar.field.setFocus()
         self._find_bar.field.selectAll()
@@ -2939,25 +2939,13 @@ class MainWindow(QMainWindow):
             self._tabs.setCurrentIndex(1)
 
     def _nav_formatted_to_pdf(self) -> None:
-        # Use page anchors to find which PDF page contains the cursor
-        anchors = self._editor.text_edit.page_anchor_positions()
-        page = 0
-        if anchors:
-            cursor = self._editor.text_edit.textCursor()
-            block = cursor.block()
-            doc_layout = self._editor.text_edit.document().documentLayout()
-            cursor_y = doc_layout.blockBoundingRect(block).top()
-            for page_no, y in anchors:
-                if y <= cursor_y:
-                    page = page_no - 1
-                else:
-                    break
-        if self._side_by_side:
-            self._pdf_side_panel.go_to_page(page)
-        else:
+        snippet = self._editor.cursor_snippet()
+        if not snippet:
+            return
+        target = self._pdf_side_panel if self._side_by_side else self._preview
+        if not self._side_by_side:
             self._tabs.setCurrentIndex(2)
-            # Defer so the PDF view is laid out before we scroll
-            QTimer.singleShot(0, lambda: self._preview.go_to_page(page))
+        target.find_text(snippet)
 
     def _nav_latex_to_formatted(self) -> None:
         snippet = self._latex_view.cursor_snippet()
@@ -2966,9 +2954,12 @@ class MainWindow(QMainWindow):
 
     def _nav_latex_to_pdf(self) -> None:
         snippet = self._latex_view.cursor_snippet()
-        if snippet:
-            self._editor.scroll_to_snippet(snippet)
-        self._nav_formatted_to_pdf()
+        if not snippet:
+            return
+        target = self._pdf_side_panel if self._side_by_side else self._preview
+        if not self._side_by_side:
+            self._tabs.setCurrentIndex(2)
+        target.find_text(snippet)
 
     def _nav_pdf_to_formatted(self) -> None:
         page = self._preview.current_page()
