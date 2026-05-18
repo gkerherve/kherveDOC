@@ -240,6 +240,13 @@ def compile_tex(
                 dest = workdir / f.name
                 if not dest.exists():
                     shutil.copy2(f, dest)
+        # Copy subdirectories (Fonts/, Images/, etc.) so relative paths
+        # inside .cls files (e.g. ./Fonts/Lato/Lato-Regular) resolve.
+        for child in Path(source_dir).iterdir():
+            if child.is_dir() and not child.name.startswith("."):
+                dest = workdir / child.name
+                if not dest.exists():
+                    shutil.copytree(child, dest)
     if skip_images:
         tex_source = _strip_images(tex_source)
     else:
