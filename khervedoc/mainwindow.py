@@ -819,6 +819,7 @@ class MainWindow(QMainWindow):
 
         self._editor.documentChanged.connect(self._on_doc_changed)
         self._editor.text_edit.cursorPositionChanged.connect(self._sync_toolbar_state)
+        self._editor.zoomChanged.connect(self._on_fit_zoom_changed)
         self._latex_view.latexEdited.connect(self._on_latex_edited)
         self._suppress_latex_update = False
 
@@ -829,6 +830,11 @@ class MainWindow(QMainWindow):
         if self._settings.value("side_by_side", False, type=bool):
             self.act_side_by_side.setChecked(True)
             self._toggle_side_by_side(True)
+
+        # Restore fit-page-width state (default: on).
+        fit_w = self._settings.value("fit_page_width", True, type=bool)
+        self.act_fit_page_width.setChecked(fit_w)
+        self._toggle_fit_page_width(fit_w)
 
         self._editor.set_document(_starter_document())
         self._update_title()
@@ -1025,6 +1031,10 @@ class MainWindow(QMainWindow):
         self.act_side_by_side = QAction("PDF &side panel", self,
                                         shortcut=QKeySequence("Ctrl+4"),
                                         checkable=True, triggered=self._toggle_side_by_side)
+        self.act_fit_page_width = QAction("&Fit page width", self,
+                                          shortcut=QKeySequence("Ctrl+0"),
+                                          checkable=True, checked=True,
+                                          triggered=self._toggle_fit_page_width)
         self._theme_actions: dict[str, QAction] = {}
         self._theme_group = QActionGroup(self)
         for name in themes.THEME_NAMES:
@@ -1222,6 +1232,8 @@ class MainWindow(QMainWindow):
         m_view.addAction(self.act_view_pdf)
         m_view.addSeparator()
         m_view.addAction(self.act_side_by_side)
+        m_view.addSeparator()
+        m_view.addAction(self.act_fit_page_width)
         m_view.addSeparator()
         m_view.addAction(self.act_spell_check)
         m_theme = m_view.addMenu("&Theme")
@@ -1569,6 +1581,7 @@ class MainWindow(QMainWindow):
         self._settings.setValue("theme_name", self._theme_name)
         self._settings.setValue("theme_dark", self._is_dark)
         self._settings.setValue("side_by_side", self._side_by_side)
+        self._settings.setValue("fit_page_width", self._editor.fit_to_width())
         # Persist document-default preferences so new documents start
         # with the user's preferred font size, family, margins etc.
         meta = self._editor.meta()
@@ -1840,9 +1853,16 @@ class MainWindow(QMainWindow):
             self._zoom_slider.setValue(snapped)
             self._zoom_slider.blockSignals(False)
         self._zoom_label.setText(f"{snapped}%")
+        # Manual slider drag disables fit-to-width.
+        if self._editor.fit_to_width():
+            self._editor.set_fit_to_width(False)
+            self.act_fit_page_width.setChecked(False)
         self._editor.set_zoom_percent(snapped)
 
     def _nudge_zoom(self, delta: int) -> None:
+        if self._editor.fit_to_width():
+            self._editor.set_fit_to_width(False)
+            self.act_fit_page_width.setChecked(False)
         self._zoom_slider.setValue(self._zoom_slider.value() + delta)
 
     def _on_pdf_zoom_changed(self, pct: int) -> None:
@@ -1852,10 +1872,19 @@ class MainWindow(QMainWindow):
             self._pdf_zoom_slider.setValue(snapped)
             self._pdf_zoom_slider.blockSignals(False)
         self._pdf_zoom_label.setText(f"{snapped}%")
+        # Manual slider drag disables fit-to-width for PDF.
+        if self._preview.fit_to_width():
+            self._preview.set_fit_to_width(False)
+            self._pdf_side_panel.set_fit_to_width(False)
+            self.act_fit_page_width.setChecked(False)
         self._preview.set_zoom_percent(snapped)
         self._pdf_side_panel.set_zoom_percent(snapped)
 
     def _nudge_pdf_zoom(self, delta: int) -> None:
+        if self._preview.fit_to_width():
+            self._preview.set_fit_to_width(False)
+            self._pdf_side_panel.set_fit_to_width(False)
+            self.act_fit_page_width.setChecked(False)
         self._pdf_zoom_slider.setValue(self._pdf_zoom_slider.value() + delta)
 
     def _on_tab_changed(self, index: int) -> None:
@@ -1946,6 +1975,18 @@ class MainWindow(QMainWindow):
         else:
             self._pdf_side_panel.hide()
         self._update_zoom_visibility()
+
+    def _toggle_fit_page_width(self, checked: bool) -> None:
+        self._editor.set_fit_to_width(checked)
+        self._preview.set_fit_to_width(checked)
+        self._pdf_side_panel.set_fit_to_width(checked)
+
+    def _on_fit_zoom_changed(self, pct: int) -> None:
+        """Editor computed a new zoom via fit-to-width; sync the slider."""
+        self._zoom_slider.blockSignals(True)
+        self._zoom_slider.setValue(pct)
+        self._zoom_slider.blockSignals(False)
+        self._zoom_label.setText(f"{pct}%")
 
     def _refresh_icons(self) -> None:
         """Recreate every toolbar icon so colours match the active theme."""

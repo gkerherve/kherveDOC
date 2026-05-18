@@ -134,10 +134,27 @@ _STATE_TITLE = 7        # Word-style "Title" paragraph; emits \maketitle
 _STATE_AUTHOR = 8       # Author of the document; pulled into \author{} preamble
 _STATE_ABSTRACT = 9     # Abstract paragraph; consecutive blocks merge
 _STATE_KEYWORDS = 10    # Keyword line; consecutive blocks merge with \sep
+_STATE_CHAPTER = 11     # \chapter — only valid in report/book/memoir classes
 _STATE_MATH_BLOCK = 99
 _STATE_FIGURE = 100
 _STATE_TABLE = 101
 _STATE_RAW = 102
+
+
+# Document classes that natively support \chapter. The heading-style
+# combo greys out the Chapter entry for any other class (article,
+# letter, beamer — those classes don't define \chapter at all).
+CHAPTER_CLASSES = ("report", "book", "memoir")
+
+
+def class_supports_chapter(class_name: str) -> bool:
+    """True for report / book / memoir (and their variants). article /
+    letter / beamer return False, so the heading combo greys out
+    Chapter for those."""
+    if not class_name:
+        return False
+    head = class_name.lower().split(",")[0].strip()
+    return any(head.startswith(c) for c in CHAPTER_CLASSES)
 
 
 # ---- char-format custom property ids ----
@@ -245,7 +262,10 @@ def _split_stub_meta(text: str) -> tuple[list[str], dict[str, str]]:
 _LINE_SEP = chr(0x2028)
 
 
-_HEADING_FONT_SIZES = {1: 22, 2: 18, 3: 15, 4: 13, 5: 12}
+# Heading sizes: 0 is reserved for \chapter (the largest), then the
+# usual section / subsection / … hierarchy. Chapter sits above
+# Heading 1 because that's how LaTeX's book / report layout typesets it.
+_HEADING_FONT_SIZES = {0: 26, 1: 22, 2: 18, 3: 15, 4: 13, 5: 12}
 
 # Bidirectional mapping for paragraph alignment.
 _QT_ALIGNMENT = {
@@ -567,6 +587,7 @@ class DocumentEditor(QWidget):
     """Rich-text editor that maintains a bidirectional binding with Document."""
 
     documentChanged = Signal()  # debounced after the user stops typing
+    zoomChanged = Signal(int)   # emitted when fit-to-width recalculates zoom
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -578,6 +599,7 @@ class DocumentEditor(QWidget):
         self._body_font_pt = 12   # user-controllable body text size
         self._zoom_percent = 100
         self._zoom_delta = 0
+        self._fit_to_width = True
         # Current colour theme. Block formats for tables / figures
         # / raw blocks read this when constructing their palettes so
         # the cells stay readable against the editor's dark / light
@@ -650,6 +672,11 @@ class DocumentEditor(QWidget):
         # is the only one — like a real page in Word that grows downward.
         self._edit.document().documentLayout().documentSizeChanged.connect(
             self._resize_to_document)
+
+        self._fit_debounce = QTimer(self)
+        self._fit_debounce.setSingleShot(True)
+        self._fit_debounce.setInterval(150)
+        self._fit_debounce.timeout.connect(self._apply_fit_to_width)
 
         self._debounce = QTimer(self)
         self._debounce.setSingleShot(True)
@@ -1654,6 +1681,36 @@ class DocumentEditor(QWidget):
         self._edit.document().setDocumentMargin(
             self._base_doc_margin * percent / 100)
         self._resize_to_document()
+
+    def set_fit_to_width(self, enabled: bool) -> None:
+        self._fit_to_width = enabled
+        if enabled:
+            self._apply_fit_to_width()
+
+    def fit_to_width(self) -> bool:
+        return self._fit_to_width
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if self._fit_to_width:
+            self._fit_debounce.start()
+
+    def _apply_fit_to_width(self) -> None:
+        if not self._fit_to_width:
+            return
+        page = page_sizes.by_code(self._meta.page_size)
+        viewport_w = self._scroll.viewport().width()
+        # Leave 48px padding on each side for the desk margins.
+        available = viewport_w - 48
+        if available < 100:
+            return
+        target_pct = max(25, min(300, round(available / page.width_px * 100)))
+        # Snap to 5% grid to match slider granularity.
+        target_pct = 5 * round(target_pct / 5)
+        if target_pct == self._zoom_percent:
+            return
+        self.set_zoom_percent(target_pct)
+        self.zoomChanged.emit(target_pct)
 
     def toggle_mark(self, mark: str) -> None:
         fmt = QTextCharFormat()

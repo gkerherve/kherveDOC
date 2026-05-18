@@ -30,6 +30,7 @@ class PdfPreview(QWidget):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self._zoom_percent = 100
+        self._fit_to_width = True
         self._current_pdf: Path | None = None
 
         self._status = QLabel(self)
@@ -85,7 +86,10 @@ class PdfPreview(QWidget):
         self._current_pdf = Path(pdf_path)
         self._doc.close()
         self._doc.load(str(pdf_path))
-        self._view.setZoomFactor(self._zoom_percent / 100.0)
+        if self._fit_to_width:
+            self._view.setZoomMode(QPdfView.ZoomMode.FitToWidth)
+        else:
+            self._view.setZoomFactor(self._zoom_percent / 100.0)
         self._status.hide()
         # Restore after Qt lays out the new document.
         if saved_scroll:
@@ -93,9 +97,18 @@ class PdfPreview(QWidget):
 
     def set_zoom_percent(self, percent: int) -> None:
         self._zoom_percent = max(25, min(400, int(percent)))
+        self._fit_to_width = False
         if _QTPDF_AVAILABLE and self._view is not None:
             self._view.setZoomMode(QPdfView.ZoomMode.Custom)
             self._view.setZoomFactor(self._zoom_percent / 100.0)
+
+    def set_fit_to_width(self, enabled: bool) -> None:
+        self._fit_to_width = enabled
+        if enabled and _QTPDF_AVAILABLE and self._view is not None:
+            self._view.setZoomMode(QPdfView.ZoomMode.FitToWidth)
+
+    def fit_to_width(self) -> bool:
+        return self._fit_to_width
 
     def zoom_percent(self) -> int:
         return self._zoom_percent
