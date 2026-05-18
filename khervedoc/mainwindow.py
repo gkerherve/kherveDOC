@@ -2682,8 +2682,11 @@ class MainWindow(QMainWindow):
             "in <code>$...$</code> for inline equations.</p>"
             "<p><b>Math block</b> (<code>Ctrl+Shift+M</code>): insert a "
             "numbered display equation.</p>"
-            "<p><b>Equation builder</b> (<code>Ctrl+Shift+E</code>): pick from "
-            "templates (fractions, integrals, matrices, sums, etc.).</p>"
+            "<p><b>Equation builder</b> (<code>Ctrl+Shift+E</code>): an "
+            "interactive editor with live preview. Click templates "
+            "(fractions, integrals, matrices, sums, brackets, etc.) to "
+            "build equations visually, use Tab to jump between "
+            "placeholders, and see the rendered result in real time.</p>"
             "<p><b>Symbol picker</b> (<code>Ctrl+Shift+S</code>): browse Greek "
             "letters, operators, arrows and other symbols.</p>"
 
@@ -2693,6 +2696,27 @@ class MainWindow(QMainWindow):
             "appears in the Formatted tab.</p>"
             "<p><b>Insert &gt; Table</b> opens a dialog for rows, columns, "
             "caption and alignment.</p>"
+
+            "<h3>Drawing tool</h3>"
+            "<p><b>Insert &gt; Drawing</b> opens a canvas where you can "
+            "sketch diagrams with multiple tools:</p>"
+            "<ul>"
+            "<li><b>Select</b> &mdash; click items to select them, drag to "
+            "reposition</li>"
+            "<li><b>Pen</b> &mdash; freehand drawing</li>"
+            "<li><b>Line / Rectangle / Ellipse / Arrow</b> &mdash; "
+            "geometric shapes</li>"
+            "<li><b>Text</b> &mdash; add text labels with configurable "
+            "font size (8&ndash;72 pt)</li>"
+            "<li><b>Eraser</b> &mdash; click any item to remove it</li>"
+            "</ul>"
+            "<p>The canvas shows a <b>grid</b> overlay for alignment "
+            "(toggle with the <i># Grid</i> button). Enable <b>Snap</b> "
+            "to lock shapes to grid intersections. The grid is not visible "
+            "in the exported image.</p>"
+            "<p><b>Re-editing:</b> double-click any drawing figure in the "
+            "Formatted tab to reopen the drawing dialog with all original "
+            "shapes intact for further editing.</p>"
 
             "<h3>References</h3>"
             "<p><b>Hyperlink</b> (<code>Ctrl+K</code>): attach a URL to "
@@ -2727,6 +2751,8 @@ class MainWindow(QMainWindow):
             "<ul>"
             "<li><b>.tex</b> &mdash; LaTeX source is parsed into the document "
             "model. Unknown commands are preserved as Raw LaTeX blocks.</li>"
+            "<li><b>.md / .markdown</b> &mdash; Markdown files with support "
+            "for headings, lists, code blocks, math, images and links.</li>"
             "<li><b>.docx</b> &mdash; Word documents (requires "
             "<code>python-docx</code>). Embedded images are extracted next to "
             "the file.</li>"
@@ -2813,6 +2839,43 @@ class MainWindow(QMainWindow):
             "update the LaTeX source immediately.</p>"
         ), "LaTeX tab")
 
+        tabs.addTab(_page(
+            "<h2>PDF &amp; navigation</h2>"
+
+            "<h3>Cross-tab navigation</h3>"
+            "<p>Right-click anywhere in the <b>Formatted</b>, <b>LaTeX</b>, "
+            "or <b>PDF</b> tab to see <i>Show in&hellip;</i> actions that "
+            "jump to the same location in another tab:</p>"
+            "<ul>"
+            "<li>Formatted &rarr; <i>Show in LaTeX</i>, "
+            "<i>Show in PDF</i></li>"
+            "<li>LaTeX &rarr; <i>Show in Formatted</i>, "
+            "<i>Show in PDF</i></li>"
+            "<li>PDF &rarr; <i>Show in Formatted</i>, "
+            "<i>Show in LaTeX</i></li>"
+            "</ul>"
+
+            "<h3>PDF find bar</h3>"
+            "<p>Press <code>Ctrl+F</code> while on the PDF tab to open a "
+            "search bar. Type a query and press Enter or click the "
+            "&#9650;/&#9660; buttons to step through matches. "
+            "All matches are highlighted in blue.</p>"
+
+            "<h3>Show in file explorer</h3>"
+            "<p>Use <b>File &gt; Show in file explorer</b> to open the "
+            "document's folder in your system file manager.</p>"
+
+            "<h3>Status bar</h3>"
+            "<p>The bottom bar shows (left to right):</p>"
+            "<ul>"
+            "<li>Document file path</li>"
+            "<li>Editor zoom slider (Formatted tab)</li>"
+            "<li>PDF zoom slider (PDF tab or side panel)</li>"
+            "<li>Tectonic status (OK or NOT FOUND)</li>"
+            "<li>Loading/Saving indicator during file I/O</li>"
+            "</ul>"
+        ), "PDF && navigation")
+
         layout = QVBoxLayout(dlg)
         layout.addWidget(tabs)
         dlg.exec()
@@ -2849,6 +2912,7 @@ class MainWindow(QMainWindow):
                 ("Ctrl+2", "LaTeX tab"),
                 ("Ctrl+3", "PDF tab"),
                 ("Ctrl+4", "PDF side panel"),
+                ("Ctrl+F", "Find (text or PDF search)"),
             ]),
         ]
         html = "<h3>Keyboard shortcuts</h3>"
