@@ -861,6 +861,9 @@ class MainWindow(QMainWindow):
         self.act_export_tex = QAction("Export .&tex...", self, triggered=self._export_tex)
         self.act_export_pdf = QAction(icons.export_pdf(), "Export .&pdf...", self,
                                       triggered=self._export_pdf)
+        self.act_show_in_explorer = QAction(
+            "Show in file e&xplorer", self,
+            triggered=self._show_in_explorer)
         self.act_doc_props = QAction("Document &properties...", self,
                                      triggered=self._edit_props)
         self.act_quit = QAction("&Quit", self, shortcut=QKeySequence.Quit,
@@ -1145,6 +1148,7 @@ class MainWindow(QMainWindow):
         m_export.addAction(self.act_export_tex)
         m_export.addAction(self.act_export_pdf)
         m_file.addSeparator()
+        m_file.addAction(self.act_show_in_explorer)
         m_file.addAction(self.act_doc_props)
         m_file.addSeparator()
         m_file.addAction(self.act_quit)
@@ -1665,6 +1669,19 @@ class MainWindow(QMainWindow):
         else:
             self._status.showMessage(
                 "\u2714 Saved (install pygit2 to enable version history)", 5000)
+
+    def _show_in_explorer(self) -> None:
+        if self._current_path is None:
+            self._status.showMessage("Save the document first", 3000)
+            return
+        import subprocess, sys
+        folder = str(self._current_path.parent)
+        if sys.platform == "win32":
+            subprocess.Popen(["explorer", "/select,", str(self._current_path)])
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", "-R", str(self._current_path)])
+        else:
+            subprocess.Popen(["xdg-open", folder])
 
     def _import_tex(self) -> None:
         path_s, _ = QFileDialog.getOpenFileName(
