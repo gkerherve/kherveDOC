@@ -360,6 +360,101 @@ def test_document_merges_keywords():
     assert out.count("Keywords:") == 1
 
 
+# ---- LaTeX → Typst math translation ----
+
+def test_math_translation_frac():
+    from khervedoc.typst_serializer import _latex_math_to_typst
+    assert _latex_math_to_typst(r"\frac{a}{b}") == "frac(a, b)"
+    assert _latex_math_to_typst(r"\tfrac{b}{a}") == "frac(b, a)"
+
+
+def test_math_translation_sqrt():
+    from khervedoc.typst_serializer import _latex_math_to_typst
+    assert _latex_math_to_typst(r"\sqrt{x}") == "sqrt(x)"
+    assert _latex_math_to_typst(r"\sqrt[3]{x}") == "root(3, x)"
+
+
+def test_math_translation_greek():
+    from khervedoc.typst_serializer import _latex_math_to_typst
+    assert _latex_math_to_typst(r"\alpha") == "alpha"
+    assert _latex_math_to_typst(r"\Delta") == "Delta"
+    assert _latex_math_to_typst(r"\theta") == "theta"
+
+
+def test_math_translation_operators():
+    from khervedoc.typst_serializer import _latex_math_to_typst
+    assert _latex_math_to_typst(r"\cdot") == "dot"
+    assert _latex_math_to_typst(r"\times") == "times"
+    assert _latex_math_to_typst(r"\neq") == "eq.not"
+    assert _latex_math_to_typst(r"\leq") == "lt.eq"
+    assert _latex_math_to_typst(r"\infty") == "infinity"
+    assert _latex_math_to_typst(r"\pm") == "plus.minus"
+
+
+def test_math_translation_formatting():
+    from khervedoc.typst_serializer import _latex_math_to_typst
+    assert _latex_math_to_typst(r"\mathbf{x}") == "bold(x)"
+    assert _latex_math_to_typst(r"\mathbb{R}") == "bb(R)"
+    assert _latex_math_to_typst(r"\mathcal{F}") == "cal(F)"
+    assert _latex_math_to_typst(r"\hat{x}") == "hat(x)"
+    assert _latex_math_to_typst(r"\vec{x}") == "arrow(x)"
+
+
+def test_math_translation_delimiters():
+    from khervedoc.typst_serializer import _latex_math_to_typst
+    assert _latex_math_to_typst(r"\left(x\right)") == "(x)"
+    assert _latex_math_to_typst(r"\left[x\right]") == "[x]"
+
+
+def test_math_translation_spacing():
+    from khervedoc.typst_serializer import _latex_math_to_typst
+    assert _latex_math_to_typst(r"\quad") == "quad"
+    assert _latex_math_to_typst(r"\qquad") == "quad quad"
+
+
+def test_math_translation_newline():
+    from khervedoc.typst_serializer import _latex_math_to_typst
+    result = _latex_math_to_typst(r"a \\ b")
+    assert "\\" in result and "a" in result and "b" in result
+
+
+def test_math_translation_nested():
+    from khervedoc.typst_serializer import _latex_math_to_typst
+    assert _latex_math_to_typst(r"\frac{\sqrt{x}}{y}") == "frac(sqrt(x), y)"
+
+
+def test_math_translation_integrals():
+    from khervedoc.typst_serializer import _latex_math_to_typst
+    assert _latex_math_to_typst(r"\int") == "integral"
+    assert _latex_math_to_typst(r"\sum") == "sum"
+    assert _latex_math_to_typst(r"\prod") == "prod"
+
+
+def test_math_translation_welcome_doc_example():
+    """Test the specific math from the welcome document."""
+    from khervedoc.typst_serializer import _latex_math_to_typst
+    result = _latex_math_to_typst(r"a \neq 0")
+    assert "eq.not" in result
+    result = _latex_math_to_typst(r"\Delta = b^2 - 4ac")
+    assert result == "Delta = b^2 - 4ac"
+
+
+def test_math_inline_with_latex_commands():
+    """MathInline nodes with LaTeX commands get translated."""
+    n = MathInline(latex=r"\frac{a}{b}")
+    assert serialize_inline(n) == "$frac(a, b)$"
+
+
+def test_math_block_with_latex_commands():
+    """MathBlock nodes with LaTeX commands get translated."""
+    n = MathBlock(latex=r"E = mc^2, \quad \alpha \neq 0", numbered=False)
+    out = serialize_block(n)
+    assert "quad" in out
+    assert "alpha" in out
+    assert "eq.not" in out
+    assert "\\" not in out.replace(" \\", "")  # no leftover backslash commands
+
+
 def test_width_conversion():
     from khervedoc.typst_serializer import _latex_width_to_typst
     assert _latex_width_to_typst("0.8\\textwidth") == "80%"

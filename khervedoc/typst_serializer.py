@@ -48,7 +48,7 @@ def serialize_inline(node: Inline) -> str:
                 s = f"{open_}{s}{close}"
         return s
     if isinstance(node, MathInline):
-        return f"${node.latex}$"
+        return f"${_latex_math_to_typst(node.latex)}$"
     if isinstance(node, Link):
         body = serialize_inlines(node.children)
         if body:
@@ -100,10 +100,11 @@ def serialize_block(node: Block) -> str:
         latex = node.latex.strip()
         # Strip LaTeX environment wrappers — Typst uses bare $ ... $
         stripped = _strip_math_env(latex)
+        converted = _latex_math_to_typst(stripped)
         lab = _maybe_label(node.label)
         if node.numbered:
-            return f"#math.equation(block: true, numbering: \"(1)\")[\n$ {stripped} $\n]{lab}\n"
-        return f"$ {stripped} ${lab}\n"
+            return f"#math.equation(block: true, numbering: \"(1)\")[\n$ {converted} $\n]{lab}\n"
+        return f"$ {converted} ${lab}\n"
 
     if isinstance(node, ListNode):
         marker = "+" if node.ordered else "-"
@@ -167,6 +168,274 @@ def serialize_block(node: Block) -> str:
         return f"#pagebreak()\n= {body}\n"
 
     raise TypeError(f"Unknown block node: {type(node).__name__}")
+
+
+# ---------------------------------------------------------------------------
+# LaTeX → Typst math translation
+# ---------------------------------------------------------------------------
+# Covers common LaTeX math commands. Not exhaustive — exotic packages
+# (e.g. tikz-cd, mhchem \ch{}) will pass through as-is and cause Typst
+# errors, but the vast majority of everyday math renders correctly.
+
+# Commands that take one braced argument: \cmd{arg} → cmd(arg)
+_LATEX_ONE_ARG = {
+    "frac": "frac",  "tfrac": "frac",  "dfrac": "frac",
+    "sqrt": "sqrt",
+    "mathbf": "bold", "boldsymbol": "bold", "bm": "bold",
+    "mathrm": "upright", "textrm": "upright", "text": "upright",
+    "mathit": "italic",
+    "mathbb": "bb", "mathcal": "cal", "mathscr": "cal",
+    "mathfrak": "frak",
+    "hat": "hat", "widehat": "hat",
+    "tilde": "tilde", "widetilde": "tilde",
+    "bar": "overline", "overline": "overline",
+    "underline": "underline",
+    "dot": "dot", "ddot": "dot.double",
+    "vec": "arrow",
+    "acute": "acute", "grave": "grave",
+    "breve": "breve", "check": "caron",
+    "operatorname": "op",
+    "cancel": "cancel",
+}
+
+# Commands that take two braced arguments: \cmd{a}{b} → cmd(a, b)
+_LATEX_TWO_ARG = {
+    "frac": "frac", "tfrac": "frac", "dfrac": "frac",
+    "binom": "binom",
+    "overset": "attach",
+}
+
+# Simple symbol replacements: \cmd → typst
+_LATEX_SYMBOLS: dict[str, str] = {}
+# Greek letters (lowercase)
+for _g in ("alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta",
+           "theta", "iota", "kappa", "lambda", "mu", "nu", "xi",
+           "pi", "rho", "sigma", "tau", "upsilon", "phi", "chi", "psi",
+           "omega", "varepsilon", "vartheta", "varpi", "varrho",
+           "varsigma", "varphi"):
+    _LATEX_SYMBOLS[_g] = _g
+# Greek letters (uppercase)
+for _g in ("Gamma", "Delta", "Theta", "Lambda", "Xi", "Pi", "Sigma",
+           "Upsilon", "Phi", "Psi", "Omega"):
+    _LATEX_SYMBOLS[_g] = _g
+# Operators and relations
+_LATEX_SYMBOLS.update({
+    "cdot": "dot",  "cdots": "dots.h",  "ldots": "dots",
+    "vdots": "dots.v",  "ddots": "dots.down",
+    "times": "times",  "div": "div",
+    "pm": "plus.minus",  "mp": "minus.plus",
+    "neq": "eq.not",  "ne": "eq.not",
+    "leq": "lt.eq",  "le": "lt.eq",
+    "geq": "gt.eq",  "ge": "gt.eq",
+    "ll": "lt.double",  "gg": "gt.double",
+    "approx": "approx",  "sim": "tilde",
+    "simeq": "tilde.eq",  "cong": "tilde.equiv",
+    "equiv": "equiv",  "propto": "prop",
+    "subset": "subset",  "supset": "supset",
+    "subseteq": "subset.eq",  "supseteq": "supset.eq",
+    "in": "in",  "notin": "in.not",  "ni": "in.rev",
+    "cup": "union",  "cap": "sect",
+    "setminus": "without",  "emptyset": "nothing",
+    "forall": "forall",  "exists": "exists",
+    "neg": "not",  "land": "and",  "lor": "or",
+    "infty": "infinity",
+    "partial": "diff",  "nabla": "nabla",
+    "to": "arrow.r",  "rightarrow": "arrow.r",
+    "leftarrow": "arrow.l",  "leftrightarrow": "arrow.l.r",
+    "Rightarrow": "arrow.r.double",
+    "Leftarrow": "arrow.l.double",
+    "Leftrightarrow": "arrow.l.r.double",
+    "mapsto": "arrow.r.bar",
+    "iff": "arrow.l.r.double",
+    "implies": "arrow.r.double",
+    "sum": "sum",  "prod": "prod",
+    "int": "integral",  "iint": "integral.double",
+    "iiint": "integral.triple",  "oint": "integral.cont",
+    "lim": "lim",  "limsup": "limsup",  "liminf": "liminf",
+    "min": "min",  "max": "max",
+    "sup": "sup",  "inf": "inf",
+    "sin": "sin",  "cos": "cos",  "tan": "tan",
+    "sec": "sec",  "csc": "csc",  "cot": "cot",
+    "arcsin": "arcsin",  "arccos": "arccos",  "arctan": "arctan",
+    "sinh": "sinh",  "cosh": "cosh",  "tanh": "tanh",
+    "log": "log",  "ln": "ln",  "exp": "exp",
+    "det": "det",  "dim": "dim",  "ker": "ker",
+    "hom": "hom",  "deg": "deg",  "arg": "arg",
+    "gcd": "gcd",
+    "quad": "quad",  "qquad": "quad quad",
+    ",": "thin",  ";": "med",  "!": "negthin",
+    "hspace": "",  "vspace": "",
+    "ast": "ast",  "star": "star",
+    "dagger": "dagger",  "ddagger": "dagger.double",
+    "ell": "ell",  "hbar": "planck.reduce",
+    "Re": "Re",  "Im": "Im",
+    "prime": "prime",
+    "angle": "angle",
+    "perp": "perp",  "parallel": "parallel",
+    "circ": "compose",
+    "otimes": "times.circle",  "oplus": "plus.circle",
+    "top": "top",  "bot": "bot",
+    "langle": "angle.l",  "rangle": "angle.r",
+    "lceil": "ceil.l",  "rceil": "ceil.r",
+    "lfloor": "floor.l",  "rfloor": "floor.r",
+})
+
+# \left and \right delimiter mapping
+_DELIM_MAP = {
+    "(": "(", ")": ")",
+    "[": "[", "]": "]",
+    "\\{": "{", "\\}": "}",
+    "|": "|", "\\|": "||",
+    ".": "",  # \left. or \right. = invisible delimiter
+    "\\langle": "angle.l", "\\rangle": "angle.r",
+    "\\lceil": "ceil.l", "\\rceil": "ceil.r",
+    "\\lfloor": "floor.l", "\\rfloor": "floor.r",
+}
+
+
+def _eat_brace_arg(s: str, pos: int) -> tuple[str, int]:
+    """Extract a braced argument starting at pos (which should be '{').
+    Returns (content, new_pos_after_closing_brace)."""
+    if pos >= len(s) or s[pos] != '{':
+        return "", pos
+    depth = 1
+    start = pos + 1
+    i = start
+    while i < len(s) and depth > 0:
+        if s[i] == '{':
+            depth += 1
+        elif s[i] == '}':
+            depth -= 1
+        i += 1
+    return s[start:i - 1], i
+
+
+def _latex_math_to_typst(latex: str) -> str:
+    """Best-effort translation of LaTeX math markup to Typst math markup.
+
+    Handles: Greek letters, \\frac, \\sqrt, \\mathbf and friends,
+    \\left/\\right delimiters, \\\\, &, common symbols and operators.
+    Unrecognised \\commands pass through (Typst will error on them but
+    the user sees what needs manual fixing).
+    """
+    out: list[str] = []
+    i = 0
+    n = len(latex)
+    while i < n:
+        ch = latex[i]
+
+        # Newline in align: \\ → \
+        if ch == '\\' and i + 1 < n and latex[i + 1] == '\\':
+            out.append(" \\")
+            i += 2
+            continue
+
+        # Backslash command
+        if ch == '\\':
+            # Read the command name
+            j = i + 1
+            if j < n and not latex[j].isalpha():
+                # Single-char commands: \, \; \! \{ \} \| etc.
+                cmd_char = latex[j]
+                if cmd_char in _LATEX_SYMBOLS:
+                    out.append(_LATEX_SYMBOLS[cmd_char])
+                elif cmd_char == '{':
+                    out.append("{")
+                elif cmd_char == '}':
+                    out.append("}")
+                elif cmd_char == '|':
+                    out.append("||")
+                elif cmd_char == ' ':
+                    out.append(" ")
+                else:
+                    out.append(cmd_char)
+                i = j + 1
+                continue
+            # Multi-char command
+            while j < n and latex[j].isalpha():
+                j += 1
+            cmd = latex[i + 1:j]
+            i = j
+
+            # \left / \right — drop the command, keep the delimiter
+            if cmd == "left" or cmd == "right":
+                # Read the delimiter that follows
+                if i < n:
+                    if latex[i] == '\\':
+                        # e.g. \left\{ or \left\langle
+                        k = i + 1
+                        while k < n and latex[k].isalpha():
+                            k += 1
+                        delim_key = latex[i:k]
+                        if delim_key == '\\':
+                            # \left\{ or \left\}
+                            if k < n and latex[k] in '{}|':
+                                delim_key = '\\' + latex[k]
+                                k += 1
+                        mapped = _DELIM_MAP.get(delim_key, delim_key.lstrip('\\'))
+                        out.append(mapped)
+                        i = k
+                    else:
+                        delim_key = latex[i]
+                        mapped = _DELIM_MAP.get(delim_key, delim_key)
+                        out.append(mapped)
+                        i += 1
+                continue
+
+            # Two-argument commands (must check before one-arg)
+            if cmd in _LATEX_TWO_ARG and i < n and latex[i] == '{':
+                typst_fn = _LATEX_TWO_ARG[cmd]
+                arg1, i = _eat_brace_arg(latex, i)
+                arg2, i = _eat_brace_arg(latex, i)
+                arg1 = _latex_math_to_typst(arg1)
+                arg2 = _latex_math_to_typst(arg2)
+                out.append(f"{typst_fn}({arg1}, {arg2})")
+                continue
+
+            # \sqrt[n]{x} → root(n, x)
+            if cmd == "sqrt" and i < n and latex[i] == '[':
+                end_bracket = latex.index(']', i)
+                root_n = latex[i + 1:end_bracket]
+                i = end_bracket + 1
+                arg, i = _eat_brace_arg(latex, i)
+                arg = _latex_math_to_typst(arg)
+                root_n = _latex_math_to_typst(root_n)
+                out.append(f"root({root_n}, {arg})")
+                continue
+
+            # One-argument commands
+            if cmd in _LATEX_ONE_ARG and i < n and latex[i] == '{':
+                typst_fn = _LATEX_ONE_ARG[cmd]
+                arg, i = _eat_brace_arg(latex, i)
+                arg = _latex_math_to_typst(arg)
+                out.append(f"{typst_fn}({arg})")
+                continue
+
+            # Simple symbol replacement
+            if cmd in _LATEX_SYMBOLS:
+                repl = _LATEX_SYMBOLS[cmd]
+                if repl:
+                    out.append(repl)
+                else:
+                    pass  # drop empty replacements (\hspace etc.)
+                continue
+
+            # Unknown command — pass through without backslash
+            # (many LaTeX command names happen to be valid Typst identifiers)
+            out.append(cmd)
+            continue
+
+        # & alignment marker — Typst uses & too
+        if ch == '&':
+            out.append("&")
+            i += 1
+            continue
+
+        # Everything else passes through
+        out.append(ch)
+        i += 1
+
+    return "".join(out)
 
 
 def _strip_math_env(latex: str) -> str:

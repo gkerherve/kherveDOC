@@ -484,8 +484,6 @@ def compile_typst(
     pdf_path = workdir / f"{basename}.pdf"
     try:
         cmd = [typst_path, "compile", str(typ_path), str(pdf_path)]
-        if source_dir is not None and Path(source_dir).is_dir():
-            cmd.extend(["--root", str(source_dir)])
         kw: dict = dict(capture_output=True, text=True, timeout=120)
         if sys.platform == "win32":
             kw["creationflags"] = subprocess.CREATE_NO_WINDOW
