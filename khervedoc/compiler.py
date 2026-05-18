@@ -134,13 +134,18 @@ def compile_tex(
         )
 
     env = os.environ.copy()
+    # Build TEXINPUTS: source_dir (document's folder), then user styles,
+    # then bundled styles, then tectonic's defaults.
+    sep = ";" if os.name == "nt" else ":"
+    texinputs_parts: list[str] = []
     if source_dir is not None and Path(source_dir).is_dir():
-        # TEXINPUTS uses ':' on POSIX and ';' on Windows. The trailing
-        # separator preserves tectonic's default search path so bundled
-        # classes/packages still resolve.
-        sep = ";" if os.name == "nt" else ":"
+        texinputs_parts.append(str(Path(source_dir)))
+    from . import style_manager
+    for sd in style_manager.all_style_dirs():
+        texinputs_parts.append(str(sd))
+    if texinputs_parts:
         existing = env.get("TEXINPUTS", "")
-        env["TEXINPUTS"] = f"{Path(source_dir)}{sep}{existing}"
+        env["TEXINPUTS"] = sep.join(texinputs_parts) + sep + existing
 
     try:
         proc = subprocess.run(

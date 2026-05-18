@@ -886,6 +886,8 @@ class MainWindow(QMainWindow):
             triggered=self._show_in_explorer)
         self.act_doc_props = QAction("Document &properties...", self,
                                      triggered=self._edit_props)
+        self.act_manage_styles = QAction("Manage &styles…", self,
+                                         triggered=self._manage_styles)
         self.act_quit = QAction("&Quit", self, shortcut=QKeySequence.Quit,
                                 triggered=self.close)
 
@@ -1198,6 +1200,7 @@ class MainWindow(QMainWindow):
         m_file.addSeparator()
         m_file.addAction(self.act_show_in_explorer)
         m_file.addAction(self.act_doc_props)
+        m_file.addAction(self.act_manage_styles)
         m_file.addSeparator()
         m_file.addAction(self.act_quit)
 
@@ -1851,6 +1854,11 @@ class MainWindow(QMainWindow):
         if dlg.exec() == QDialog.Accepted:
             self._editor.set_meta(dlg.result_meta())
             self._kick_compile()
+
+    def _manage_styles(self) -> None:
+        from .style_dialog import StyleDialog
+        dlg = StyleDialog(self)
+        dlg.exec()
 
     def _set_column_count(self, n: int) -> None:
         """Toolbar handler: update meta.column_count and re-preview.
