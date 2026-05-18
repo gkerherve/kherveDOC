@@ -282,7 +282,8 @@ def compile_tex(
         env["TEXINPUTS"] = sep.join(texinputs_parts) + sep + existing
 
     try:
-        kw: dict = dict(capture_output=True, text=True, timeout=120, env=env)
+        kw: dict = dict(capture_output=True, text=True, encoding="utf-8",
+                        errors="replace", timeout=120, env=env)
         if sys.platform == "win32":
             kw["creationflags"] = subprocess.CREATE_NO_WINDOW
         proc = subprocess.run(
@@ -495,7 +496,8 @@ def compile_typst(
     pdf_path = workdir / f"{basename}.pdf"
     try:
         cmd = [typst_path, "compile", str(typ_path), str(pdf_path)]
-        kw: dict = dict(capture_output=True, text=True, timeout=120)
+        kw: dict = dict(capture_output=True, text=True, encoding="utf-8",
+                        errors="replace", timeout=120)
         if sys.platform == "win32":
             kw["creationflags"] = subprocess.CREATE_NO_WINDOW
         proc = subprocess.run(cmd, **kw)
