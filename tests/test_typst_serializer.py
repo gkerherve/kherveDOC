@@ -80,11 +80,11 @@ def test_footnote():
 
 def test_citation():
     n = Citation(keys=["smith2020", "doe2019"])
-    assert serialize_inline(n) == "@smith2020 @doe2019"
+    assert serialize_inline(n) == "\\[smith2020, doe2019\\]"
 
 
 def test_citation_single():
-    assert serialize_inline(Citation(keys=["a"])) == "@a"
+    assert serialize_inline(Citation(keys=["a"])) == "\\[a\\]"
 
 
 def test_crossref():

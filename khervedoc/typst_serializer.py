@@ -57,7 +57,10 @@ def serialize_inline(node: Inline) -> str:
     if isinstance(node, Footnote):
         return f"#footnote[{serialize_inlines(node.children)}]"
     if isinstance(node, Citation):
-        return " ".join(f"@{k}" for k in node.keys)
+        # Typst @-citations require a loaded #bibliography(); render as
+        # bracketed text so compilation never fails on a missing .bib.
+        joined = ", ".join(node.keys)
+        return f"\\[{joined}\\]"
     if isinstance(node, CrossRef):
         return f"@{node.label}"
     if isinstance(node, InlineRaw):
