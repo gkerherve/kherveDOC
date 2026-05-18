@@ -67,6 +67,16 @@ EQUATION_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
         (r"\begin{bmatrix} \square & \square \\ \square & \square \end{bmatrix}", "[2×2]"),
         (r"\begin{vmatrix} \square & \square \\ \square & \square \end{vmatrix}", "|2×2|"),
     ]),
+    ("Brackets", [
+        (r"\left( \square \right)", "(□)"),
+        (r"\left[ \square \right]", "[□]"),
+        (r"\left\{ \square \right\}", "{□}"),
+        (r"\left| \square \right|", "|□|"),
+        (r"\left\| \square \right\|", "‖□‖"),
+        (r"\left\langle \square \right\rangle", "⟨□⟩"),
+        (r"\left\lfloor \square \right\rfloor", "⌊□⌋"),
+        (r"\left\lceil \square \right\rceil", "⌈□⌉"),
+    ]),
     ("Relations & operators", [
         (r"\square = \square", "□ = □"),
         (r"\square \approx \square", "□ ≈ □"),
@@ -143,6 +153,8 @@ def render_template_preview(latex: str, font_size: int = 16):
     # Replace placeholder □ with a visible glyph mathtext supports
     raw = raw.replace(r"\square", r"\bullet")
     # Translate commands mathtext doesn't support
+    raw = raw.replace("\\left", "")
+    raw = raw.replace("\\right", "")
     raw = raw.replace("\\tfrac", "\\frac")
     raw = raw.replace("\\dfrac", "\\frac")
     raw = raw.replace("\\text{", "\\mathrm{")
@@ -217,6 +229,8 @@ def render_live_preview(latex: str, font_size: int = 20):
         raw = m.group(2).strip()
     raw = raw.strip("$").strip()
     raw = raw.replace(r"\square", r"\bullet")
+    raw = raw.replace("\\left", "")
+    raw = raw.replace("\\right", "")
     raw = raw.replace("\\tfrac", "\\frac")
     raw = raw.replace("\\dfrac", "\\frac")
     raw = raw.replace("\\text{", "\\mathrm{")

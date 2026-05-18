@@ -593,6 +593,19 @@ def eq_vectors() -> QIcon:
     return QIcon(px)
 
 
+def eq_brackets() -> QIcon:
+    px, p = _new_canvas()
+    p.setRenderHint(QPainter.Antialiasing, True)
+    pen = QPen(_accent(), 1.6, Qt.SolidLine, Qt.RoundCap)
+    p.setPen(pen)
+    # Left parenthesis arc
+    p.drawArc(4, 3, 8, 18, 110 * 16, 140 * 16)
+    # Right parenthesis arc
+    p.drawArc(12, 3, 8, 18, -70 * 16, 140 * 16)
+    p.end()
+    return QIcon(px)
+
+
 def eq_relations() -> QIcon:
     px, p = _new_canvas()
     f = QFont("Cambria Math"); f.setPointSize(12)

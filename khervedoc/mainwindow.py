@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog,
     QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame,
     QGridLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
-    QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea,
+    QMainWindow, QMenu, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea,
     QSlider, QSpinBox, QSplitter, QStackedWidget, QStatusBar, QTabWidget,
     QToolBar, QToolButton, QVBoxLayout, QWidget,
 )
@@ -383,8 +383,8 @@ class EquationEditorDialog(QDialog):
     _CATEGORY_ICONS = [
         icons.eq_fractions, icons.eq_sums, icons.eq_integrals,
         icons.eq_scripts, icons.eq_derivatives, icons.eq_greek,
-        icons.eq_vectors, icons.eq_relations, icons.eq_functions,
-        icons.eq_environments,
+        icons.eq_vectors, icons.eq_brackets, icons.eq_relations,
+        icons.eq_functions, icons.eq_environments,
     ]
 
     def __init__(self, parent: QWidget | None = None,
@@ -418,7 +418,7 @@ class EquationEditorDialog(QDialog):
         self._btn_group = QButtonGroup(self)
         self._btn_group.setExclusive(True)
         groups = equations.EQUATION_GROUPS
-        cols = 5
+        cols = 6
         for idx, (group_name, _items) in enumerate(groups):
             btn = QToolButton()
             btn.setCheckable(True)
