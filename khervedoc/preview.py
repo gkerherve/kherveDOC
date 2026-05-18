@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QModelIndex, Qt, QTimer
 from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton, QVBoxLayout, QWidget,
 )
@@ -213,7 +213,7 @@ class PdfPreview(QWidget):
     def _update_find_count(self) -> None:
         if self._search_model is None:
             return
-        n = self._search_model.rowCount()
+        n = self._search_model.rowCount(QModelIndex())
         idx = self._view.currentSearchResultIndex()
         if n > 0:
             self._find_count.setText(f"{idx + 1} / {n}")
@@ -223,7 +223,7 @@ class PdfPreview(QWidget):
     def _find_next(self) -> None:
         if self._search_model is None or self._view is None:
             return
-        n = self._search_model.rowCount()
+        n = self._search_model.rowCount(QModelIndex())
         if n < 1:
             return
         idx = self._view.currentSearchResultIndex()
@@ -233,7 +233,7 @@ class PdfPreview(QWidget):
     def _find_prev(self) -> None:
         if self._search_model is None or self._view is None:
             return
-        n = self._search_model.rowCount()
+        n = self._search_model.rowCount(QModelIndex())
         if n < 1:
             return
         idx = self._view.currentSearchResultIndex()
@@ -249,7 +249,7 @@ class PdfPreview(QWidget):
     def _jump_to_first_result(self) -> None:
         if self._search_model is None or self._view is None:
             return
-        if self._search_model.rowCount() > 0:
+        if self._search_model.rowCount(QModelIndex()) > 0:
             self._view.setCurrentSearchResultIndex(0)
 
     def _show_context_menu(self, pos) -> None:
