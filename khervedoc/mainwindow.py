@@ -2583,27 +2583,124 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _about(self) -> None:
+        """Rich About dialog: app + author bio + every library KherveTeX
+        actually loads, each with a one-line description of why it's here."""
+        from PySide6.QtWidgets import QTextBrowser
+
+        def _ver(modname: str) -> str:
+            try:
+                mod = __import__(modname)
+                return getattr(mod, "__version__", "") or "(unknown)"
+            except Exception:
+                return "not installed"
+
+        py_ver = __import__("sys").version.split()[0]
         tec = "installed" if tectonic_available() else "not found"
-        QMessageBox.about(
-            self, "About KherveTeX",
-            f"<h2>KherveTeX {version_string()}</h2>"
-            f"<p>A WYSIWYG document editor that produces publication-quality "
-            f"LaTeX output with built-in Git version control.</p>"
-            f"<hr>"
-            f"<p><b>Author:</b> Gwilherm Kerherv&eacute;<br>"
-            f"Imperial College London<br>"
-            f"<a href='mailto:g.kerherve@imperial.ac.uk'>g.kerherve@imperial.ac.uk</a></p>"
+
+        libraries = [
+            ("PySide6", _ver("PySide6"),
+             "Official Qt for Python bindings — the entire GUI "
+             "(toolbar, tabs, the formatted-text widget, dialogs).",
+             "https://doc.qt.io/qtforpython-6/"),
+            ("PyMuPDF (fitz)", _ver("pymupdf"),
+             "Page-level access to PDFs; used by the .docx import path "
+             "to pull embedded images out of the archive.",
+             "https://pymupdf.readthedocs.io/"),
+            ("QtPdf / QtPdfWidgets", "ships with PySide6",
+             "Renders the live PDF preview pane natively, so the right-"
+             "hand tab shows real pages with shadows, not rasterised PNGs.",
+             "https://doc.qt.io/qt-6/qtpdf-index.html"),
+            ("pygit2", _ver("pygit2"),
+             "libgit2 bindings — drives the auto-commit on Save, the "
+             "history viewer and the push to GitHub.",
+             "https://www.pygit2.org/"),
+            ("python-docx", _ver("docx"),
+             "Reads .docx files for the Word importer (paragraph styles "
+             "→ headings, embedded images → Figure blocks).",
+             "https://python-docx.readthedocs.io/"),
+            ("pyspellchecker", _ver("spellchecker"),
+             "Fast offline spell-check used by the as-you-type wavy-"
+             "underline marker.",
+             "https://pyspellchecker.readthedocs.io/"),
+            ("matplotlib", _ver("matplotlib"),
+             "Optional — used by the figure-insertion path when a user "
+             "asks the editor to plot data instead of importing an image.",
+             "https://matplotlib.org/"),
+            ("tectonic", tec,
+             "External LaTeX engine. Auto-downloads packages on first "
+             "compile; produces the PDF shown in the preview pane and "
+             "exported by File → Export → PDF.",
+             "https://tectonic-typesetting.github.io/"),
+        ]
+
+        rows = []
+        for name, ver, role, url in libraries:
+            rows.append(
+                "<tr>"
+                f"<td valign='top' style='padding:6px 14px 6px 0'>"
+                f"<b>{name}</b><br>"
+                f"<span style='color:#666;font-size:9pt'>{ver}</span></td>"
+                f"<td valign='top' style='padding:6px 0'>{role}<br>"
+                f"<a href='{url}'>{url}</a></td>"
+                "</tr>")
+        lib_table = (
+            "<table cellpadding='0' cellspacing='0' "
+            "style='border-collapse:collapse'>"
+            + "".join(rows) +
+            "</table>")
+
+        html = (
+            f"<h2 style='margin-bottom:2pt'>KherveTeX {version_string()}</h2>"
+            f"<p style='color:#555;margin-top:0'>A WYSIWYG document editor "
+            f"that produces publication-quality LaTeX output with built-in "
+            f"Git version control.</p>"
             f"<p><b>Source:</b> "
             f"<a href='https://github.com/gkerherve/KherveTeX'>"
-            f"github.com/gkerherve/KherveTeX</a></p>"
+            f"github.com/gkerherve/KherveTeX</a> &nbsp;·&nbsp; "
+            f"<b>License:</b> MIT</p>"
             f"<hr>"
-            f"<table cellpadding='2'>"
-            f"<tr><td><b>Python</b></td><td>{__import__('sys').version.split()[0]}</td></tr>"
-            f"<tr><td><b>PySide6</b></td><td>{__import__('PySide6').__version__}</td></tr>"
-            f"<tr><td><b>tectonic</b></td><td>{tec}</td></tr>"
-            f"</table>"
-            f"<p style='color: #888; margin-top: 12px;'>"
-            f"Built with PySide6, tectonic, PyMuPDF and pygit2.</p>")
+            f"<h3>About the author</h3>"
+            f"<p><b>Gwilherm Kerherv&eacute;</b> &nbsp;—&nbsp; "
+            f"Research Associate, Department of Materials, "
+            f"<a href='https://www.imperial.ac.uk/materials/'>"
+            f"Imperial College London</a>.</p>"
+            f"<p>Works on surface analysis and X-ray Photoelectron "
+            f"Spectroscopy (XPS), with a focus on materials for energy "
+            f"storage and catalysis. Maintains a small constellation of "
+            f"open-source tools for the XPS community, including "
+            f"<a href='https://github.com/gkerherve/KherveFitting'>"
+            f"KherveFitting</a> (peak fitting for XPS spectra) and "
+            f"<a href='https://github.com/gkerherve/spe_reader'>"
+            f"spe-xps-reader</a> (an open reader for PHI Instruments SPE "
+            f"binary files). KherveTeX grew out of the same workflow — "
+            f"writing papers and reports in LaTeX without leaving the "
+            f"WYSIWYG comfort zone of Word.</p>"
+            f"<p><a href='mailto:g.kerherve@imperial.ac.uk'>"
+            f"g.kerherve@imperial.ac.uk</a></p>"
+            f"<hr>"
+            f"<h3>Libraries</h3>"
+            f"<p style='color:#666;margin-bottom:6pt'>Python {py_ver}</p>"
+            f"{lib_table}"
+            f"<p style='color:#888;margin-top:14pt;font-size:9pt'>"
+            f"Every toolbar icon is drawn at runtime with QPainter — no "
+            f"binary image assets ship with the app. PDF compilation runs "
+            f"in a background QThread so the editor stays responsive."
+            f"</p>"
+        )
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("About KherveTeX")
+        dlg.resize(680, 740)
+        browser = QTextBrowser(dlg)
+        browser.setOpenExternalLinks(True)
+        browser.setHtml(html)
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.rejected.connect(dlg.reject)
+        buttons.accepted.connect(dlg.accept)
+        layout = QVBoxLayout(dlg)
+        layout.addWidget(browser, 1)
+        layout.addWidget(buttons)
+        dlg.exec()
 
     def _show_help_guide(self) -> None:
         from PySide6.QtWidgets import QTextBrowser
