@@ -20,7 +20,9 @@ Prerequisites:
     pip install -r requirements.txt
 """
 
+import os
 import sys
+import sysconfig
 from pathlib import Path
 
 block_cipher = None
@@ -37,6 +39,9 @@ a = Analysis(
     datas=[
         # Bundled LaTeX style files — available to the compiler via TEXINPUTS.
         (str(ROOT / "khervedoc" / "styles"), "khervedoc/styles"),
+        # pyspellchecker dictionary files (en.json.gz etc.) — not collected automatically.
+        (os.path.join(sysconfig.get_path("purelib"), "spellchecker", "resources"),
+         "spellchecker/resources"),
     ],
     hiddenimports=[
         # Lazy imports that Analysis can't see statically.
