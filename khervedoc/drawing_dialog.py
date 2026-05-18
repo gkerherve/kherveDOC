@@ -344,7 +344,12 @@ class _Canvas(QGraphicsView):
             elements = []
             for i in range(path.elementCount()):
                 el = path.elementAt(i)
-                t = {0: "M", 1: "L", 2: "C", 3: "c"}.get(int(el.type), "L")
+                t = {
+                    QPainterPath.ElementType.MoveToElement: "M",
+                    QPainterPath.ElementType.LineToElement: "L",
+                    QPainterPath.ElementType.CurveToElement: "C",
+                    QPainterPath.ElementType.CurveToDataElement: "c",
+                }.get(el.type, "L")
                 elements.append({
                     "t": t,
                     "x": round(el.x + p.x(), 1),
