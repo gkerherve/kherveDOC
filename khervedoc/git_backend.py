@@ -70,11 +70,18 @@ def init_repo(repo_dir: Path) -> bool:
 
 def _repo_for(repo_dir: Path) -> "pygit2.Repository | None":
     """Return the pygit2.Repository governing `repo_dir`, walking up to
-    find an enclosing one if `repo_dir` itself isn't a repo root."""
-    if (repo_dir / ".git").exists():
-        return pygit2.Repository(str(repo_dir))
-    enclosing = _find_enclosing_repo(repo_dir)
-    return pygit2.Repository(str(enclosing)) if enclosing else None
+    find an enclosing one if `repo_dir` itself isn't a repo root.
+
+    Returns None on transient errors (e.g. OneDrive holding a file lock
+    on .git/index) so the caller degrades gracefully instead of crashing.
+    """
+    try:
+        if (repo_dir / ".git").exists():
+            return pygit2.Repository(str(repo_dir))
+        enclosing = _find_enclosing_repo(repo_dir)
+        return pygit2.Repository(str(enclosing)) if enclosing else None
+    except Exception:
+        return None
 
 
 def _signature(repo: "pygit2.Repository | None" = None) -> "pygit2.Signature":
@@ -206,13 +213,16 @@ def current_branch(repo_dir: Path) -> str | None:
     repo is detached / unborn / missing."""
     if not _PYGIT2_OK:
         return None
-    repo = _repo_for(repo_dir)
-    if repo is None or repo.head_is_unborn or repo.head_is_detached:
+    try:
+        repo = _repo_for(repo_dir)
+        if repo is None or repo.head_is_unborn or repo.head_is_detached:
+            return None
+        name = repo.head.name  # 'refs/heads/dev'
+        if name.startswith("refs/heads/"):
+            return name[len("refs/heads/"):]
+        return name
+    except Exception:
         return None
-    name = repo.head.name  # 'refs/heads/dev'
-    if name.startswith("refs/heads/"):
-        return name[len("refs/heads/"):]
-    return name
 
 
 def pull(repo_dir: Path, remote_name: str = "origin") -> tuple[bool, str]:
