@@ -695,6 +695,11 @@ class DocumentEditor(QWidget):
         self._debounce.setInterval(450)
         self._debounce.timeout.connect(self.documentChanged)
 
+        self._math_refresh = QTimer(self)
+        self._math_refresh.setSingleShot(True)
+        self._math_refresh.setInterval(600)
+        self._math_refresh.timeout.connect(self._refresh_math_images)
+
         self._edit.textChanged.connect(self._on_text_changed)
 
         # Per-session image scratch dir. Pasted clipboard images and dropped
@@ -2265,6 +2270,60 @@ class DocumentEditor(QWidget):
     def _on_text_changed(self) -> None:
         if self._building: return
         self._debounce.start()
+        block = self._edit.textCursor().block()
+        if block.userState() == _STATE_MATH_BLOCK:
+            self._math_refresh.start()
+
+    def _refresh_math_images(self) -> None:
+        """Re-render math preview images for any math block whose LaTeX
+        source has changed since the image was last generated."""
+        if self._building:
+            return
+        doc = self._edit.document()
+        block = doc.begin()
+        while block.isValid():
+            if block.userState() == _STATE_MATH_BLOCK:
+                text = block.text()
+                raw = text.replace("\ufffc", "").strip(_LINE_SEP).strip()
+                latex = raw.replace(_LINE_SEP, "\n")
+                if latex:
+                    self._update_math_image_in_block(block, latex)
+            block = block.next()
+
+    def _update_math_image_in_block(self, block, latex: str) -> None:
+        """Replace the existing math preview image in *block* with a
+        freshly rendered one for *latex*."""
+        png_path = _render_math_image(latex, cache_dir=self._equations_dir)
+        if png_path is None or not png_path.exists():
+            return
+        img = QImage(str(png_path))
+        if img.isNull():
+            return
+        url = QUrl.fromLocalFile(str(png_path))
+        self._edit.document().addResource(2, url, img)
+        # Walk fragments to find the existing image char (\ufffc) and
+        # update its QTextImageFormat to point at the new PNG.
+        it = block.begin()
+        while not it.atEnd():
+            frag = it.fragment()
+            if frag.isValid() and frag.text() == "\ufffc":
+                fmt = frag.charFormat()
+                if fmt.isImageFormat():
+                    img_fmt = fmt.toImageFormat()
+                    if img_fmt.name() == url.toString():
+                        return  # already up to date
+                    img_fmt.setName(url.toString())
+                    img_fmt.setWidth(img.width())
+                    img_fmt.setHeight(img.height())
+                    cursor = QTextCursor(block)
+                    cursor.setPosition(frag.position())
+                    cursor.setPosition(frag.position() + frag.length(),
+                                       QTextCursor.KeepAnchor)
+                    self._building = True
+                    cursor.setCharFormat(img_fmt)
+                    self._building = False
+                    return
+            it += 1
 
 
 def _stub_char_format() -> QTextCharFormat:
