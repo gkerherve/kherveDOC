@@ -1561,10 +1561,10 @@ class MainWindow(QMainWindow):
         sp.setHorizontalPolicy(sp.Policy.Expanding)
         spacer.setSizePolicy(sp)
         tb.addWidget(spacer)
+        tb.addAction(self.act_compile_range)
+        tb.addAction(self.act_skip_images)
         tb.addAction(self.act_compile_now)
         tb.addAction(self.act_auto_compile)
-        tb.addAction(self.act_skip_images)
-        tb.addAction(self.act_compile_range)
 
         # Left vertical toolbar for Insert / layout actions. Matches
         # the top toolbar's 24px icon size for a consistent look.
