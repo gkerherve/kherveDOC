@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QModelIndex, Qt, QTimer
+from PySide6.QtCore import QModelIndex, QPointF, Qt, QTimer
 from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton, QVBoxLayout, QWidget,
 )
@@ -159,12 +159,18 @@ class PdfPreview(QWidget):
         if n < 1 or page < 0:
             return
         page = min(page, n - 1)
+        nav = self._view.pageNavigator()
+        if nav:
+            nav.jump(page, QPointF(0, 0))
         zoom = self._view.zoomFactor()
         spacing = self._view.pageSpacing()
+        # pagePointSize returns points (1/72 in); convert to pixels
+        scr = self._view.screen()
+        dpi_scale = (scr.logicalDotsPerInchY() / 72.0) if scr else (96.0 / 72.0)
         y = 0.0
         for i in range(page):
             size = self._doc.pagePointSize(i)
-            y += size.height() * zoom + spacing
+            y += size.height() * zoom * dpi_scale + spacing
         vbar = self._view.verticalScrollBar()
         if vbar:
             vbar.setValue(int(y))
@@ -175,8 +181,7 @@ class PdfPreview(QWidget):
         if not _QTPDF_AVAILABLE or self._search_model is None:
             return
         self._search_model.setSearchString(text)
-        # Wait for the search model to populate, then jump to first result
-        QTimer.singleShot(100, self._jump_to_first_result)
+        QTimer.singleShot(300, self._jump_to_first_result)
 
     def show_find_bar(self) -> None:
         """Show the find bar and focus the input field."""
@@ -205,8 +210,8 @@ class PdfPreview(QWidget):
             return
         self._search_model.setSearchString(text)
         if text:
-            QTimer.singleShot(100, self._update_find_count)
-            QTimer.singleShot(100, self._jump_to_first_result)
+            QTimer.singleShot(300, self._update_find_count)
+            QTimer.singleShot(300, self._jump_to_first_result)
         else:
             self._find_count.setText("")
 
@@ -227,7 +232,9 @@ class PdfPreview(QWidget):
         if n < 1:
             return
         idx = self._view.currentSearchResultIndex()
-        self._view.setCurrentSearchResultIndex((idx + 1) % n)
+        new_idx = (idx + 1) % n
+        self._view.setCurrentSearchResultIndex(new_idx)
+        self._scroll_to_current_result(new_idx)
         self._update_find_count()
 
     def _find_prev(self) -> None:
@@ -237,7 +244,9 @@ class PdfPreview(QWidget):
         if n < 1:
             return
         idx = self._view.currentSearchResultIndex()
-        self._view.setCurrentSearchResultIndex((idx - 1) % n)
+        new_idx = (idx - 1) % n
+        self._view.setCurrentSearchResultIndex(new_idx)
+        self._scroll_to_current_result(new_idx)
         self._update_find_count()
 
     def _close_find(self) -> None:
@@ -251,6 +260,18 @@ class PdfPreview(QWidget):
             return
         if self._search_model.rowCount(QModelIndex()) > 0:
             self._view.setCurrentSearchResultIndex(0)
+            self._scroll_to_current_result(0)
+
+    def _scroll_to_current_result(self, index: int) -> None:
+        """Scroll the viewport so that search result *index* is visible."""
+        if self._search_model is None or self._view is None:
+            return
+        try:
+            result = self._search_model.resultAtIndex(index)
+            if result is not None:
+                self.go_to_page(result.page())
+        except (AttributeError, TypeError):
+            pass
 
     def _show_context_menu(self, pos) -> None:
         if not self._extra_context_actions:

@@ -840,6 +840,10 @@ class MainWindow(QMainWindow):
             ("Show in Formatted", self._nav_pdf_to_formatted),
             ("Show in LaTeX", self._nav_pdf_to_latex),
         ]
+        self._pdf_side_panel._extra_context_actions = [
+            ("Show in Formatted", self._nav_pdf_to_formatted),
+            ("Show in LaTeX", self._nav_pdf_to_latex),
+        ]
 
         # Apply the full named theme (tab styling, editor, latex view).
         self._apply_named_theme(self._theme_name, startup=True)
