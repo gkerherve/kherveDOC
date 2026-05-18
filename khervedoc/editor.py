@@ -795,6 +795,23 @@ class DocumentEditor(QWidget):
             if new_path.exists():
                 _MATH_IMAGE_CACHE[latex_key] = new_path
 
+    def cleanup_orphaned_equations(self, doc: "Document") -> None:
+        """Delete equation PNGs that no longer belong to any MathBlock."""
+        eq_dir = self._equations_dir
+        if eq_dir is None or not eq_dir.exists():
+            return
+        live: set[str] = set()
+        for block in doc.body:
+            if isinstance(block, MathBlock):
+                h = _hashlib.md5(block.latex.encode()).hexdigest()[:12]
+                live.add(f"math_{h}.png")
+        for f in eq_dir.glob("math_*.png"):
+            if f.name not in live:
+                f.unlink(missing_ok=True)
+                for k, v in list(_MATH_IMAGE_CACHE.items()):
+                    if v == f:
+                        del _MATH_IMAGE_CACHE[k]
+
     def meta(self) -> DocMeta:
         return self._meta
 

@@ -1896,6 +1896,7 @@ class MainWindow(QMainWindow):
         self._io_label.setText("Saving\u2026")
         self._io_label.repaint()
         doc = self._editor.get_document()
+        self._editor.cleanup_orphaned_equations(doc)
         # Dispatch on the file extension: .kdocz is the bundled ZIP container,
         # .kdoc.json is the plain JSON model. The .tex export sits alongside
         # in both cases so users can inspect the source without unzipping.
