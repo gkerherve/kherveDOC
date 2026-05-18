@@ -231,11 +231,15 @@ def compile_tex(
     still emits the PDF with a "?" placeholder where the image would go.
     """
     workdir.mkdir(parents=True, exist_ok=True)
-    # Resolve relative \includegraphics paths against source_dir (so they
-    # work from the temp workdir) and swap missing-image references for
-    # a visible placeholder (so a stale figure path doesn't blow up the
-    # whole compile). Always run — _rewrite_includegraphics is a no-op
-    # when nothing matches.
+    # Copy auxiliary TeX files (.cls, .sty, .bst, .bib) from source_dir
+    # into workdir so tectonic can find them — tectonic's bundle system
+    # doesn't always honour TEXINPUTS for custom class files.
+    if source_dir is not None and Path(source_dir).is_dir():
+        for ext in ("*.cls", "*.sty", "*.bst", "*.bib"):
+            for f in Path(source_dir).glob(ext):
+                dest = workdir / f.name
+                if not dest.exists():
+                    shutil.copy2(f, dest)
     if skip_images:
         tex_source = _strip_images(tex_source)
     else:
