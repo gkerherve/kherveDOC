@@ -1731,6 +1731,19 @@ class MainWindow(QMainWindow):
         self._settings.setValue("default/margin_left_cm", meta.margin_left_cm)
         self._settings.setValue("default/margin_right_cm", meta.margin_right_cm)
         self._settings.setValue("default/page_size", meta.page_size)
+        # Stop background threads before Qt tears down the widget tree.
+        # Destroying a running QThread is undefined behaviour in Qt and
+        # triggers STATUS_STACK_BUFFER_OVERRUN (0xC0000409) on Windows.
+        for worker in (self._compile_worker, self._git_worker):
+            if worker is not None:
+                try:
+                    worker.finished_with.disconnect()
+                except RuntimeError:
+                    pass
+                if worker.isRunning():
+                    worker.wait(5000)
+        self._compile_worker = None
+        self._git_worker = None
         # Remove ourselves from the live-windows registry so the Window
         # menus on other windows refresh, and so the process can exit
         # once the last window closes (Qt does this automatically once
