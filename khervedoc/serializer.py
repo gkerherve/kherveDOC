@@ -100,7 +100,10 @@ def _maybe_label(label: str | None) -> str:
 _ALIGN_ENVS = {"left": "flushleft", "center": "center", "right": "flushright"}
 
 
-def serialize_block(node: Block) -> str:
+_CHAPTER_CLASSES = {"report", "book", "memoir"}
+
+
+def serialize_block(node: Block, *, has_chapters: bool = False) -> str:
     if isinstance(node, Paragraph):
         body = serialize_inlines(node.children)
         # LaTeX defaults to fully-justified text. If the editor shows the
@@ -114,11 +117,11 @@ def serialize_block(node: Block) -> str:
         return body + "\n"
 
     if isinstance(node, Section):
-        # level 0 is \chapter (only legal in book / report / memoir),
-        # 1..5 cover section / subsection / subsubsection / paragraph /
-        # subparagraph. Anything outside this range falls back to
-        # \section so an unexpected value still produces valid LaTeX.
-        cmd = _SECTION_COMMANDS.get(max(0, min(5, node.level)), "section")
+        # For report/book/memoir classes, level 1 in the model becomes
+        # \chapter (level 0 in _SECTION_COMMANDS) so that the editor's
+        # "Heading 1" maps to the document class's top-level division.
+        effective = node.level - 1 if has_chapters else node.level
+        cmd = _SECTION_COMMANDS.get(max(0, min(5, effective)), "section")
         star = "" if node.numbered else "*"
         body = serialize_inlines(node.children)
         return f"\\{cmd}{star}{{{body}}}\n{_maybe_label(node.label)}"
@@ -327,6 +330,7 @@ def serialize_document(doc: Document) -> str:
     page = page_sizes.by_code(doc.meta.page_size)
     m = doc.meta
     is_elsarticle = (m.documentclass or "").lower().startswith("elsarticle")
+    has_chapters = (m.documentclass or "").lower() in _CHAPTER_CLASSES
 
     # Margins flow into geometry per-side so users can pick asymmetric layouts.
     geometry = (
@@ -433,7 +437,7 @@ def serialize_document(doc: Document) -> str:
 
         body_parts: list[str] = []
         for i, b in enumerate(body_blocks):
-            body_parts.append(serialize_block(b))
+            body_parts.append(serialize_block(b, has_chapters=has_chapters))
             if i < len(body_blocks) - 1:
                 body_parts.append("\n")
         body = "".join(body_parts)
@@ -484,7 +488,7 @@ def serialize_document(doc: Document) -> str:
             if i < n: parts.append("\n")
             continue
 
-        rendered = serialize_block(block)
+        rendered = serialize_block(block, has_chapters=has_chapters)
         if isinstance(block, Title):
             emitted_maketitle = True
         parts.append(rendered)
