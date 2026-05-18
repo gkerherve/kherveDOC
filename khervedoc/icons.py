@@ -796,3 +796,22 @@ def auto_compile_off() -> QIcon:
     p.drawLine(QPointF(5, 5), QPointF(19, 19))
     p.end()
     return QIcon(px)
+
+
+def compile_no_images() -> QIcon:
+    """Page with a crossed-out image icon — compile without images."""
+    px, p = _new_canvas()
+    page_bg = QColor("#2d2d2d") if _dark else Qt.white
+    p.setPen(QPen(_fg(), 1.2)); p.setBrush(QBrush(page_bg))
+    p.drawPolygon([QPointF(3, 2), QPointF(13, 2), QPointF(16, 5),
+                   QPointF(16, 18), QPointF(3, 18)])
+    # Small "mountain + sun" image icon on the page
+    grey = QColor("#999") if _dark else QColor("#888")
+    p.setPen(QPen(grey, 1.0)); p.setBrush(Qt.NoBrush)
+    p.drawRect(5, 7, 8, 6)
+    # Diagonal cross-out
+    red = QColor("#ff5555") if _dark else QColor("#c00")
+    p.setPen(QPen(red, 2.0, Qt.SolidLine, Qt.RoundCap))
+    p.drawLine(QPointF(4, 6), QPointF(14, 14))
+    p.end()
+    return QIcon(px)

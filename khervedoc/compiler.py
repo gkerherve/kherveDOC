@@ -96,11 +96,21 @@ def tectonic_available() -> bool:
     return _find_tectonic() is not None
 
 
+def _strip_images(tex_source: str) -> str:
+    r"""Replace every \includegraphics with a lightweight placeholder box
+    so tectonic skips image embedding entirely — much faster for drafts."""
+    def _sub(m: re.Match) -> str:
+        path = m.group(3).replace("\\", "/").replace("_", r"\_")
+        return r"\fbox{\texttt{\footnotesize " + path + r"}}"
+    return _INCLUDEGRAPHICS_RE.sub(_sub, tex_source)
+
+
 def compile_tex(
     tex_source: str,
     workdir: Path,
     basename: str = "document",
     source_dir: Path | None = None,
+    skip_images: bool = False,
 ) -> CompileResult:
     """Write `tex_source` to `workdir/basename.tex` and compile with tectonic.
 
@@ -120,7 +130,10 @@ def compile_tex(
     # a visible placeholder (so a stale figure path doesn't blow up the
     # whole compile). Always run — _rewrite_includegraphics is a no-op
     # when nothing matches.
-    tex_source = _rewrite_includegraphics(tex_source, source_dir)
+    if skip_images:
+        tex_source = _strip_images(tex_source)
+    else:
+        tex_source = _rewrite_includegraphics(tex_source, source_dir)
     tex_path = workdir / f"{basename}.tex"
     tex_path.write_text(tex_source, encoding="utf-8")
 

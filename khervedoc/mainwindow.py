@@ -41,15 +41,19 @@ class _CompileWorker(QThread):
     finished_with = Signal(object)
 
     def __init__(self, tex_source: str, workdir: Path,
-                 source_dir: Path | None = None):
+                 source_dir: Path | None = None,
+                 skip_images: bool = False):
         super().__init__()
         self._tex = tex_source
         self._workdir = workdir
         self._source_dir = source_dir
+        self._skip_images = skip_images
 
     def run(self) -> None:
         self.finished_with.emit(
-            compile_tex(self._tex, self._workdir, source_dir=self._source_dir))
+            compile_tex(self._tex, self._workdir,
+                        source_dir=self._source_dir,
+                        skip_images=self._skip_images))
 
 
 class _GitNetworkWorker(QThread):
@@ -1179,6 +1183,12 @@ class MainWindow(QMainWindow):
             checkable=True, checked=True,
             statusTip="Toggle automatic PDF compilation on every edit",
             triggered=self._toggle_auto_compile)
+        self._skip_images = False
+        self.act_skip_images = QAction(
+            icons.compile_no_images(), "Skip images", self,
+            checkable=True, checked=False,
+            statusTip="Compile without images for faster preview",
+            triggered=self._toggle_skip_images)
 
         # Help
         self.act_help_guide = QAction("&User guide", self,
@@ -1533,6 +1543,7 @@ class MainWindow(QMainWindow):
         tb.addWidget(spacer)
         tb.addAction(self.act_compile_now)
         tb.addAction(self.act_auto_compile)
+        tb.addAction(self.act_skip_images)
 
         # Left vertical toolbar for Insert / layout actions. Matches
         # the top toolbar's 24px icon size for a consistent look.
@@ -3086,6 +3097,14 @@ class MainWindow(QMainWindow):
             self.act_auto_compile.setIcon(icons.auto_compile_off())
             self.act_auto_compile.setToolTip("Auto-compile: OFF (click to enable)")
 
+    def _toggle_skip_images(self, checked: bool) -> None:
+        self._skip_images = checked
+        tip = ("Skip images: ON — images replaced by placeholders"
+               if checked else "Skip images: OFF — full compile with images")
+        self.act_skip_images.setToolTip(tip)
+        if self._auto_compile:
+            self._kick_compile()
+
     def _kick_compile(self) -> None:
         if not tectonic_available():
             self._preview.show_message(
@@ -3096,7 +3115,9 @@ class MainWindow(QMainWindow):
             return
         tex = serialize_document(self._editor.get_document())
         source_dir = self._resolved_source_dir()
-        self._compile_worker = _CompileWorker(tex, self._build_dir, source_dir)
+        self._compile_worker = _CompileWorker(
+            tex, self._build_dir, source_dir,
+            skip_images=self._skip_images)
         self._compile_worker.finished_with.connect(self._on_compile_done)
         self._compile_worker.start()
         self._status.showMessage("Compiling...", 0)
