@@ -818,10 +818,8 @@ class MainWindow(QMainWindow):
         self._pdf_zoom_label.setStyleSheet(f"padding-right: 6px; color: {self._theme['status_text']};")
         self._status.addPermanentWidget(self._pdf_zoom_label)
 
-        self._tectonic_label = QLabel(
-            "tectonic: OK" if tectonic_available() else "tectonic: NOT FOUND — preview disabled",
-            self)
-        self._status.addPermanentWidget(self._tectonic_label)
+        self._compiler_label = QLabel(self._compiler_status_text(), self)
+        self._status.addPermanentWidget(self._compiler_label)
 
         self._io_label = QLabel("", self)
         self._io_label.setStyleSheet(
@@ -1207,6 +1205,7 @@ class MainWindow(QMainWindow):
             statusTip="Compile the PDF now",
             triggered=self._kick_compile)
         self._auto_compile = True
+        self._compiler = "latex"
         self.act_auto_compile = QAction(
             icons.auto_compile_on(), "Auto-compile", self,
             checkable=True, checked=True,
@@ -1337,6 +1336,19 @@ class MainWindow(QMainWindow):
         m_review.addSeparator()
         m_review.addAction(self.act_prev_comment)
         m_review.addAction(self.act_next_comment)
+
+        m_compiler = mb.addMenu("C&ompiler")
+        self._compiler_group = QActionGroup(self)
+        self._act_compiler_latex = QAction(
+            "&LaTeX (tectonic)", self, checkable=True, checked=True,
+            triggered=lambda: self._set_compiler("latex"))
+        self._act_compiler_typst = QAction(
+            "&Typst", self, checkable=True,
+            triggered=lambda: self._set_compiler("typst"))
+        self._compiler_group.addAction(self._act_compiler_latex)
+        self._compiler_group.addAction(self._act_compiler_typst)
+        m_compiler.addAction(self._act_compiler_latex)
+        m_compiler.addAction(self._act_compiler_typst)
 
         m_git = mb.addMenu("&Git")
         m_git.addAction(self.act_commit_now)
@@ -1851,6 +1863,10 @@ class MainWindow(QMainWindow):
             path.write_text(to_json(doc), encoding="utf-8")
         tex_path = path.parent / f"{tex_basename}.tex"
         tex_path.write_text(serialize_document(doc), encoding="utf-8")
+        if self._compiler == "typst":
+            from .typst_serializer import serialize_document as serialize_typst
+            typ_path = path.parent / f"{tex_basename}.typ"
+            typ_path.write_text(serialize_typst(doc), encoding="utf-8")
         self._io_label.setText("")
 
         commit_msg = getattr(self, "_pending_commit_msg", None) or \
@@ -1966,23 +1982,42 @@ class MainWindow(QMainWindow):
             f"Imported {path.name} — Save As to keep it", 6000)
 
     def _export_tex(self) -> None:
-        path_s, _ = QFileDialog.getSaveFileName(
-            self, "Export LaTeX", "document.tex", "LaTeX (*.tex)")
-        if path_s:
-            Path(path_s).write_text(
-                serialize_document(self._editor.get_document()), encoding="utf-8")
+        if self._compiler == "typst":
+            path_s, _ = QFileDialog.getSaveFileName(
+                self, "Export Typst", "document.typ", "Typst (*.typ)")
+            if path_s:
+                from .typst_serializer import serialize_document as serialize_typst
+                Path(path_s).write_text(
+                    serialize_typst(self._editor.get_document()), encoding="utf-8")
+        else:
+            path_s, _ = QFileDialog.getSaveFileName(
+                self, "Export LaTeX", "document.tex", "LaTeX (*.tex)")
+            if path_s:
+                Path(path_s).write_text(
+                    serialize_document(self._editor.get_document()), encoding="utf-8")
 
     def _export_pdf(self) -> None:
-        if not tectonic_available():
-            QMessageBox.warning(self, "tectonic missing",
-                                "Install tectonic to export PDF.")
-            return
+        doc = self._editor.get_document()
+        source_dir = self._resolved_source_dir()
+        if self._compiler == "typst":
+            if not typst_available():
+                QMessageBox.warning(self, "typst missing",
+                                    "Install typst to export PDF.")
+                return
+            from .typst_serializer import serialize_document as serialize_typst
+            source = serialize_typst(doc)
+            compile_fn = compile_typst
+        else:
+            if not tectonic_available():
+                QMessageBox.warning(self, "tectonic missing",
+                                    "Install tectonic to export PDF.")
+                return
+            source = serialize_document(doc)
+            compile_fn = compile_tex
         path_s, _ = QFileDialog.getSaveFileName(
             self, "Export PDF", "document.pdf", "PDF (*.pdf)")
         if not path_s: return
-        source_dir = self._resolved_source_dir()
-        result = compile_tex(serialize_document(self._editor.get_document()),
-                             self._build_dir, source_dir=source_dir)
+        result = compile_fn(source, self._build_dir, source_dir=source_dir)
         if result.ok and result.pdf_path is not None:
             Path(path_s).write_bytes(result.pdf_path.read_bytes())
             self._status.showMessage(f"Exported {path_s}", 4000)
@@ -3129,12 +3164,8 @@ class MainWindow(QMainWindow):
     # ----- compile loop -----
 
     def _on_doc_changed(self) -> None:
-        # When the change originated in the LaTeX tab itself we leave the
-        # LaTeX view alone so we don't overwrite the user's typing with a
-        # re-serialized version that may differ in whitespace/formatting.
         if not self._suppress_latex_update:
-            self._latex_view.set_source(
-                serialize_document(self._editor.get_document()))
+            self._latex_view.set_source(self._serialize_for_code_tab())
         self._sync_toolbar_state()
         # Re-evaluate Chapter availability — importing a .tex (or
         # switching docclass via the LaTeX tab) may have changed
@@ -3144,8 +3175,10 @@ class MainWindow(QMainWindow):
             self._kick_compile()
 
     def _on_latex_edited(self, text: str) -> None:
-        """User edited the LaTeX tab — reparse, replace the document
-        model, and let the Formatted view + PDF rerender from it."""
+        """User edited the Code tab — reparse, replace the document
+        model, and let the Visual view + PDF rerender from it."""
+        if self._compiler == "typst":
+            return
         try:
             doc = importers.import_tex(text)
         except Exception as exc:
@@ -3200,20 +3233,65 @@ class MainWindow(QMainWindow):
         if self._auto_compile:
             self._kick_compile()
 
-    def _kick_compile(self) -> None:
-        if not tectonic_available():
-            self._preview.show_message(
-                "tectonic not installed — install it to see a live preview.")
+    def _compiler_status_text(self) -> str:
+        if self._compiler == "typst":
+            ok = typst_available()
+            return "Typst: OK" if ok else "Typst: NOT FOUND"
+        ok = tectonic_available()
+        return "LaTeX (tectonic): OK" if ok else "tectonic: NOT FOUND"
+
+    def _serialize_for_code_tab(self) -> str:
+        doc = self._editor.get_document()
+        if self._compiler == "typst":
+            from .typst_serializer import serialize_document as serialize_typst
+            return serialize_typst(doc)
+        return serialize_document(doc)
+
+    def _set_compiler(self, engine: str) -> None:
+        if engine == self._compiler:
             return
+        self._compiler = engine
+        # Update Code tab label and read-only state
+        if engine == "typst":
+            self._tabs.setTabText(1, "Code (Typst)")
+            self._latex_view._edit.setReadOnly(True)
+        else:
+            self._tabs.setTabText(1, "Code (LaTeX)")
+            self._latex_view._edit.setReadOnly(False)
+        # Re-serialize Code tab
+        self._latex_view.set_source(self._serialize_for_code_tab())
+        # Update status bar
+        self._compiler_label.setText(self._compiler_status_text())
+        # Trigger recompile
+        if self._auto_compile:
+            self._kick_compile()
+
+    def _kick_compile(self) -> None:
+        if self._compiler == "typst":
+            if not typst_available():
+                self._preview.show_message(
+                    "typst not installed — install it from https://typst.app/")
+                return
+        else:
+            if not tectonic_available():
+                self._preview.show_message(
+                    "tectonic not installed — install it to see a live preview.")
+                return
         if self._compile_worker is not None and self._compile_worker.isRunning():
             self._pending_recompile = True
             return
-        tex = serialize_document(self._editor.get_document())
+        doc = self._editor.get_document()
+        if self._compiler == "typst":
+            from .typst_serializer import serialize_document as serialize_typst
+            source = serialize_typst(doc)
+        else:
+            source = serialize_document(doc)
         source_dir = self._resolved_source_dir()
         self._compile_worker = _CompileWorker(
-            tex, self._build_dir, source_dir,
+            source, self._build_dir, source_dir,
             skip_images=self._skip_images,
-            use_compile_range=self._use_compile_range)
+            use_compile_range=self._use_compile_range,
+            compiler=self._compiler)
         self._compile_worker.finished_with.connect(self._on_compile_done)
         self._compile_worker.start()
         self._status.showMessage("Compiling...", 0)

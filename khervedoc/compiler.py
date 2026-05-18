@@ -1,7 +1,8 @@
-"""LaTeX compilation and PDF page rendering.
+"""LaTeX/Typst compilation and PDF page rendering.
 
-`compile_tex` shells out to `tectonic`. `render_pdf_pages` uses PyMuPDF to
-rasterize the resulting PDF into QImage-ready pixel buffers.
+`compile_tex` shells out to `tectonic`, `compile_typst` shells out to `typst`.
+`render_pdf_pages` uses PyMuPDF to rasterize the resulting PDF into
+QImage-ready pixel buffers.
 """
 from __future__ import annotations
 
@@ -297,6 +298,202 @@ def compile_tex(
         pdf_path=pdf_path if pdf_path.exists() else None,
         log=log,
         error=f"tectonic exited with code {proc.returncode}",
+    )
+
+
+# ======================= Typst compiler =======================
+
+_TYPST_IMAGE_RE = re.compile(r'image\("([^"]+)"')
+
+
+def _find_typst() -> str | None:
+    """Locate the typst binary."""
+    found = shutil.which("typst")
+    if found:
+        return found
+    candidates = [
+        Path.home() / "bin" / "typst.exe",
+        Path.home() / "bin" / "typst",
+        Path.home() / ".cargo" / "bin" / "typst.exe",
+        Path.home() / ".cargo" / "bin" / "typst",
+        Path.home() / "scoop" / "shims" / "typst.exe",
+    ]
+    for c in candidates:
+        if c.exists():
+            return str(c)
+    return None
+
+
+def typst_available() -> bool:
+    return _find_typst() is not None
+
+
+def _rewrite_typst_images(typ_source: str, source_dir: Path | None) -> str:
+    """Resolve relative image paths in Typst source to absolute."""
+    def _sub(m: re.Match) -> str:
+        path = m.group(1)
+        p = Path(path)
+        if p.is_absolute():
+            if p.exists():
+                return m.group(0)
+            return f'rect(width: 100%, height: 2cm, stroke: 1pt, inset: 4pt)[missing: {path}]'
+        if source_dir is None:
+            return f'rect(width: 100%, height: 2cm, stroke: 1pt, inset: 4pt)[missing: {path}]'
+        resolved = (source_dir / path).resolve()
+        if not resolved.exists():
+            return f'rect(width: 100%, height: 2cm, stroke: 1pt, inset: 4pt)[missing: {path}]'
+        abs_path = str(resolved).replace("\\", "/")
+        return f'image("{abs_path}"'
+    return _TYPST_IMAGE_RE.sub(_sub, typ_source)
+
+
+def _strip_typst_images(typ_source: str) -> str:
+    """Replace image() calls with placeholder rects for fast drafts."""
+    def _sub(m: re.Match) -> str:
+        path = m.group(1).replace("\\", "/")
+        return f'rect(width: 100%, height: 2cm, stroke: 0.5pt, inset: 4pt)[{path}]'
+    return _TYPST_IMAGE_RE.sub(_sub, typ_source)
+
+
+_TYPST_COMPILE_START     = "// ===== KHERVETEX COMPILE START ====="
+_TYPST_COMPILE_END       = "// ===== KHERVETEX COMPILE END ====="
+_TYPST_NOT_COMPILE_START = "// ===== KHERVETEX NOT COMPILE START ====="
+_TYPST_NOT_COMPILE_END   = "// ===== KHERVETEX NOT COMPILE END ====="
+
+
+def _apply_typst_compile_range(typ_source: str) -> str:
+    """Keep only content between compile-range markers in Typst source.
+
+    Uses /* ... */ block comments to hide excluded content.
+    Typst has no preamble/document boundary like LaTeX, so markers
+    apply to the whole file — #set rules before the first marker are
+    always kept.
+    """
+    lines = typ_source.split("\n")
+    start_marker = end_marker = -1
+    for i, ln in enumerate(lines):
+        stripped = ln.strip()
+        if stripped == _TYPST_COMPILE_START:
+            start_marker = i
+        elif stripped == _TYPST_COMPILE_END:
+            end_marker = i
+    if start_marker == -1 and end_marker == -1:
+        return typ_source
+
+    # Find where #set rules end (preamble-equivalent)
+    preamble_end = 0
+    for i, ln in enumerate(lines):
+        stripped = ln.strip()
+        if stripped.startswith("#set ") or stripped.startswith("#show ") or stripped == "":
+            preamble_end = i + 1
+        else:
+            break
+
+    keep_from = start_marker + 1 if start_marker >= preamble_end else preamble_end
+    keep_to = end_marker if end_marker > preamble_end else len(lines)
+
+    result: list[str] = []
+    result.extend(lines[:preamble_end])
+    before = lines[preamble_end:keep_from]
+    if any(ln.strip() for ln in before):
+        result.append("/*")
+        result.extend(before)
+        result.append("*/")
+    result.extend(lines[keep_from:keep_to])
+    after = lines[keep_to:]
+    if any(ln.strip() for ln in after):
+        result.append("/*")
+        result.extend(after)
+        result.append("*/")
+    return "\n".join(result)
+
+
+def _apply_typst_not_compile_ranges(typ_source: str) -> str:
+    """Hide content between NOT COMPILE marker pairs using /* ... */."""
+    lines = typ_source.split("\n")
+    starts: list[int] = []
+    ends: list[int] = []
+    for i, ln in enumerate(lines):
+        stripped = ln.strip()
+        if stripped == _TYPST_NOT_COMPILE_START:
+            starts.append(i)
+        elif stripped == _TYPST_NOT_COMPILE_END:
+            ends.append(i)
+    if not starts or not ends:
+        return typ_source
+    pairs: list[tuple[int, int]] = []
+    used_ends: set[int] = set()
+    for s in starts:
+        for e in ends:
+            if e > s and e not in used_ends:
+                pairs.append((s, e))
+                used_ends.add(e)
+                break
+    if not pairs:
+        return typ_source
+    result: list[str] = []
+    prev = 0
+    for s, e in sorted(pairs):
+        result.extend(lines[prev:s])
+        result.append("/*")
+        result.extend(lines[s:e + 1])
+        result.append("*/")
+        prev = e + 1
+    result.extend(lines[prev:])
+    return "\n".join(result)
+
+
+def compile_typst(
+    typ_source: str,
+    workdir: Path,
+    basename: str = "document",
+    source_dir: Path | None = None,
+    skip_images: bool = False,
+    use_compile_range: bool = False,
+) -> CompileResult:
+    """Write Typst source to workdir and compile with typst CLI."""
+    workdir.mkdir(parents=True, exist_ok=True)
+    if skip_images:
+        typ_source = _strip_typst_images(typ_source)
+    else:
+        typ_source = _rewrite_typst_images(typ_source, source_dir)
+    if use_compile_range:
+        typ_source = _apply_typst_compile_range(typ_source)
+        typ_source = _apply_typst_not_compile_ranges(typ_source)
+    typ_path = workdir / f"{basename}.typ"
+    typ_path.write_text(typ_source, encoding="utf-8")
+
+    typst_path = _find_typst()
+    if typst_path is None:
+        return CompileResult(
+            ok=False,
+            pdf_path=None,
+            log="",
+            error="typst is not installed or not on PATH. "
+                  "Install it from https://typst.app/",
+        )
+
+    pdf_path = workdir / f"{basename}.pdf"
+    try:
+        cmd = [typst_path, "compile", str(typ_path), str(pdf_path)]
+        if source_dir is not None and Path(source_dir).is_dir():
+            cmd.extend(["--root", str(source_dir)])
+        kw: dict = dict(capture_output=True, text=True, timeout=120)
+        if sys.platform == "win32":
+            kw["creationflags"] = subprocess.CREATE_NO_WINDOW
+        proc = subprocess.run(cmd, **kw)
+    except subprocess.TimeoutExpired:
+        return CompileResult(False, None, "", "typst timed out after 120s")
+
+    log = (proc.stdout or "") + (proc.stderr or "")
+    if proc.returncode == 0 and pdf_path.exists():
+        return CompileResult(True, pdf_path, log, None)
+
+    return CompileResult(
+        ok=False,
+        pdf_path=pdf_path if pdf_path.exists() else None,
+        log=log,
+        error=f"typst exited with code {proc.returncode}",
     )
 
 
