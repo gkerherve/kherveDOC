@@ -393,7 +393,10 @@ def _match_macro(s: str, i: int) -> tuple[object, int] | None:
             j += 1
         pos = j
     while pos < len(s) and s[pos] == "{":
-        _, pos = _consume_braced(s, pos)
+        _, new_pos = _consume_braced(s, pos)
+        if new_pos == pos:
+            break  # unbalanced brace — stop to avoid infinite loop
+        pos = new_pos
     return InlineRaw(latex=s[i:pos]), pos
 
 
