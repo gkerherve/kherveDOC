@@ -875,19 +875,30 @@ class MainWindow(QMainWindow):
         # Apply the full named theme (tab styling, editor, latex view).
         self._apply_named_theme(self._theme_name, startup=True)
 
-        # Restore side-by-side panel state.
+        # Restore side-by-side panel state.  Only flip the checkbox and
+        # the flag here — do NOT call _toggle_side_by_side yet because it
+        # triggers _kick_compile(), and compiling before the event loop is
+        # running crashes QPdfView's OpenGL init on some Windows GPU
+        # drivers (STATUS_STACK_BUFFER_OVERRUN / 0xC0000409).
         if self._settings.value("side_by_side", False, type=bool):
             self.act_side_by_side.setChecked(True)
-            self._toggle_side_by_side(True)
+            self._side_by_side = True
+            self._side_tabs.show()
 
         # Restore fit-page-width state (default: on).
         fit_w = self._settings.value("fit_page_width", True, type=bool)
         self.act_fit_page_width.setChecked(fit_w)
         self._toggle_fit_page_width(fit_w)
 
+        # Suppress auto-compile while loading the starter document — the
+        # first compile must wait until the event loop is running (see below).
+        self._auto_compile = False
         self._editor.set_document(_starter_document())
+        self._auto_compile = True
         self._update_title()
-        self._kick_compile()
+        # Defer the first compile to after the event loop is running so
+        # QPdfView has time to create its OpenGL context properly.
+        QTimer.singleShot(0, self._kick_compile)
 
     # ----- actions -----
 
