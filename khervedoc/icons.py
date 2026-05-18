@@ -641,10 +641,10 @@ def highlight(color: str = "#FFFF00") -> QIcon:
     pen_path.lineTo(14, 20)
     pen_path.closeSubpath()
     p.setBrush(QBrush(QColor(color)))
-    p.setPen(QPen(_fg(), 1.2, Qt.SolidLine, Qt.RoundJoin))
+    p.setPen(QPen(_fg(), 1.2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
     p.drawPath(pen_path)
     # Tip
-    p.setPen(QPen(_fg(), 1.5, Qt.SolidLine, Qt.RoundCap))
+    p.setPen(QPen(_fg(), 1.5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
     p.drawLine(QPointF(6, 18), QPointF(4, 22))
     p.end()
     return QIcon(px)
@@ -653,7 +653,7 @@ def highlight(color: str = "#FFFF00") -> QIcon:
 def comment() -> QIcon:
     """Speech bubble icon for reviewer comments."""
     px, p = _new_canvas()
-    p.setPen(QPen(_fg(), 1.5, Qt.SolidLine, Qt.RoundJoin))
+    p.setPen(QPen(_fg(), 1.5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
     p.setBrush(QBrush(QColor("#e0ecff") if not _dark else QColor("#2a4060")))
     # Bubble body
     bubble = QPainterPath()
