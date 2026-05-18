@@ -307,7 +307,8 @@ _TYPST_IMAGE_RE = re.compile(r'image\("([^"]+)"')
 
 
 def _find_typst() -> str | None:
-    """Locate the typst binary."""
+    """Locate the typst binary, falling back to common install locations
+    that may not be on PATH yet (winget, cargo, scoop)."""
     found = shutil.which("typst")
     if found:
         return found
@@ -318,6 +319,13 @@ def _find_typst() -> str | None:
         Path.home() / ".cargo" / "bin" / "typst",
         Path.home() / "scoop" / "shims" / "typst.exe",
     ]
+    # winget installs into a versioned package dir
+    winget_base = (Path.home() / "AppData" / "Local" / "Microsoft"
+                   / "WinGet" / "Packages")
+    if winget_base.is_dir():
+        for pkg_dir in winget_base.glob("Typst.Typst_*"):
+            for exe in pkg_dir.rglob("typst.exe"):
+                candidates.append(exe)
     for c in candidates:
         if c.exists():
             return str(c)
