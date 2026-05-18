@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QSettings, QSize, QThread, QTimer, Signal
 from PySide6.QtGui import (
-    QAction, QActionGroup, QGuiApplication, QIcon, QKeySequence, QPixmap,
+    QAction, QActionGroup, QColor, QGuiApplication, QIcon, QKeySequence, QPixmap,
     QTextCursor, QTextDocument,
 )
 from PySide6.QtWidgets import (
