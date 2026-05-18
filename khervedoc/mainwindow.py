@@ -2941,22 +2941,23 @@ class MainWindow(QMainWindow):
     def _nav_formatted_to_pdf(self) -> None:
         # Use page anchors to find which PDF page contains the cursor
         anchors = self._editor.text_edit.page_anchor_positions()
-        if not anchors:
-            self._tabs.setCurrentIndex(2)
-            return
-        cursor = self._editor.text_edit.textCursor()
-        block = cursor.block()
-        doc_layout = self._editor.text_edit.document().documentLayout()
-        cursor_y = doc_layout.blockBoundingRect(block).top()
-        # Find the last anchor whose y is <= cursor_y
         page = 0
-        for page_no, y in anchors:
-            if y <= cursor_y:
-                page = page_no - 1  # anchors use 1-based page numbers
-            else:
-                break
-        self._tabs.setCurrentIndex(2)
-        self._preview.go_to_page(page)
+        if anchors:
+            cursor = self._editor.text_edit.textCursor()
+            block = cursor.block()
+            doc_layout = self._editor.text_edit.document().documentLayout()
+            cursor_y = doc_layout.blockBoundingRect(block).top()
+            for page_no, y in anchors:
+                if y <= cursor_y:
+                    page = page_no - 1
+                else:
+                    break
+        if self._side_by_side:
+            self._pdf_side_panel.go_to_page(page)
+        else:
+            self._tabs.setCurrentIndex(2)
+            # Defer so the PDF view is laid out before we scroll
+            QTimer.singleShot(0, lambda: self._preview.go_to_page(page))
 
     def _nav_latex_to_formatted(self) -> None:
         snippet = self._latex_view.cursor_snippet()
@@ -2964,13 +2965,10 @@ class MainWindow(QMainWindow):
             self._tabs.setCurrentIndex(0)
 
     def _nav_latex_to_pdf(self) -> None:
-        # Find the text at cursor in the LaTeX, search for it in the PDF
-        # via the same anchor approach: serialize to find position
         snippet = self._latex_view.cursor_snippet()
-        if snippet and self._editor.scroll_to_snippet(snippet):
-            self._nav_formatted_to_pdf()
-        else:
-            self._tabs.setCurrentIndex(2)
+        if snippet:
+            self._editor.scroll_to_snippet(snippet)
+        self._nav_formatted_to_pdf()
 
     def _nav_pdf_to_formatted(self) -> None:
         page = self._preview.current_page()
