@@ -56,11 +56,21 @@ The patch component is the total commit count and the `+<sha7>` build
 tag are appended automatically from `pygit2` at startup — they update
 every commit on their own. **Never put a third number in `__version__`.**
 
-Bump the **minor** (`"0.5" → "0.6"`) when there is a meaningful
-user-visible feature shift: new toolbar group, new model node type, new
-menu, new tab, etc. Bump the **major** (`"0.x" → "1.0"`) only at the
-user's explicit request. Routine bug fixes, refactors, and documentation
-edits get no bump — the commit count moves on its own.
+Bump the **minor** (`"0.5" → "0.6"`) when there is **any** change to
+user-visible behaviour. This includes:
+
+- New features (tab, toolbar group, menu entry, model node type).
+- Bug fixes that change what the user sees or what the compiler
+  produces (crash fixes, output changes, format fixes).
+- Changes to serializers, importers, or compilers that alter the
+  generated LaTeX / Typst / PDF output.
+
+The only commits that do **not** bump are pure internal refactors,
+documentation / comment edits, and test-only changes — i.e. commits
+where the user cannot tell anything changed. **When in doubt, bump.**
+
+Bump the **major** (`"0.x" → "1.0"`) only at the user's explicit
+request.
 
 Bump `__version__` in the **same commit** as the change that justifies
 it.
