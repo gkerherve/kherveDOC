@@ -1036,23 +1036,18 @@ def import_md(md_source: str, image_dir: Path | None = None) -> Document:
     packages = list(DEFAULT_PACKAGES)
     if bib:
         packages = list(set(packages) | {"natbib"})
-    preamble = ""
+    preamble_lines: list[str] = []
     if bib:
-        preamble = f"\\bibliographystyle{{plainnat}}\n\\bibliography{{{bib.replace('.bib', '')}}}"
-
-    meta = DocMeta(
-        title=title,
-        author=author if isinstance(author, str) else "",
-        documentclass="article",
-        packages=packages,
-        preamble_extras=preamble,
-    )
+        preamble_lines.append(
+            f"\\bibliographystyle{{plainnat}}\n\\bibliography{{{bib.replace('.bib', '')}}}")
 
     children: list = []
     if title:
         children.append(Title(children=[Text(text=title)]))
-    if meta.author:
-        children.append(Author(children=[Text(text=meta.author)]))
+    if author and isinstance(author, str):
+        children.append(Author(children=[Text(text=author)]))
+
+    has_code_blocks = False
 
     # Process body line by line, grouping into blocks.
     lines = body.split("\n")
@@ -1069,6 +1064,7 @@ def import_md(md_source: str, image_dir: Path | None = None) -> Document:
                 code_lines.append(lines[i])
                 i += 1
             i += 1  # skip closing ```
+            has_code_blocks = True
             lang = fence_m.group(1)
             code = "\n".join(code_lines)
             env = "lstlisting"
@@ -1169,5 +1165,37 @@ def import_md(md_source: str, image_dir: Path | None = None) -> Document:
             i += 1
         para_text = " ".join(para_lines)
         children.append(Paragraph(children=_md_parse_inlines(para_text)))
+
+    if has_code_blocks:
+        packages = list(set(packages) | {"listings", "xcolor"})
+        preamble_lines.insert(0, (
+            "\\definecolor{codegray}{rgb}{0.5,0.5,0.5}\n"
+            "\\definecolor{codegreen}{rgb}{0,0.5,0}\n"
+            "\\definecolor{codepurple}{rgb}{0.58,0,0.82}\n"
+            "\\definecolor{backcolour}{rgb}{0.97,0.97,0.97}\n"
+            "\\lstset{\n"
+            "  backgroundcolor=\\color{backcolour},\n"
+            "  commentstyle=\\color{codegreen},\n"
+            "  keywordstyle=\\color{blue},\n"
+            "  stringstyle=\\color{codepurple},\n"
+            "  numberstyle=\\tiny\\color{codegray},\n"
+            "  basicstyle=\\ttfamily\\small,\n"
+            "  breaklines=true,\n"
+            "  frame=single,\n"
+            "  numbers=left,\n"
+            "  numbersep=5pt,\n"
+            "  tabsize=4,\n"
+            "  captionpos=t,\n"
+            "  showstringspaces=false,\n"
+            "}"
+        ))
+
+    meta = DocMeta(
+        title=title,
+        author=author if isinstance(author, str) else "",
+        documentclass="article",
+        packages=packages,
+        preamble_extras="\n".join(preamble_lines),
+    )
 
     return Document(meta=meta, children=children)
