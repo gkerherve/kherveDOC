@@ -631,9 +631,13 @@ class MainWindow(QMainWindow):
     # menu can list every open document.
     _windows: list["MainWindow"] = []
 
-    def __init__(self, theme_name: str = "Light"):
+    def __init__(self, theme_name: str | None = None):
         super().__init__()
         MainWindow._windows.append(self)
+        # Read persisted theme when not explicitly provided (e.g. new windows).
+        if theme_name is None:
+            s = QSettings("kherveDOC", "kherveDOC")
+            theme_name = s.value("theme_name", "") or "Light"
         self._theme_name = theme_name
         self._theme = themes.THEMES.get(theme_name, themes.THEMES["Light"])
         self._current_path: Path | None = None
