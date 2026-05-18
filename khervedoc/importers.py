@@ -1067,10 +1067,30 @@ def import_md(md_source: str, image_dir: Path | None = None) -> Document:
             has_code_blocks = True
             lang = fence_m.group(1)
             code = "\n".join(code_lines)
-            env = "lstlisting"
-            lang_opt = f"[language={lang}]" if lang else ""
+            # Derive a caption from the preceding paragraph when it ends
+            # with ":" — that's the typical Markdown pattern for introducing
+            # a code example.  Otherwise fall back to the language name.
+            caption = ""
+            if children and isinstance(children[-1], Paragraph):
+                prev_text = "".join(
+                    n.text for n in children[-1].children
+                    if isinstance(n, Text)).strip()
+                if prev_text.endswith(":"):
+                    caption = prev_text.rstrip(":").strip()
+                    # Shorten to the last sentence/clause for cleaner captions
+                    for sep in (". ", "; ", "— "):
+                        if sep in caption:
+                            caption = caption.rsplit(sep, 1)[-1].strip()
+            if not caption:
+                caption = lang.capitalize() if lang else "Code"
+            # Escape special LaTeX chars inside the caption
+            caption = caption.replace("_", "\\_")
+            opts = [f"caption={{{caption}}}"]
+            if lang:
+                opts.append(f"language={lang}")
             children.append(RawLatex(
-                text=f"\\begin{{{env}}}{lang_opt}\n{code}\n\\end{{{env}}}"))
+                text=f"\\begin{{lstlisting}}[{', '.join(opts)}]\n"
+                     f"{code}\n\\end{{lstlisting}}"))
             continue
 
         # Display math ($$...$$ spanning lines)
