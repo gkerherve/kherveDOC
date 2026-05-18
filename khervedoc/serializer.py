@@ -342,9 +342,14 @@ def serialize_document(doc: Document) -> str:
     is_elsarticle = (m.documentclass or "").lower().startswith("elsarticle")
     is_beamer = (m.documentclass or "").lower() == "beamer"
     has_chapters = (m.documentclass or "").lower() in _CHAPTER_CLASSES
-    # Journal classes carry their own layout — don't inject geometry,
+    # Non-standard classes carry their own layout — don't inject geometry,
     # setspace, or font packages that may conflict.
-    is_journal = bool(getattr(m, "class_options", ""))
+    _STANDARD_CLASSES = {
+        "article", "report", "book", "letter", "memoir", "beamer",
+        "scrartcl", "scrreprt", "scrbook",
+    }
+    is_journal = ((m.documentclass or "").lower() not in _STANDARD_CLASSES
+                  or bool(getattr(m, "class_options", "")))
 
     # Margins flow into geometry per-side so users can pick asymmetric layouts.
     if is_journal:

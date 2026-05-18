@@ -687,3 +687,40 @@ Hello world.
     assert "\\address[1]" in out
     # No auto-generated geometry for journal classes
     assert "\\usepackage[" not in out or "geometry" not in out.split("\\begin{document}")[0]
+
+
+def test_resume_class_round_trip():
+    """Custom resume class: \\name / \\address survive in preamble_extras,
+    rSection / rSubsection environments survive as RawLatex, and no
+    geometry or font packages are injected for this non-standard class."""
+    src = r"""\documentclass{resume}
+\usepackage[left=0.75in,top=0.6in,right=0.75in,bottom=0.6in]{geometry}
+\usepackage{hyperref}
+\name{Gwilherm Kerherve \small{PhD}}
+\address{17 Great Courtlands, Langton Green}
+\address{07473 132 455 \\ g.kerherve@ic.ac.uk}
+\begin{document}
+A highly motivated scientist.
+\begin{rSection}{Key Skills}
+\begin{rSubsection}{}{}{}{}
+\item Expertise in XPS
+\end{rSubsection}
+\end{rSection}
+\end{document}"""
+    doc = _round_trip(src)
+    assert doc.meta.documentclass == "resume"
+    # \name and \address preserved in preamble_extras
+    assert r"\name{Gwilherm Kerherve" in doc.meta.preamble_extras
+    assert r"\address{" in doc.meta.preamble_extras
+    # rSection / rSubsection preserved as RawLatex
+    raws = [b for b in doc.children if isinstance(b, RawLatex)]
+    assert any("rSection" in r.text for r in raws)
+    # Round-trip serialization
+    out = serialize_document(doc)
+    assert "\\documentclass" in out
+    assert "resume" in out
+    assert r"\name{Gwilherm Kerherve" in out
+    assert "rSection" in out
+    # No auto-generated geometry/font for non-standard class
+    preamble = out.split("\\begin{document}")[0]
+    assert "setspace" not in preamble
