@@ -198,6 +198,9 @@ _LATEX_ONE_ARG = {
     "cancel": "cancel",
 }
 
+# Commands whose argument is literal text, not math variables.
+_LATEX_TEXT_CMDS = {"text", "textrm", "mathrm", "operatorname"}
+
 # Commands that take two braced arguments: \cmd{a}{b} → cmd(a, b)
 _LATEX_TWO_ARG = {
     "frac": "frac", "tfrac": "frac", "dfrac": "frac",
@@ -319,6 +322,16 @@ def _latex_math_to_typst(latex: str) -> str:
     the user sees what needs manual fixing).
     """
     out: list[str] = []
+
+    def _emit(s: str) -> None:
+        """Append *s* to *out*, inserting a space when two letter-runs
+        would merge into a multi-letter Typst identifier.  In LaTeX math
+        each letter is a separate variable; Typst treats consecutive
+        letters as one identifier (``SE`` → unknown variable)."""
+        if s and out and s[0].isalpha() and out[-1][-1:].isalpha():
+            out.append(" ")
+        out.append(s)
+
     i = 0
     n = len(latex)
     while i < n:
@@ -326,7 +339,7 @@ def _latex_math_to_typst(latex: str) -> str:
 
         # Newline in align: \\ → \
         if ch == '\\' and i + 1 < n and latex[i + 1] == '\\':
-            out.append(" \\")
+            _emit(" \\")
             i += 2
             continue
 
@@ -338,17 +351,17 @@ def _latex_math_to_typst(latex: str) -> str:
                 # Single-char commands: \, \; \! \{ \} \| etc.
                 cmd_char = latex[j]
                 if cmd_char in _LATEX_SYMBOLS:
-                    out.append(_LATEX_SYMBOLS[cmd_char])
+                    _emit(_LATEX_SYMBOLS[cmd_char])
                 elif cmd_char == '{':
-                    out.append("{")
+                    _emit("{")
                 elif cmd_char == '}':
-                    out.append("}")
+                    _emit("}")
                 elif cmd_char == '|':
-                    out.append("||")
+                    _emit("||")
                 elif cmd_char == ' ':
-                    out.append(" ")
+                    _emit(" ")
                 else:
-                    out.append(cmd_char)
+                    _emit(cmd_char)
                 i = j + 1
                 continue
             # Multi-char command
@@ -373,12 +386,12 @@ def _latex_math_to_typst(latex: str) -> str:
                                 delim_key = '\\' + latex[k]
                                 k += 1
                         mapped = _DELIM_MAP.get(delim_key, delim_key.lstrip('\\'))
-                        out.append(mapped)
+                        _emit(mapped)
                         i = k
                     else:
                         delim_key = latex[i]
                         mapped = _DELIM_MAP.get(delim_key, delim_key)
-                        out.append(mapped)
+                        _emit(mapped)
                         i += 1
                 continue
 
@@ -389,7 +402,7 @@ def _latex_math_to_typst(latex: str) -> str:
                 arg2, i = _eat_brace_arg(latex, i)
                 arg1 = _latex_math_to_typst(arg1)
                 arg2 = _latex_math_to_typst(arg2)
-                out.append(f"{typst_fn}({arg1}, {arg2})")
+                _emit(f"{typst_fn}({arg1}, {arg2})")
                 continue
 
             # \sqrt[n]{x} → root(n, x)
@@ -400,39 +413,44 @@ def _latex_math_to_typst(latex: str) -> str:
                 arg, i = _eat_brace_arg(latex, i)
                 arg = _latex_math_to_typst(arg)
                 root_n = _latex_math_to_typst(root_n)
-                out.append(f"root({root_n}, {arg})")
+                _emit(f"root({root_n}, {arg})")
                 continue
 
             # One-argument commands
             if cmd in _LATEX_ONE_ARG and i < n and latex[i] == '{':
                 typst_fn = _LATEX_ONE_ARG[cmd]
                 arg, i = _eat_brace_arg(latex, i)
-                arg = _latex_math_to_typst(arg)
-                out.append(f"{typst_fn}({arg})")
+                # Text-like commands: quote the argument so Typst
+                # renders it as literal text, not as math variables.
+                if cmd in _LATEX_TEXT_CMDS:
+                    _emit(f'{typst_fn}("{arg}")')
+                else:
+                    arg = _latex_math_to_typst(arg)
+                    _emit(f"{typst_fn}({arg})")
                 continue
 
             # Simple symbol replacement
             if cmd in _LATEX_SYMBOLS:
                 repl = _LATEX_SYMBOLS[cmd]
                 if repl:
-                    out.append(repl)
+                    _emit(repl)
                 else:
                     pass  # drop empty replacements (\hspace etc.)
                 continue
 
             # Unknown command — pass through without backslash
             # (many LaTeX command names happen to be valid Typst identifiers)
-            out.append(cmd)
+            _emit(cmd)
             continue
 
         # & alignment marker — Typst uses & too
         if ch == '&':
-            out.append("&")
+            _emit("&")
             i += 1
             continue
 
         # Everything else passes through
-        out.append(ch)
+        _emit(ch)
         i += 1
 
     return "".join(out)

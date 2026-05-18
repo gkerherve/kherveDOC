@@ -161,7 +161,7 @@ def test_math_block_numbered():
     n = MathBlock(latex="E = mc^2", numbered=True)
     out = serialize_block(n)
     assert "#math.equation(block: true, numbering: \"(1)\")" in out
-    assert "E = mc^2" in out
+    assert "E = m c^2" in out
 
 
 def test_math_block_with_label():
@@ -436,7 +436,7 @@ def test_math_translation_welcome_doc_example():
     result = _latex_math_to_typst(r"a \neq 0")
     assert "eq.not" in result
     result = _latex_math_to_typst(r"\Delta = b^2 - 4ac")
-    assert result == "Delta = b^2 - 4ac"
+    assert result == "Delta = b^2 - 4a c"
 
 
 def test_math_inline_with_latex_commands():
