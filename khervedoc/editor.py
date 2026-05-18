@@ -2429,6 +2429,8 @@ class DocumentEditor(QWidget):
                 latex = raw.replace(_LINE_SEP, "\n")
                 if latex:
                     self._update_math_image_in_block(block, latex)
+                else:
+                    self._remove_math_image_from_block(block)
             block = block.next()
 
     def _update_math_image_in_block(self, block, latex: str) -> None:
@@ -2464,6 +2466,23 @@ class DocumentEditor(QWidget):
                     cursor.setCharFormat(img_fmt)
                     self._building = False
                     return
+            it += 1
+
+    def _remove_math_image_from_block(self, block) -> None:
+        """Delete the image character from a math block whose LaTeX was
+        removed, so the orphaned preview picture disappears."""
+        it = block.begin()
+        while not it.atEnd():
+            frag = it.fragment()
+            if frag.isValid() and frag.text() == "\ufffc":
+                cursor = QTextCursor(block)
+                cursor.setPosition(frag.position())
+                cursor.setPosition(frag.position() + frag.length(),
+                                   QTextCursor.KeepAnchor)
+                self._building = True
+                cursor.removeSelectedText()
+                self._building = False
+                return
             it += 1
 
 
