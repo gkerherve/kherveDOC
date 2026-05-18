@@ -806,6 +806,11 @@ class MainWindow(QMainWindow):
             self)
         self._status.addPermanentWidget(self._tectonic_label)
 
+        self._io_label = QLabel("", self)
+        self._io_label.setStyleSheet(
+            f"padding: 0 8px; color: {self._theme['status_text']};")
+        self._status.addPermanentWidget(self._io_label)
+
         # Initially on Formatted tab — hide PDF zoom, show editor zoom.
         self._pdf_zoom_sep.hide()
         self._pdf_zoom_out_btn.hide()
@@ -1667,6 +1672,8 @@ class MainWindow(QMainWindow):
             self._open_path(Path(path_s))
 
     def _open_path(self, path: Path) -> None:
+        self._io_label.setText("Loading\u2026")
+        self._io_label.repaint()
         try:
             if kdocz.is_kdocz_path(path):
                 doc, extract_dir = kdocz.load_kdocz(path)
@@ -1681,6 +1688,7 @@ class MainWindow(QMainWindow):
                 doc = from_json(path.read_text(encoding="utf-8"))
                 self._kdocz_extract_dir = None
         except Exception as exc:
+            self._io_label.setText("")
             QMessageBox.critical(self, "Open failed", str(exc))
             return
         self._current_path = path
@@ -1696,6 +1704,7 @@ class MainWindow(QMainWindow):
         self._editor.set_document(doc)
         self._update_title()
         self._remember_recent(path)
+        self._io_label.setText("")
 
     def _save(self) -> None:
         if self._current_path is None:
@@ -1731,6 +1740,8 @@ class MainWindow(QMainWindow):
         return path.stem
 
     def _write_to(self, path: Path) -> None:
+        self._io_label.setText("Saving\u2026")
+        self._io_label.repaint()
         doc = self._editor.get_document()
         # Dispatch on the file extension: .kdocz is the bundled ZIP container,
         # .kdoc.json is the plain JSON model. The .tex export sits alongside
@@ -1742,6 +1753,7 @@ class MainWindow(QMainWindow):
             path.write_text(to_json(doc), encoding="utf-8")
         tex_path = path.parent / f"{tex_basename}.tex"
         tex_path.write_text(serialize_document(doc), encoding="utf-8")
+        self._io_label.setText("")
 
         commit_msg = getattr(self, "_pending_commit_msg", None) or \
             f"Save {path.name} at {datetime.now().isoformat(timespec='seconds')}"
