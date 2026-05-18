@@ -130,8 +130,13 @@ def _extract_frontmatter_extras(src: str) -> str:
 
 
 def _strip_tex_comments(src: str) -> str:
-    """Drop LaTeX comments: `%` through end-of-line, except for `\\%`."""
-    return re.sub(r"(?<!\\)%[^\n]*", "", src)
+    r"""Drop LaTeX comments: `%` through end-of-line, except for `\\%`
+    and KHERVETEX marker comments (compile range / not-compile)."""
+    def _keep_or_strip(m: re.Match) -> str:
+        if "KHERVETEX" in m.group(0):
+            return m.group(0)
+        return ""
+    return re.sub(r"(?<!\\)%[^\n]*", _keep_or_strip, src)
 
 
 def _extract_braced(src: str, command: str) -> str | None:
@@ -194,6 +199,9 @@ _MATH_ENV_RE = re.compile(
 # routing. Order matters — math/figure/table envs first so they take
 # precedence over generic environments.
 _BLOCK_DISPATCH = [
+    # KHERVETEX compile markers — must win before anything else so they
+    # survive import as RawLatex blocks instead of becoming paragraph text.
+    ("khervetex_marker", re.compile(r"% ===== KHERVETEX [A-Z ]+ =====")),
     # Math envs win first.
     ("math_block_env",  _MATH_ENV_RE),
     ("math_block_dd",   re.compile(r"\$\$(.*?)\$\$", re.DOTALL)),
@@ -533,6 +541,8 @@ class _StubMatch:
 
 
 def _dispatch(kind: str, m) -> object:
+    if kind == "khervetex_marker":
+        return RawLatex(text=m.group(0))
     if kind == "bracket_arg_macro":
         # \twocolumn[ ... ]: preserved verbatim. The captured text
         # already includes the macro name and the balanced brackets.
