@@ -815,3 +815,20 @@ def compile_no_images() -> QIcon:
     p.drawLine(QPointF(4, 6), QPointF(14, 14))
     p.end()
     return QIcon(px)
+
+
+def compile_range() -> QIcon:
+    """Page with two horizontal bracket lines — compile-range toggle."""
+    px, p = _new_canvas()
+    page_bg = QColor("#2d2d2d") if _dark else Qt.white
+    p.setPen(QPen(_fg(), 1.2)); p.setBrush(QBrush(page_bg))
+    p.drawPolygon([QPointF(3, 2), QPointF(13, 2), QPointF(16, 5),
+                   QPointF(16, 18), QPointF(3, 18)])
+    green = QColor("#5fba7d") if _dark else QColor("#2a8c4a")
+    p.setPen(QPen(green, 1.8, Qt.SolidLine, Qt.RoundCap))
+    p.drawLine(QPointF(5, 8), QPointF(14, 8))
+    red = QColor("#ff5555") if _dark else QColor("#c00")
+    p.setPen(QPen(red, 1.8, Qt.SolidLine, Qt.RoundCap))
+    p.drawLine(QPointF(5, 14), QPointF(14, 14))
+    p.end()
+    return QIcon(px)

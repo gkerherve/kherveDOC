@@ -105,12 +105,73 @@ def _strip_images(tex_source: str) -> str:
     return _INCLUDEGRAPHICS_RE.sub(_sub, tex_source)
 
 
+_COMPILE_START = "% ===== KHERVETEX COMPILE START ====="
+_COMPILE_END   = "% ===== KHERVETEX COMPILE END ====="
+
+
+def _apply_compile_range(tex_source: str) -> str:
+    r"""Keep only the body between compile-range markers.
+
+    Everything in the preamble and \begin/\end{document} is preserved.
+    Body lines outside the marked range are wrapped in \iffalse...\fi
+    so LaTeX skips them entirely.  If no markers are found the source
+    is returned unchanged.
+    """
+    lines = tex_source.split("\n")
+    begin_doc = end_doc = -1
+    start_marker = end_marker = -1
+    for i, ln in enumerate(lines):
+        stripped = ln.strip()
+        if stripped.startswith(r"\begin{document}"):
+            begin_doc = i
+        elif stripped.startswith(r"\end{document}"):
+            end_doc = i
+        elif stripped == _COMPILE_START:
+            start_marker = i
+        elif stripped == _COMPILE_END:
+            end_marker = i
+
+    if start_marker == -1 and end_marker == -1:
+        return tex_source
+    if begin_doc == -1 or end_doc == -1:
+        return tex_source
+
+    body_start = begin_doc + 1
+    body_end = end_doc  # exclusive
+
+    # Determine the kept range within the body
+    keep_from = start_marker + 1 if start_marker >= body_start else body_start
+    keep_to = end_marker if end_marker > body_start else body_end
+
+    result: list[str] = []
+    # Preamble + \begin{document}
+    result.extend(lines[:body_start])
+    # Before the kept range → hide
+    before = lines[body_start:keep_from]
+    if any(ln.strip() for ln in before):
+        result.append(r"\iffalse")
+        result.extend(before)
+        result.append(r"\fi")
+    # Kept range
+    result.extend(lines[keep_from:keep_to])
+    # After the kept range → hide
+    after = lines[keep_to:body_end]
+    if any(ln.strip() for ln in after):
+        result.append(r"\iffalse")
+        result.extend(after)
+        result.append(r"\fi")
+    # \end{document} and anything after
+    result.extend(lines[end_doc:])
+    return "\n".join(result)
+
+
 def compile_tex(
     tex_source: str,
     workdir: Path,
     basename: str = "document",
     source_dir: Path | None = None,
     skip_images: bool = False,
+    use_compile_range: bool = False,
 ) -> CompileResult:
     """Write `tex_source` to `workdir/basename.tex` and compile with tectonic.
 
@@ -134,6 +195,8 @@ def compile_tex(
         tex_source = _strip_images(tex_source)
     else:
         tex_source = _rewrite_includegraphics(tex_source, source_dir)
+    if use_compile_range:
+        tex_source = _apply_compile_range(tex_source)
     tex_path = workdir / f"{basename}.tex"
     tex_path.write_text(tex_source, encoding="utf-8")
 

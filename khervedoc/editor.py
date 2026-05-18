@@ -2276,6 +2276,12 @@ class DocumentEditor(QWidget):
         c.insertBlock(QTextBlockFormat(), QTextCharFormat())
         c.block().setUserState(_STATE_PARAGRAPH)
 
+    def insert_compile_marker(self, marker_type: str) -> None:
+        """Insert a compile-range marker (start or end) at the cursor."""
+        from .compiler import _COMPILE_START, _COMPILE_END
+        text = _COMPILE_START if marker_type == "start" else _COMPILE_END
+        self._insert_raw_block(text)
+
     def insert_page_break(self) -> None:
         self._insert_raw_block(r"\newpage")
 
