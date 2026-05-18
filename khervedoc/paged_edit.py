@@ -20,6 +20,16 @@ from PySide6.QtWidgets import QTextEdit, QWidget
 _IMAGE_SUFFIXES = {
     ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff", ".webp", ".svg",
 }
+_DOCUMENT_SUFFIXES = {
+    ".kdocz", ".ktexz", ".tex", ".md", ".markdown", ".docx",
+}
+
+
+def _is_document_file(p: Path) -> bool:
+    name = p.name.lower()
+    if name.endswith(".kdoc.json") or name.endswith(".ktex.json"):
+        return True
+    return p.suffix.lower() in _DOCUMENT_SUFFIXES
 
 
 class _PageBreakOverlay(QWidget):
@@ -130,6 +140,7 @@ class PagedTextEdit(QTextEdit):
     """
 
     imageReceived = Signal(str)
+    documentDropped = Signal(str)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -275,11 +286,17 @@ class PagedTextEdit(QTextEdit):
             handled = False
             for u in source.urls():
                 local = u.toLocalFile()
-                if local and Path(local).suffix.lower() in _IMAGE_SUFFIXES:
-                    path = self._copy_local(Path(local))
+                if not local:
+                    continue
+                p = Path(local)
+                if p.suffix.lower() in _IMAGE_SUFFIXES:
+                    path = self._copy_local(p)
                     if path is not None:
                         self.imageReceived.emit(str(path))
                         handled = True
+                elif _is_document_file(p):
+                    self.documentDropped.emit(local)
+                    handled = True
             if handled:
                 return
         super().insertFromMimeData(source)

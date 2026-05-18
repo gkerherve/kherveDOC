@@ -15,7 +15,7 @@ The title bar shows `kherveDOC v<major>.<minor>.<commits>+<sha7>`.
 - Three tabs: **Formatted** (WYSIWYG), **LaTeX** (live read-only syntax-highlighted source), **PDF** (live preview).
 
 **File**
-- Native format: `.kdoc.json` (a JSON serialisation of the document model) plus a sibling `.tex`.
+- Native format: `.ktex.json` (a JSON serialisation of the document model) plus a sibling `.tex`. Bundled format: `.ktexz` (ZIP archive with images).
 - Import: `.tex` (regex-based subset parser, falls back to RawLatex), `.docx` (uses python-docx, **embedded images are extracted** into a sibling folder and inserted as Figure nodes).
 - Export: `.tex`, `.pdf`.
 - Document properties dialog: title, author, document class, package list.
@@ -65,7 +65,7 @@ tests/
   test_serializer.py
   test_importers.py
 examples/
-  demo.kdoc.json
+  demo.ktex.json
 ```
 
 ## Architecture in one paragraph

@@ -28,7 +28,10 @@ def _make_doc(image_path: str = "") -> Document:
 def test_is_kdocz_path():
     assert is_kdocz_path("/x/foo.kdocz")
     assert is_kdocz_path("foo.KDOCZ")
+    assert is_kdocz_path("foo.ktexz")
+    assert is_kdocz_path("foo.KTEXZ")
     assert not is_kdocz_path("foo.kdoc.json")
+    assert not is_kdocz_path("foo.ktex.json")
     assert not is_kdocz_path("foo.tex")
 
 

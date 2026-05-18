@@ -705,8 +705,8 @@ class MainWindow(QMainWindow):
     # menu can list every open document.
     _windows: list["MainWindow"] = []
 
-    _OPENABLE_SUFFIXES = {".kdocz", ".kdoc.json", ".tex", ".md",
-                          ".markdown", ".docx", ".json"}
+    _OPENABLE_SUFFIXES = {".ktexz", ".ktex.json", ".kdocz", ".kdoc.json",
+                          ".tex", ".md", ".markdown", ".docx", ".json"}
     _IMAGE_SUFFIXES = {
         ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff",
         ".webp", ".svg",
@@ -918,6 +918,8 @@ class MainWindow(QMainWindow):
         self._editor.documentChanged.connect(self._on_doc_changed)
         self._editor.text_edit.cursorPositionChanged.connect(self._sync_toolbar_state)
         self._editor.zoomChanged.connect(self._on_fit_zoom_changed)
+        self._editor.documentDropped.connect(
+            lambda p: self._open_path(Path(p)))
         self._latex_view.latexEdited.connect(self._on_latex_edited)
         self._suppress_latex_update = False
 
@@ -1805,8 +1807,8 @@ class MainWindow(QMainWindow):
     def _open_in_new_window(self) -> None:
         path_s, _ = QFileDialog.getOpenFileName(
             self, "Open document in new window", "",
-            "All supported (*.kdocz *.kdoc.json *.tex *.md *.markdown);;"
-            "Bundled (*.kdocz);;JSON (*.kdoc.json);;LaTeX (*.tex);;"
+            "All supported (*.ktexz *.ktex.json *.kdocz *.kdoc.json *.tex *.md *.markdown);;"
+            "Bundled (*.ktexz *.kdocz);;JSON (*.ktex.json *.kdoc.json);;LaTeX (*.tex);;"
             "Markdown (*.md *.markdown);;All files (*)")
         if not path_s:
             return
@@ -1871,8 +1873,8 @@ class MainWindow(QMainWindow):
     def _open(self) -> None:
         path_s, _ = QFileDialog.getOpenFileName(
             self, "Open document", "",
-            "All supported (*.kdocz *.kdoc.json *.tex *.md *.markdown *.docx);;"
-            "Bundled (*.kdocz);;JSON (*.kdoc.json);;LaTeX (*.tex);;"
+            "All supported (*.ktexz *.ktex.json *.kdocz *.kdoc.json *.tex *.md *.markdown *.docx);;"
+            "Bundled (*.ktexz *.kdocz);;JSON (*.ktex.json *.kdoc.json);;LaTeX (*.tex);;"
             "Markdown (*.md *.markdown);;Word (*.docx);;All files (*)")
         if path_s:
             self._open_path(Path(path_s))
@@ -1971,18 +1973,18 @@ class MainWindow(QMainWindow):
 
     def _save_as(self) -> None:
         path_s, selected_filter = QFileDialog.getSaveFileName(
-            self, "Save document", "document.kdocz",
-            "Bundled KherveTeX (*.kdocz);;JSON KherveTeX (*.kdoc.json)")
+            self, "Save document", "document.ktexz",
+            "Bundled KherveTeX (*.ktexz);;JSON KherveTeX (*.ktex.json)")
         if not path_s: return
         path = Path(path_s)
         # If the user didn't type an extension, infer it from the chosen
         # filter. Default to the bundled format because it is self-contained
         # for documents with images.
-        if path.suffix.lower() not in (".kdocz",) and not str(path).endswith(".kdoc.json"):
-            if "kdoc.json" in selected_filter:
-                path = path.with_name(path.stem + ".kdoc.json")
+        if not self._has_native_suffix(path):
+            if "ktex.json" in selected_filter:
+                path = path.with_name(path.stem + ".ktex.json")
             else:
-                path = path.with_suffix(".kdocz")
+                path = path.with_suffix(".ktexz")
         self._current_path = path
         self._editor.set_document_dir(path.parent)
         self._update_title()
@@ -1990,10 +1992,18 @@ class MainWindow(QMainWindow):
         self._remember_recent(path)
 
     @staticmethod
+    def _has_native_suffix(path: Path) -> bool:
+        name = path.name.lower()
+        return (name.endswith(".ktexz") or name.endswith(".ktex.json")
+                or name.endswith(".kdocz") or name.endswith(".kdoc.json"))
+
+    @staticmethod
     def _doc_stem(path: Path) -> str:
-        """Return the document's base name, handling .kdoc.json correctly."""
-        if path.name.endswith(".kdoc.json"):
-            return path.name.replace(".kdoc.json", "")
+        """Return the document's base name, stripping compound extensions."""
+        name = path.name
+        for ext in (".ktex.json", ".kdoc.json"):
+            if name.endswith(ext):
+                return name[:-len(ext)]
         return path.stem
 
     def _write_to(self, path: Path) -> None:
@@ -3186,9 +3196,9 @@ class MainWindow(QMainWindow):
             "<h3>Saving</h3>"
             "<p>KherveTeX saves in two native formats:</p>"
             "<ul>"
-            "<li><b>.kdocz</b> &mdash; a ZIP archive containing the document "
+            "<li><b>.ktexz</b> &mdash; a ZIP archive containing the document "
             "model and all embedded images. Portable and self-contained.</li>"
-            "<li><b>.kdoc.json</b> &mdash; plain-text JSON. Good for version "
+            "<li><b>.ktex.json</b> &mdash; plain-text JSON. Good for version "
             "control diffs.</li>"
             "</ul>"
             "<p>A <code>.tex</code> file is always written alongside the save "

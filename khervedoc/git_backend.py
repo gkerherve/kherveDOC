@@ -1,7 +1,7 @@
 """Per-document Git repo with auto-commit on save.
 
 Each document lives in a directory that is also its own git repo. The committed
-artifacts are the human-readable files (`document.tex`, `document.kdoc.json`),
+artifacts are the human-readable files (`document.tex`, `document.ktex.json`),
 not the internal Python model — so `git diff` is meaningful.
 
 Falls back gracefully if pygit2 is unavailable: every function becomes a no-op
@@ -107,8 +107,8 @@ def commit_all(repo_dir: Path, message: str | None = None,
     """Stage files in *repo_dir* and create a commit.
 
     When *file_stem* is given only files whose name starts with that
-    stem are staged (e.g. ``"My report"`` stages ``My report.kdocz``,
-    ``My report.tex``, ``My report.kdoc.json``).  Otherwise every
+    stem are staged (e.g. ``"My report"`` stages ``My report.ktexz``,
+    ``My report.tex``, ``My report.ktex.json``).  Otherwise every
     tracked + new file is staged.
 
     Returns the new commit's hex OID, or None if nothing changed / git unavailable.

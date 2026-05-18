@@ -35,7 +35,8 @@ IMAGES_DIR = "images"
 
 
 def is_kdocz_path(path: Path | str) -> bool:
-    return str(path).lower().endswith(".kdocz")
+    s = str(path).lower()
+    return s.endswith(".kdocz") or s.endswith(".ktexz")
 
 
 def save_kdocz(doc: Document, out_path: Path) -> None:

@@ -605,6 +605,7 @@ class DocumentEditor(QWidget):
 
     documentChanged = Signal()  # debounced after the user stops typing
     zoomChanged = Signal(int)   # emitted when fit-to-width recalculates zoom
+    documentDropped = Signal(str)  # file path dropped onto the editor
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -717,6 +718,7 @@ class DocumentEditor(QWidget):
         self._equations_dir: Path | None = None
         self._edit.set_images_dir(self._images_dir)
         self._edit.imageReceived.connect(self._on_image_received)
+        self._edit.documentDropped.connect(self.documentDropped)
         self._source_dir: Path | None = None
 
     # ---------- public ----------
