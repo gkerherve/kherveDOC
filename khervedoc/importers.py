@@ -15,9 +15,10 @@ import shutil
 from pathlib import Path
 
 from .model import (
-    Abstract, Author, Citation, CrossRef, Document, DocMeta, Figure, Footnote,
-    Frame, InlineRaw, Keywords, Link, List as ListNode, ListItem, MathBlock,
-    MathInline, Paragraph, RawLatex, Section, Table, Text, Title,
+    Abstract, Author, Citation, CrossRef, DEFAULT_PACKAGES, Document, DocMeta,
+    Figure, Footnote, Frame, InlineRaw, Keywords, Link, List as ListNode,
+    ListItem, MathBlock, MathInline, Paragraph, RawLatex, Section, Table,
+    Text, Title,
 )
 
 
@@ -921,3 +922,252 @@ def _images_in_paragraph(para, src_doc, image_dir: Path, start_idx: int) -> list
         out_path.write_bytes(part.blob)
         paths.append(out_path)
     return paths
+
+
+# ============================================================
+#                      .md (Markdown) importer
+# ============================================================
+
+_MD_YAML_FENCE = re.compile(r"\A---\s*\n(.*?\n)---\s*\n", re.DOTALL)
+
+
+def _parse_md_yaml_header(text: str) -> tuple[dict, str]:
+    """Extract a YAML front-matter block and return (metadata_dict, rest).
+    Uses a minimal key: value parser — no PyYAML dependency needed."""
+    m = _MD_YAML_FENCE.match(text)
+    if not m:
+        return {}, text
+    meta: dict = {}
+    for line in m.group(1).splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or line.startswith("-"):
+            continue
+        if ":" in line:
+            key, _, val = line.partition(":")
+            meta[key.strip()] = val.strip().strip("'\"")
+    return meta, text[m.end():]
+
+
+_MD_HEADING = re.compile(r"^(#{1,6})\s+(.*?)(?:\s+#+)?$", re.MULTILINE)
+_MD_DISPLAY_MATH = re.compile(r"\$\$(.*?)\$\$", re.DOTALL)
+_MD_INLINE_MATH = re.compile(r"(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)")
+_MD_IMAGE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
+_MD_LINK = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+_MD_BOLD_STAR = re.compile(r"\*\*(.+?)\*\*")
+_MD_BOLD_UNDER = re.compile(r"__(.+?)__")
+_MD_ITALIC_STAR = re.compile(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)")
+_MD_ITALIC_UNDER = re.compile(r"(?<!_)_(?!_)(.+?)(?<!_)_(?!_)")
+_MD_CODE_SPAN = re.compile(r"`([^`]+)`")
+_MD_CITE = re.compile(r"\[(@[\w:.-]+(?:;\s*@[\w:.-]+)*)\]")
+_MD_CODE_FENCE = re.compile(
+    r"^```(\w*)\s*\n(.*?)^```\s*$", re.MULTILINE | re.DOTALL)
+_MD_BLOCKQUOTE = re.compile(r"^>\s?(.*)$", re.MULTILINE)
+
+
+def _md_parse_inlines(text: str) -> list:
+    """Convert Markdown inline markup to model Inline nodes."""
+    parts: list = []
+    pos = 0
+    patterns = [
+        ("display_math", _MD_DISPLAY_MATH),
+        ("cite", _MD_CITE),
+        ("inline_math", _MD_INLINE_MATH),
+        ("image", _MD_IMAGE),
+        ("link", _MD_LINK),
+        ("code", _MD_CODE_SPAN),
+        ("bold_s", _MD_BOLD_STAR),
+        ("bold_u", _MD_BOLD_UNDER),
+        ("italic_s", _MD_ITALIC_STAR),
+        ("italic_u", _MD_ITALIC_UNDER),
+    ]
+    while pos < len(text):
+        best_m = None
+        best_kind = ""
+        for kind, pat in patterns:
+            m = pat.search(text, pos)
+            if m and (best_m is None or m.start() < best_m.start()):
+                best_m = m
+                best_kind = kind
+        if best_m is None:
+            remainder = text[pos:]
+            if remainder:
+                parts.append(Text(text=remainder))
+            break
+        if best_m.start() > pos:
+            parts.append(Text(text=text[pos:best_m.start()]))
+        if best_kind == "display_math":
+            parts.append(MathInline(latex=best_m.group(1).strip()))
+        elif best_kind == "inline_math":
+            parts.append(MathInline(latex=best_m.group(1).strip()))
+        elif best_kind == "cite":
+            keys = [k.strip().lstrip("@") for k in best_m.group(1).split(";")]
+            parts.append(Citation(keys=keys))
+        elif best_kind == "image":
+            # Images become separate Figure blocks later; skip inline
+            parts.append(Text(text=best_m.group(0)))
+        elif best_kind == "link":
+            link_text = best_m.group(1)
+            link_url = best_m.group(2)
+            parts.append(Link(url=link_url,
+                              children=[Text(text=link_text)]))
+        elif best_kind == "code":
+            parts.append(Text(text=best_m.group(1), marks=["code"]))
+        elif best_kind in ("bold_s", "bold_u"):
+            parts.append(Text(text=best_m.group(1), marks=["bold"]))
+        elif best_kind in ("italic_s", "italic_u"):
+            parts.append(Text(text=best_m.group(1), marks=["italic"]))
+        pos = best_m.end()
+    return parts or [Text(text="")]
+
+
+def import_md(md_source: str, image_dir: Path | None = None) -> Document:
+    """Parse a Markdown string into a Document.
+
+    Handles YAML front-matter (title, author, bibliography), ATX headings,
+    display/inline math, fenced code blocks, images, links, bold, italic,
+    inline code, citations (@key), ordered/unordered lists, and blockquotes.
+    """
+    yaml_meta, body = _parse_md_yaml_header(md_source)
+
+    title = yaml_meta.get("title", "")
+    author = yaml_meta.get("author", yaml_meta.get("authors", ""))
+    bib = yaml_meta.get("bibliography", "")
+
+    packages = list(DEFAULT_PACKAGES)
+    if bib:
+        packages = list(set(packages) | {"natbib"})
+    preamble = ""
+    if bib:
+        preamble = f"\\bibliographystyle{{plainnat}}\n\\bibliography{{{bib.replace('.bib', '')}}}"
+
+    meta = DocMeta(
+        title=title,
+        author=author if isinstance(author, str) else "",
+        documentclass="article",
+        packages=packages,
+        preamble_extras=preamble,
+    )
+
+    children: list = []
+    if title:
+        children.append(Title(children=[Text(text=title)]))
+    if meta.author:
+        children.append(Author(children=[Text(text=meta.author)]))
+
+    # Process body line by line, grouping into blocks.
+    lines = body.split("\n")
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+
+        # Fenced code block
+        fence_m = re.match(r"^```(\w*)\s*$", line)
+        if fence_m:
+            code_lines = []
+            i += 1
+            while i < len(lines) and not re.match(r"^```\s*$", lines[i]):
+                code_lines.append(lines[i])
+                i += 1
+            i += 1  # skip closing ```
+            lang = fence_m.group(1)
+            code = "\n".join(code_lines)
+            env = "lstlisting"
+            lang_opt = f"[language={lang}]" if lang else ""
+            children.append(RawLatex(
+                text=f"\\begin{{{env}}}{lang_opt}\n{code}\n\\end{{{env}}}"))
+            continue
+
+        # Display math ($$...$$ spanning lines)
+        if line.strip().startswith("$$"):
+            math_lines = [line.strip().removeprefix("$$")]
+            i += 1
+            while i < len(lines):
+                if "$$" in lines[i]:
+                    math_lines.append(
+                        lines[i].strip().removesuffix("$$"))
+                    i += 1
+                    break
+                math_lines.append(lines[i])
+                i += 1
+            latex = "\n".join(math_lines).strip()
+            children.append(MathBlock(latex=latex))
+            continue
+
+        # ATX heading
+        h_m = _MD_HEADING.match(line)
+        if h_m:
+            level = len(h_m.group(1))
+            heading_text = h_m.group(2).strip()
+            inlines = _md_parse_inlines(heading_text)
+            children.append(Section(level=min(level, 5),
+                                    children=inlines))
+            i += 1
+            continue
+
+        # Image on its own line
+        img_m = _MD_IMAGE.match(line.strip())
+        if img_m:
+            caption = img_m.group(1)
+            img_path = img_m.group(2)
+            children.append(Figure(path=img_path, caption=caption,
+                                   label=None))
+            i += 1
+            continue
+
+        # Unordered list
+        if re.match(r"^[-*+]\s", line):
+            items = []
+            while i < len(lines) and re.match(r"^[-*+]\s", lines[i]):
+                item_text = re.sub(r"^[-*+]\s+", "", lines[i])
+                items.append(ListItem(
+                    children=_md_parse_inlines(item_text)))
+                i += 1
+            children.append(ListNode(ordered=False, items=items))
+            continue
+
+        # Ordered list
+        if re.match(r"^\d+\.\s", line):
+            items = []
+            while i < len(lines) and re.match(r"^\d+\.\s", lines[i]):
+                item_text = re.sub(r"^\d+\.\s+", "", lines[i])
+                items.append(ListItem(
+                    children=_md_parse_inlines(item_text)))
+                i += 1
+            children.append(ListNode(ordered=True, items=items))
+            continue
+
+        # Blockquote — collect consecutive > lines into an italic paragraph
+        if line.startswith(">"):
+            quote_lines = []
+            while i < len(lines) and lines[i].startswith(">"):
+                quote_lines.append(
+                    re.sub(r"^>\s?", "", lines[i]))
+                i += 1
+            quote_text = " ".join(quote_lines)
+            children.append(Paragraph(
+                children=[Text(text=quote_text, marks=["italic"])]))
+            continue
+
+        # Blank line — skip
+        if not line.strip():
+            i += 1
+            continue
+
+        # Regular paragraph — collect lines until blank/heading/fence/list
+        para_lines = [line]
+        i += 1
+        while i < len(lines):
+            nxt = lines[i]
+            if (not nxt.strip() or _MD_HEADING.match(nxt)
+                    or re.match(r"^```", nxt)
+                    or re.match(r"^[-*+]\s", nxt)
+                    or re.match(r"^\d+\.\s", nxt)
+                    or nxt.startswith(">")
+                    or nxt.strip().startswith("$$")):
+                break
+            para_lines.append(nxt)
+            i += 1
+        para_text = " ".join(para_lines)
+        children.append(Paragraph(children=_md_parse_inlines(para_text)))
+
+    return Document(meta=meta, children=children)

@@ -886,6 +886,7 @@ class MainWindow(QMainWindow):
         self.act_close_doc = QAction("&Close document", self, triggered=self._new)
         self.act_import_tex = QAction("Import .&tex...", self, triggered=self._import_tex)
         self.act_import_docx = QAction("Import .&docx...", self, triggered=self._import_docx)
+        self.act_import_md = QAction("Import .&md...", self, triggered=self._import_md)
         self.act_export_tex = QAction("Export .&tex...", self, triggered=self._export_tex)
         self.act_export_pdf = QAction(icons.export_pdf(), "Export .&pdf...", self,
                                       triggered=self._export_pdf)
@@ -1202,6 +1203,7 @@ class MainWindow(QMainWindow):
         m_import = m_file.addMenu("&Import")
         m_import.addAction(self.act_import_tex)
         m_import.addAction(self.act_import_docx)
+        m_import.addAction(self.act_import_md)
         m_export = m_file.addMenu("&Export")
         m_export.addAction(self.act_export_tex)
         m_export.addAction(self.act_export_pdf)
@@ -1606,8 +1608,9 @@ class MainWindow(QMainWindow):
     def _open_in_new_window(self) -> None:
         path_s, _ = QFileDialog.getOpenFileName(
             self, "Open document in new window", "",
-            "All supported (*.kdocz *.kdoc.json *.tex);;"
-            "Bundled (*.kdocz);;JSON (*.kdoc.json);;LaTeX (*.tex);;All files (*)")
+            "All supported (*.kdocz *.kdoc.json *.tex *.md *.markdown);;"
+            "Bundled (*.kdocz);;JSON (*.kdoc.json);;LaTeX (*.tex);;"
+            "Markdown (*.md *.markdown);;All files (*)")
         if not path_s:
             return
         win = self._new_window()
@@ -1657,8 +1660,9 @@ class MainWindow(QMainWindow):
     def _open(self) -> None:
         path_s, _ = QFileDialog.getOpenFileName(
             self, "Open document", "",
-            "All supported (*.kdocz *.kdoc.json *.tex);;"
-            "Bundled (*.kdocz);;JSON (*.kdoc.json);;LaTeX (*.tex);;All files (*)")
+            "All supported (*.kdocz *.kdoc.json *.tex *.md *.markdown);;"
+            "Bundled (*.kdocz);;JSON (*.kdoc.json);;LaTeX (*.tex);;"
+            "Markdown (*.md *.markdown);;All files (*)")
         if path_s:
             self._open_path(Path(path_s))
 
@@ -1668,9 +1672,10 @@ class MainWindow(QMainWindow):
                 doc, extract_dir = kdocz.load_kdocz(path)
                 self._kdocz_extract_dir = extract_dir
             elif path.suffix.lower() == ".tex":
-                # Import via the .tex parser; unknown commands become
-                # RawLatex blocks rather than disappearing.
                 doc = importers.import_tex(path.read_text(encoding="utf-8"))
+                self._kdocz_extract_dir = None
+            elif path.suffix.lower() in (".md", ".markdown"):
+                doc = importers.import_md(path.read_text(encoding="utf-8"))
                 self._kdocz_extract_dir = None
             else:
                 doc = from_json(path.read_text(encoding="utf-8"))
@@ -1828,6 +1833,27 @@ class MainWindow(QMainWindow):
         n_imgs = len(list(image_dir.glob("image_*"))) if image_dir.exists() else 0
         self._status.showMessage(
             f"Imported {path.name} ({n_imgs} image(s) extracted to {image_dir})", 8000)
+
+    def _import_md(self) -> None:
+        path_s, _ = QFileDialog.getOpenFileName(
+            self, "Import Markdown", "",
+            "Markdown (*.md *.markdown);;All files (*)")
+        if not path_s:
+            return
+        path = Path(path_s)
+        try:
+            doc = importers.import_md(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            QMessageBox.critical(self, "Import failed", str(exc))
+            return
+        self._current_path = None
+        self._import_source_dir = path.parent
+        self._sync_editor_source_dir()
+        self._editor.set_document(doc)
+        self.setWindowTitle(
+            f"KherveTeX {version_string()} — {path.stem} (imported)")
+        self._status.showMessage(
+            f"Imported {path.name} — Save As to keep it", 6000)
 
     def _export_tex(self) -> None:
         path_s, _ = QFileDialog.getSaveFileName(
