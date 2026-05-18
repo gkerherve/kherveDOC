@@ -1585,6 +1585,7 @@ class MainWindow(QMainWindow):
         self._current_path = path
         self._import_source_dir = None  # current_path supersedes any prior import
         self._sync_editor_source_dir()
+        self._editor.set_document_dir(path.parent)
         self._editor.set_document(doc)
         self._update_title()
         self._remember_recent(path)
@@ -1610,6 +1611,7 @@ class MainWindow(QMainWindow):
             else:
                 path = path.with_suffix(".kdocz")
         self._current_path = path
+        self._editor.set_document_dir(path.parent)
         self._update_title()
         self._write_to(path)
         self._remember_recent(path)

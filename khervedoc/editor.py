@@ -45,7 +45,7 @@ import re as _re
 import hashlib as _hashlib
 from io import BytesIO as _BytesIO
 
-_MATH_IMAGE_CACHE: dict[str, QImage | None] = {}
+_MATH_IMAGE_CACHE: dict[str, Path | None] = {}
 _math_tmp_dir: Path | None = None
 
 
@@ -62,15 +62,19 @@ _ENV_STRIP_RE = _re.compile(
     _re.DOTALL)
 
 
-def _render_math_image(latex: str, font_size: int = 14) -> Path | None:
+def _render_math_image(latex: str, font_size: int = 14,
+                       cache_dir: Path | None = None) -> Path | None:
     """Render a LaTeX math expression to a PNG file using matplotlib.
 
     Handles multi-line equations (align, gather, etc.) by splitting on
     ``\\\\`` and rendering each line separately, stacked vertically.
     Returns the path to the PNG file, or None on failure. Results are
-    cached on disk."""
+    cached on disk.  When *cache_dir* is given the PNG is written there
+    instead of the global temp directory."""
     if latex in _MATH_IMAGE_CACHE:
-        return _MATH_IMAGE_CACHE[latex]
+        cached = _MATH_IMAGE_CACHE[latex]
+        if cached is not None and cached.exists():
+            return cached
     try:
         from matplotlib.figure import Figure as MplFigure
     except ImportError:
@@ -112,9 +116,9 @@ def _render_math_image(latex: str, font_size: int = 14) -> Path | None:
             y = 1.0 - (i + 0.5) / n
             fig.text(0.5, y, f"${line}$", fontsize=font_size,
                      ha="center", va="center", math_fontfamily="cm")
-        # Save to a temp file so QTextDocument can load it via file:// URL.
         h = _hashlib.md5(latex.encode()).hexdigest()[:12]
-        png_path = _math_cache_dir() / f"math_{h}.png"
+        dest = cache_dir if cache_dir is not None else _math_cache_dir()
+        png_path = dest / f"math_{h}.png"
         fig.savefig(str(png_path), format="png", bbox_inches="tight",
                     pad_inches=0.04, transparent=True)
         _MATH_IMAGE_CACHE[latex] = png_path
@@ -658,6 +662,7 @@ class DocumentEditor(QWidget):
         # image files land here; the figure stub points at the saved path.
         # save_kdocz will bundle them into the archive on Save As .kdocz.
         self._images_dir = Path(tempfile.mkdtemp(prefix="khervedoc-imgs-"))
+        self._equations_dir: Path | None = None
         self._edit.set_images_dir(self._images_dir)
         self._edit.imageReceived.connect(self._on_image_received)
         self._source_dir: Path | None = None
@@ -670,6 +675,47 @@ class DocumentEditor(QWidget):
 
     def set_source_dir(self, path: Path | None) -> None:
         self._source_dir = path
+
+    def set_document_dir(self, doc_dir: Path) -> None:
+        """Point image storage at permanent subdirs next to the document.
+
+        Creates ``equations/`` and ``figures/`` folders under *doc_dir*
+        and migrates any images that were in the previous temp dirs."""
+        import shutil
+
+        eq_dir = doc_dir / "equations"
+        fig_dir = doc_dir / "figures"
+        eq_dir.mkdir(exist_ok=True)
+        fig_dir.mkdir(exist_ok=True)
+
+        # Migrate existing equation PNGs
+        old_eq = self._equations_dir or _math_tmp_dir
+        if old_eq and old_eq.exists() and old_eq != eq_dir:
+            for f in old_eq.glob("math_*.png"):
+                dest = eq_dir / f.name
+                if not dest.exists():
+                    shutil.copy2(f, dest)
+
+        # Migrate existing figure images
+        old_fig = self._images_dir
+        if old_fig.exists() and old_fig != fig_dir:
+            for f in old_fig.iterdir():
+                if f.is_file():
+                    dest = fig_dir / f.name
+                    if not dest.exists():
+                        shutil.copy2(f, dest)
+
+        self._equations_dir = eq_dir
+        self._images_dir = fig_dir
+        self._edit.set_images_dir(fig_dir)
+
+        # Update cached math paths so they point at the new location
+        for latex_key, old_path in list(_MATH_IMAGE_CACHE.items()):
+            if old_path is None:
+                continue
+            new_path = eq_dir / old_path.name
+            if new_path.exists():
+                _MATH_IMAGE_CACHE[latex_key] = new_path
 
     def meta(self) -> DocMeta:
         return self._meta
@@ -978,7 +1024,7 @@ class DocumentEditor(QWidget):
 
     def _insert_math_image(self, cursor: QTextCursor, latex: str) -> None:
         """Render math to a PNG and insert it into the document."""
-        png_path = _render_math_image(latex)
+        png_path = _render_math_image(latex, cache_dir=self._equations_dir)
         if png_path is None or not png_path.exists():
             return
         img = QImage(str(png_path))
