@@ -36,7 +36,7 @@ from PySide6.QtWidgets import (
 # Pre-set colour palette — clicking a swatch sets the current pen.
 _PALETTE = [
     "#000000",  # black
-    "#1a6dd8",  # blue (kherveDOC accent)
+    "#1a6dd8",  # blue (KherveTeX accent)
     "#d8000c",  # red
     "#0a6f00",  # green
     "#d96b00",  # orange

@@ -290,7 +290,7 @@ def _wrap_multicols(body: str, n: int) -> str:
     return f"\\begin{{multicols}}{{{n}}}\n{body}\\end{{multicols}}\n"
 
 
-# kherveDOC-provided macros. \providecommand (not \newcommand) so that
+# KherveTeX-provided macros. \providecommand (not \newcommand) so that
 # imported documents which already define \Kstroke in their preamble
 # survive the round-trip without a "command already defined" error.
 # \rotatebox needs graphicx, which is in DEFAULT_PACKAGES.

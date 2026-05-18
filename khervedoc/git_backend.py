@@ -91,7 +91,7 @@ def _signature(repo: "pygit2.Repository | None" = None) -> "pygit2.Signature":
         except (KeyError, pygit2.GitError):
             pass
     return pygit2.Signature(
-        "kherveDOC", "khervedoc@local", int(datetime.now().timestamp()), 0)
+        "KherveTeX", "khervedoc@local", int(datetime.now().timestamp()), 0)
 
 
 def commit_all(repo_dir: Path, message: str | None = None,
@@ -222,7 +222,7 @@ def pull(repo_dir: Path, remote_name: str = "origin") -> tuple[bool, str]:
     manually" etc.
 
     We deliberately only do fast-forward merges; if a real merge is
-    needed the user should drop to the command line. The kherveDOC
+    needed the user should drop to the command line. The KherveTeX
     auto-commit on save means three-way merges from inside the GUI
     would be too easy to misuse and lose work."""
     if not _PYGIT2_OK:
@@ -269,7 +269,7 @@ def pull(repo_dir: Path, remote_name: str = "origin") -> tuple[bool, str]:
         return True, "Already up to date."
     if not (merge_analysis & pygit2.GIT_MERGE_ANALYSIS_FASTFORWARD):
         return False, (
-            "Local branch has diverged from the remote — kherveDOC only "
+            "Local branch has diverged from the remote — KherveTeX only "
             "fast-forwards. Resolve the merge from a terminal."
         )
     # Count incoming commits for a nicer status message. `.hide()`

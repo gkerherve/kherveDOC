@@ -25,7 +25,7 @@ class StyleDialog(QDialog):
 
         # ---- info label ---------------------------------------------------
         info = QLabel(
-            "<b>Bundled styles</b> ship with kherveDOC and are always "
+            "<b>Bundled styles</b> ship with KherveTeX and are always "
             "available. <b>User styles</b> are files you imported — they "
             "live in a personal folder and survive app updates.<br><br>"
             "Any <code>.cls</code> (document class), <code>.sty</code> "
@@ -162,7 +162,7 @@ class StyleDialog(QDialog):
             QMessageBox.information(
                 self, "Cannot remove",
                 "Bundled styles cannot be removed — they ship with "
-                "kherveDOC.")
+                "KherveTeX.")
             return
         reply = QMessageBox.question(
             self, "Remove style",

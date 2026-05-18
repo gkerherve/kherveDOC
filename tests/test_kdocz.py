@@ -108,5 +108,5 @@ def test_schema_version_too_new_rejected(tmp_path: Path):
             MANIFEST_BASENAME,
             '{"format":"kdocz","schema_version":99,"app":"kherveDOC"}')
         zf.writestr(DOC_BASENAME, '{"type":"Document","meta":{},"children":[]}')
-    with pytest.raises(ValueError, match="newer kherveDOC"):
+    with pytest.raises(ValueError, match="newer KherveTeX"):
         load_kdocz(out, extract_to=tmp_path / "extract3")

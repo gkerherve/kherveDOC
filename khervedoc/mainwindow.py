@@ -244,7 +244,7 @@ class DocSettingsDialog(QDialog):
         v = QVBoxLayout(w)
         v.addWidget(QLabel(
             "Extra LaTeX packages, one per line. "
-            "geometry / setspace are added automatically by kherveDOC."))
+            "geometry / setspace are added automatically by KherveTeX."))
         v.addWidget(self._packages, 1)
         return w
 
@@ -638,7 +638,7 @@ class MainWindow(QMainWindow):
         self._theme = themes.THEMES.get(theme_name, themes.THEMES["Light"])
         self._current_path: Path | None = None
         # Imported (.tex/.docx) files don't get a "current path" — the user
-        # has to Save As before kherveDOC knows where to save the .kdocz.
+        # has to Save As before KherveTeX knows where to save the .kdocz.
         # But we still want the original file's parent directory available
         # so relative \includegraphics paths (`Images/foo.png` next to the
         # imported .tex) resolve when compiling the preview.
@@ -1172,7 +1172,7 @@ class MainWindow(QMainWindow):
                                       triggered=self._show_help_guide)
         self.act_shortcuts = QAction("&Keyboard shortcuts", self,
                                      triggered=self._show_shortcuts)
-        self.act_about = QAction("&About kherveDOC", self, triggered=self._about)
+        self.act_about = QAction("&About KherveTeX", self, triggered=self._about)
 
     # ----- menus -----
 
@@ -1411,7 +1411,7 @@ class MainWindow(QMainWindow):
         self._window_menu.addSeparator()
         for i, win in enumerate(MainWindow._windows):
             label = win.windowTitle() or f"Window {i + 1}"
-            # Trim the "kherveDOC vX.Y.N+sha — " prefix when present so
+            # Trim the "KherveTeX vX.Y.N+sha — " prefix when present so
             # the Window menu shows just the document name.
             marker = " — "
             if marker in label:
@@ -1561,7 +1561,7 @@ class MainWindow(QMainWindow):
             if _br:
                 branch_suffix = f" [{_br}]"
         self.setWindowTitle(
-            f"kherveDOC {version_string()} — {name}{branch_suffix}")
+            f"KherveTeX {version_string()} — {name}{branch_suffix}")
         # Status bar shows "filename  —  full/parent/directory/" so the user
         # can identify the document at a glance and still see where it lives.
         if self._current_path is not None:
@@ -1696,7 +1696,7 @@ class MainWindow(QMainWindow):
     def _save_as(self) -> None:
         path_s, selected_filter = QFileDialog.getSaveFileName(
             self, "Save document", "document.kdocz",
-            "Bundled kherveDOC (*.kdocz);;JSON kherveDOC (*.kdoc.json)")
+            "Bundled KherveTeX (*.kdocz);;JSON KherveTeX (*.kdoc.json)")
         if not path_s: return
         path = Path(path_s)
         # If the user didn't type an extension, infer it from the chosen
@@ -1793,7 +1793,7 @@ class MainWindow(QMainWindow):
         self._import_source_dir = path.parent
         self._sync_editor_source_dir()
         self._editor.set_document(doc)
-        self.setWindowTitle(f"kherveDOC {version_string()} — {path.stem} (imported)")
+        self.setWindowTitle(f"KherveTeX {version_string()} — {path.stem} (imported)")
         self._status.showMessage(f"Imported {path.name} — Save As to keep it", 6000)
 
     def _import_docx(self) -> None:
@@ -1819,7 +1819,7 @@ class MainWindow(QMainWindow):
         self._import_source_dir = None  # docx images are extracted into build_dir
         self._sync_editor_source_dir()
         self._editor.set_document(doc)
-        self.setWindowTitle(f"kherveDOC {version_string()} — {path.stem} (imported)")
+        self.setWindowTitle(f"KherveTeX {version_string()} — {path.stem} (imported)")
         n_imgs = len(list(image_dir.glob("image_*"))) if image_dir.exists() else 0
         self._status.showMessage(
             f"Imported {path.name} ({n_imgs} image(s) extracted to {image_dir})", 8000)
@@ -2451,7 +2451,7 @@ class MainWindow(QMainWindow):
         if self._current_path is None:
             QMessageBox.information(
                 self, "Connect to cloud",
-                "You need to save your document first so kherveDOC "
+                "You need to save your document first so KherveTeX "
                 "knows where to create the connection.\n\n"
                 "Use File \u2192 Save (Ctrl+S), then try again.")
             return
@@ -2496,7 +2496,7 @@ class MainWindow(QMainWindow):
         if not git_backend.history_detailed(self._current_path.parent, limit=1):
             QMessageBox.information(
                 self, "Version history",
-                "No snapshots yet. Every time you save, kherveDOC "
+                "No snapshots yet. Every time you save, KherveTeX "
                 "automatically creates a snapshot.\n\n"
                 "Save your document and come back here to see its history.")
             return
@@ -2527,8 +2527,8 @@ class MainWindow(QMainWindow):
     def _about(self) -> None:
         tec = "installed" if tectonic_available() else "not found"
         QMessageBox.about(
-            self, "About kherveDOC",
-            f"<h2>kherveDOC {version_string()}</h2>"
+            self, "About KherveTeX",
+            f"<h2>KherveTeX {version_string()}</h2>"
             f"<p>A WYSIWYG document editor that produces publication-quality "
             f"LaTeX output with built-in Git version control.</p>"
             f"<hr>"
@@ -2536,8 +2536,8 @@ class MainWindow(QMainWindow):
             f"Imperial College London<br>"
             f"<a href='mailto:g.kerherve@imperial.ac.uk'>g.kerherve@imperial.ac.uk</a></p>"
             f"<p><b>Source:</b> "
-            f"<a href='https://github.com/gkerherve/kherveDOC'>"
-            f"github.com/gkerherve/kherveDOC</a></p>"
+            f"<a href='https://github.com/gkerherve/KherveTeX'>"
+            f"github.com/gkerherve/KherveTeX</a></p>"
             f"<hr>"
             f"<table cellpadding='2'>"
             f"<tr><td><b>Python</b></td><td>{__import__('sys').version.split()[0]}</td></tr>"
@@ -2550,7 +2550,7 @@ class MainWindow(QMainWindow):
     def _show_help_guide(self) -> None:
         from PySide6.QtWidgets import QTextBrowser
         dlg = QDialog(self)
-        dlg.setWindowTitle("kherveDOC User Guide")
+        dlg.setWindowTitle("KherveTeX User Guide")
         dlg.resize(680, 560)
         tabs = QTabWidget(dlg)
 
@@ -2562,7 +2562,7 @@ class MainWindow(QMainWindow):
 
         tabs.addTab(_page(
             "<h2>Getting started</h2>"
-            "<p>kherveDOC is a document editor that looks and feels like a "
+            "<p>KherveTeX is a document editor that looks and feels like a "
             "word processor but produces publication-quality LaTeX output. "
             "Every document is stored as a structured model and can be "
             "compiled to PDF in real time.</p>"
@@ -2655,7 +2655,7 @@ class MainWindow(QMainWindow):
         tabs.addTab(_page(
             "<h2>Files &amp; formats</h2>"
             "<h3>Saving</h3>"
-            "<p>kherveDOC saves in two native formats:</p>"
+            "<p>KherveTeX saves in two native formats:</p>"
             "<ul>"
             "<li><b>.kdocz</b> &mdash; a ZIP archive containing the document "
             "model and all embedded images. Portable and self-contained.</li>"
@@ -2694,11 +2694,11 @@ class MainWindow(QMainWindow):
 
         tabs.addTab(_page(
             "<h2>Version control</h2>"
-            "<p>kherveDOC has built-in Git integration via "
+            "<p>KherveTeX has built-in Git integration via "
             "<code>pygit2</code>.</p>"
 
             "<h3>Automatic commits</h3>"
-            "<p>Every time you save, kherveDOC creates a Git commit in the "
+            "<p>Every time you save, KherveTeX creates a Git commit in the "
             "document's folder. If a remote is configured, it pushes "
             "automatically. Commits use your global Git identity "
             "(name and email from <code>git config</code>).</p>"
@@ -3088,7 +3088,7 @@ def _apply_user_defaults(meta: DocMeta) -> DocMeta:
 
 def _starter_document() -> Document:
     """First-launch / File>New document — a multi-page welcome tour so
-    users see what kherveDOC can do before they have to type anything."""
+    users see what KherveTeX can do before they have to type anything."""
     doc = examples.welcome()
     doc.meta = _apply_user_defaults(doc.meta)
     return doc

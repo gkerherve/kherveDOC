@@ -1,6 +1,6 @@
-"""Import .tex and .docx files into the kherveDOC document model.
+"""Import .tex and .docx files into the KherveTeX document model.
 
-The .tex parser handles the common subset that the rest of kherveDOC also
+The .tex parser handles the common subset that the rest of KherveTeX also
 emits (sections, lists, math, links, citations, cross-refs, figures, plus
 the formatting marks). Anything it doesn't recognise is preserved as
 RawLatex so the document round-trips without data loss.
@@ -760,7 +760,7 @@ def import_tex(tex_source: str) -> Document:
         frontmatter_extras = ""
     # Preserve every other preamble customisation (\lstset for listings
     # styling, \definecolor, \hypersetup, custom \newcommand etc.) so
-    # the PDF re-compiled from kherveDOC retains the framed line-numbered
+    # the PDF re-compiled from KherveTeX retains the framed line-numbered
     # syntax-coloured code blocks the user authored upstream.
     preamble_extras = _extract_preamble_extras(tex_source)
     meta = DocMeta(

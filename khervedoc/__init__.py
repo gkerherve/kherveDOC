@@ -1,4 +1,4 @@
-"""kherveDOC — WYSIWYG LaTeX editor with Git history."""
+"""KherveTeX — WYSIWYG LaTeX editor with Git history."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,7 +9,7 @@ __version__ = "0.59"
 
 
 def _git_build_info() -> tuple[int, str] | None:
-    """Return (commit_count, short_sha) for the kherveDOC source repo, or
+    """Return (commit_count, short_sha) for the KherveTeX source repo, or
     None if we can't read it (not a git checkout, pygit2 missing, etc.)."""
     repo_root = Path(__file__).resolve().parent.parent
     try:

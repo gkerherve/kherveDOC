@@ -4,7 +4,7 @@ every image the document references.
 Layout inside the archive:
 
     manifest.json   - schema version + producing app
-    document.json   - the kherveDOC document model, image paths rewritten
+    document.json   - the KherveTeX document model, image paths rewritten
                       to point at the bundled files (e.g. "images/figure_001.png")
     images/         - the bundled image files referenced by Figure nodes
 
@@ -84,7 +84,7 @@ def save_kdocz(doc: Document, out_path: Path) -> None:
     with zipfile.ZipFile(out_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(MANIFEST_BASENAME, json.dumps(
             {"format": "kdocz", "schema_version": SCHEMA_VERSION,
-             "app": "kherveDOC"},
+             "app": "KherveTeX"},
             indent=2))
         zf.writestr(DOC_BASENAME, to_json(archive_doc))
         for src_path, arc_name in images_to_bundle:
@@ -115,7 +115,7 @@ def load_kdocz(path: Path, extract_to: Path | None = None) -> tuple[Document, Pa
             manifest = json.loads(zf.read(MANIFEST_BASENAME))
             if manifest.get("schema_version", 0) > SCHEMA_VERSION:
                 raise ValueError(
-                    f"{path.name} was produced by a newer kherveDOC "
+                    f"{path.name} was produced by a newer KherveTeX "
                     f"(schema {manifest['schema_version']} > {SCHEMA_VERSION}).")
         zf.extractall(extract_to)
 

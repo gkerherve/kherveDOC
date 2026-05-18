@@ -12,7 +12,7 @@ from .mainwindow import MainWindow
 
 def main() -> int:
     app = QApplication(sys.argv)
-    app.setApplicationName("kherveDOC")
+    app.setApplicationName("KherveTeX")
     settings = QSettings("kherveDOC", "kherveDOC")
     # Migrate legacy boolean → named theme on first run after upgrade.
     theme_name = settings.value("theme_name", "")

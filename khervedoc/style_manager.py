@@ -21,7 +21,7 @@ from PySide6.QtCore import QSettings
 
 
 def bundled_styles_dir() -> Path:
-    """Directory of .cls/.sty files shipped with kherveDOC."""
+    """Directory of .cls/.sty files shipped with KherveTeX."""
     return Path(__file__).resolve().parent / "styles"
 
 

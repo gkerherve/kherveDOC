@@ -1,6 +1,6 @@
 """Editable LaTeX source view with syntax highlighting and autocompletion.
 
-When the user edits this view kherveDOC reparses the source through
+When the user edits this view KherveTeX reparses the source through
 khervedoc.importers.import_tex and updates the Formatted tab + PDF
 preview, giving you a two-way binding between the rendered document
 and its LaTeX source.

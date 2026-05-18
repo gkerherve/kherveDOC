@@ -1,5 +1,5 @@
 """Example documents shown under the Examples menu and used as the
-starting document when kherveDOC opens for the first time.
+starting document when KherveTeX opens for the first time.
 
 Each factory returns a fully-formed Document so the editor can hand it
 straight to set_document(). Keeping the examples here (rather than as
@@ -24,7 +24,7 @@ from .model import (
 # ---------------------------------------------------------------- helpers
 
 def _meta(**overrides) -> DocMeta:
-    """Build a DocMeta with the kherveDOC defaults and let callers tweak
+    """Build a DocMeta with the KherveTeX defaults and let callers tweak
     a few fields. Avoids each example repeating the same boilerplate."""
     base = DocMeta(
         title="", author="",
@@ -63,18 +63,18 @@ def _ord_items(*labels) -> ListNode:
 # ---------------------------------------------------------------- welcome
 
 def welcome() -> Document:
-    """Multi-page tour of kherveDOC's main features — what new users see
+    """Multi-page tour of KherveTeX's main features — what new users see
     when they open the app."""
     return Document(
-        meta=_meta(title="Welcome to kherveDOC", author="The kherveDOC team"),
+        meta=_meta(title="Welcome to KherveTeX", author="The KherveTeX team"),
         children=[
-            Title(children=[Text(text="Welcome to kherveDOC")]),
+            Title(children=[Text(text="Welcome to KherveTeX")]),
             Author(children=[Text(text="A guided tour of the editor")]),
 
             # ---- What it is ----
-            Section(level=1, children=[Text(text="What kherveDOC is")]),
+            Section(level=1, children=[Text(text="What KherveTeX is")]),
             _p(
-                "kherveDOC is a WYSIWYG editor that produces real LaTeX. "
+                "KherveTeX is a WYSIWYG editor that produces real LaTeX. "
                 "You type the way you would in Word; the preview on the "
                 "right compiles to PDF every time you stop typing. "
                 "Underneath, the document is stored as a structured model "
@@ -84,7 +84,7 @@ def welcome() -> Document:
             ),
             _p(
                 "If you have never written LaTeX directly, you will not "
-                "need to. If you have, kherveDOC stays out of your way: "
+                "need to. If you have, KherveTeX stays out of your way: "
                 "you can import an existing .tex file, edit it visually, "
                 "and export the result back to LaTeX with the structure "
                 "preserved. Anything the editor does not natively "
@@ -96,7 +96,7 @@ def welcome() -> Document:
                 "Open ", ("History > Show commit history…", ["bold"]),
                 " to browse the whole timeline of a document and roll "
                 "back to any earlier version. If the folder has a remote, "
-                "kherveDOC will push to it automatically. The commits use "
+                "KherveTeX will push to it automatically. The commits use "
                 "your git config identity, so they are indistinguishable "
                 "from commits you make from the command line.",
             ),
@@ -222,7 +222,7 @@ def welcome() -> Document:
                 "image is included via ", ("\\includegraphics", ["code"]),
                 " and renders inline in the preview. Relative paths are "
                 "resolved against the document's folder, so the same "
-                "figure layout works whether you compile from kherveDOC, "
+                "figure layout works whether you compile from KherveTeX, "
                 "from the command line, or from a co-author's machine.",
             ),
             _p(
@@ -268,10 +268,10 @@ def welcome() -> Document:
                 "example, ",
                 Link(url="https://tectonic-typesetting.github.io/",
                      children=[Text(text="the tectonic project")]),
-                " (which is the LaTeX engine kherveDOC compiles with) "
+                " (which is the LaTeX engine KherveTeX compiles with) "
                 "and ",
-                Link(url="https://github.com/gkerherve/kherveDOC",
-                     children=[Text(text="the kherveDOC repository")]),
+                Link(url="https://github.com/gkerherve/KherveTeX",
+                     children=[Text(text="the KherveTeX repository")]),
                 " on GitHub. Footnotes",
                 Footnote(children=[Text(text="like this one, which "
                                              "renders at the bottom of "
@@ -306,7 +306,7 @@ def welcome() -> Document:
             Section(level=1, children=[Text(text="Working with several documents")]),
             _p(
                 "File > New window (Ctrl+Shift+N) opens a second, "
-                "independent kherveDOC window. File > Open in new "
+                "independent KherveTeX window. File > Open in new "
                 "window… (Ctrl+Shift+O) opens an existing document "
                 "without replacing the one you are reading. Each window "
                 "has its own toolbar, its own preview and its own git "
@@ -365,7 +365,7 @@ def welcome() -> Document:
             ),
             _p(
                 "Happy writing. ",
-                ("— The kherveDOC team", ["italic"]),
+                ("— The KherveTeX team", ["italic"]),
             ),
         ],
     )
@@ -396,7 +396,7 @@ def _article_body(title: str, subtitle: str) -> list:
                          Footnote(children=[Text(text=subtitle)])]),
         Abstract(children=[
             Text(text=
-                "We present a worked example of the kherveDOC editor "
+                "We present a worked example of the KherveTeX editor "
                 "in a journal-article layout. The document is intended "
                 "as a starting point for new users: every block type "
                 "the editor supports is exercised at least once so "
@@ -405,7 +405,7 @@ def _article_body(title: str, subtitle: str) -> list:
                 "describe how each section is typically used, and "
                 "include enough mathematics, references and tabular "
                 "data to demonstrate the preview pipeline end to end.")]),
-        Keywords(children=[Text(text="kherveDOC · template · article · example")]),
+        Keywords(children=[Text(text="KherveTeX · template · article · example")]),
 
         Section(level=1, children=[Text(text="Introduction")]),
         _p(
@@ -420,7 +420,7 @@ def _article_body(title: str, subtitle: str) -> list:
             "real version.",
         ),
         _p(
-            "The kherveDOC editor was designed to remove the "
+            "The KherveTeX editor was designed to remove the "
             "friction of formatting from the writing process. When "
             "you are drafting a paper you should be thinking about "
             "claims and evidence, not about whether the right "
@@ -434,7 +434,7 @@ def _article_body(title: str, subtitle: str) -> list:
             "render LaTeX faithfully in the editor itself, which "
             "tends to be slow and brittle. The second offers a "
             "stripped-down rich-text view that loses information "
-            "when round-tripped. kherveDOC takes a third path: keep "
+            "when round-tripped. KherveTeX takes a third path: keep "
             "a structured model in memory, render it both as live "
             "preview and as LaTeX on demand, and use Git to make "
             "every save a recoverable checkpoint.",
@@ -582,7 +582,7 @@ def _article_body(title: str, subtitle: str) -> list:
         Section(level=1, children=[Text(text="Conclusion")]),
         _p(
             "We have presented a complete worked example of a "
-            "journal-article skeleton inside kherveDOC. Every "
+            "journal-article skeleton inside KherveTeX. Every "
             "block type the editor supports — sections, paragraphs, "
             "bulleted and ordered lists, inline and display math, "
             "tables, citations, cross-references, footnotes and "
@@ -597,7 +597,7 @@ def _article_body(title: str, subtitle: str) -> list:
                  children=[Text(text="tectonic")]),
             " for the LaTeX engine that powers the preview, and to "
             "everyone who reported bugs against early builds of "
-            "kherveDOC.",
+            "KherveTeX.",
         ),
     ]
 
@@ -611,7 +611,7 @@ def article() -> Document:
         meta=_meta(title="An example article", author="A. Author"),
         children=_article_body(
             "An example article — single column",
-            "kherveDOC example template",
+            "KherveTeX example template",
         ),
     )
 
@@ -624,7 +624,7 @@ def two_column_article() -> Document:
                    column_count=2),
         children=_article_body(
             "An example article — two columns",
-            "kherveDOC two-column template",
+            "KherveTeX two-column template",
         ),
     )
 
@@ -636,7 +636,7 @@ def three_column_document() -> Document:
                    column_count=3, body_font_pt=10),
         children=_article_body(
             "An example article — three columns",
-            "kherveDOC three-column template",
+            "KherveTeX three-column template",
         ),
     )
 
@@ -650,13 +650,13 @@ def math_heavy() -> Document:
         meta=_meta(title="Quadratic forms"),
         children=[
             Title(children=[Text(text="Quadratic forms — a worked example")]),
-            Author(children=[Text(text="kherveDOC math example")]),
+            Author(children=[Text(text="KherveTeX math example")]),
             Abstract(children=[Text(text=
                 "We work through the algebra of the real quadratic "
                 "function in some detail, deriving the vertex form, "
                 "the quadratic formula and the discriminant test. The "
                 "purpose is to exercise the math-typesetting paths of "
-                "the kherveDOC editor: inline math, numbered display "
+                "the KherveTeX editor: inline math, numbered display "
                 "equations, aligned multi-line derivations, and "
                 "cross-references between them. The mathematics itself "
                 "is elementary and standard.")]),
@@ -861,7 +861,7 @@ def letter() -> Document:
             # Sender block
             Paragraph(children=[Text(text="Dr Jane Author")], alignment="right"),
             Paragraph(children=[Text(text="Department of Examples")], alignment="right"),
-            Paragraph(children=[Text(text="University of kherveDOC")], alignment="right"),
+            Paragraph(children=[Text(text="University of KherveTeX")], alignment="right"),
             Paragraph(children=[Text(text="123 Example Road")], alignment="right"),
             Paragraph(children=[Text(text="London, EC1A 1AA")], alignment="right"),
             Paragraph(children=[Text(text="jane.author@example.org")], alignment="right"),
@@ -890,7 +890,7 @@ def letter() -> Document:
             # Body — 4-5 substantive paragraphs
             _p(
                 "I am writing to submit our manuscript, entitled "
-                "\"A worked example of the kherveDOC editor for "
+                "\"A worked example of the KherveTeX editor for "
                 "scientific writing,\" for consideration as a "
                 "research article in the Journal of Worked Examples. "
                 "The work has not been published elsewhere and is "
@@ -898,7 +898,7 @@ def letter() -> Document:
             ),
             _p(
                 "The manuscript presents the design and operation of "
-                "kherveDOC, a WYSIWYG editor that stores documents "
+                "KherveTeX, a WYSIWYG editor that stores documents "
                 "as a structured model and serialises them to LaTeX "
                 "on demand. We argue that the structured-model "
                 "approach captures most of the productivity gains of "
@@ -913,7 +913,7 @@ def letter() -> Document:
                 "to LaTeX, including for environments and macros the "
                 "editor does not itself understand. Second, we report "
                 "a user study (N=37) in which participants drafted a "
-                "short article more quickly in kherveDOC than in a "
+                "short article more quickly in KherveTeX than in a "
                 "traditional LaTeX setup, with no measurable loss of "
                 "formatting quality. Third, we release the editor as "
                 "open-source software under the BSD-3 licence; the "
@@ -1008,7 +1008,7 @@ def elsevier_preprint() -> Document:
             _p(
                 "The elsarticle class wraps title, authors, abstract and "
                 "keywords in a ", ("\\begin{frontmatter}", ["code"]),
-                " environment. kherveDOC handles this automatically — "
+                " environment. KherveTeX handles this automatically — "
                 "just fill in the Title, Author, Abstract and Keywords "
                 "paragraphs as you would in any document.",
             ),
@@ -1027,7 +1027,7 @@ def elsevier_preprint() -> Document:
                 ("\\cite{key}", ["code"]), " (numeric), ",
                 ("\\citep{key}", ["code"]), " (parenthetical) and ",
                 ("\\citet{key}", ["code"]),
-                " (textual). kherveDOC's Insert > Citation dialog lets you "
+                " (textual). KherveTeX's Insert > Citation dialog lets you "
                 "choose the style per citation.",
             ),
             _p(
@@ -1579,7 +1579,7 @@ def beamer_slides() -> Document:
             _p(
                 "Beamer is the standard LaTeX class for slide presentations. "
                 "It supports overlays, animations, handout mode and "
-                "speaker notes. kherveDOC compiles beamer documents "
+                "speaker notes. KherveTeX compiles beamer documents "
                 "to PDF — each slide becomes one page.",
             ),
             _items(
