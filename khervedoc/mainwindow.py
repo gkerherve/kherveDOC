@@ -1217,10 +1217,10 @@ class MainWindow(QMainWindow):
             checkable=True, checked=False,
             statusTip="Compile without images for faster preview",
             triggered=self._toggle_skip_images)
-        self._use_compile_range = False
+        self._use_compile_range = True
         self.act_compile_range = QAction(
             icons.compile_range(), "Compile range", self,
-            checkable=True, checked=False,
+            checkable=True, checked=True,
             statusTip="Only compile content between compile markers",
             triggered=self._toggle_compile_range)
 
