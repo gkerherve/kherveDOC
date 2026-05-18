@@ -347,6 +347,9 @@ class SymbolPickerWindow(QWidget):
 SymbolPickerDialog = SymbolPickerWindow
 
 
+_BEGIN_RE = __import__("re").compile(r"\\begin\{(\w+\*?)\}$")
+
+
 class _EquationLatexEdit(QPlainTextEdit):
     """LaTeX input field that intercepts Tab/Shift+Tab to navigate
     between \\square placeholders instead of inserting tab chars."""
@@ -362,7 +365,23 @@ class _EquationLatexEdit(QPlainTextEdit):
                 and ev.modifiers() == Qt.ShiftModifier):
             self._jump_placeholder(forward=False)
             return
+        if ev.text() == "}":
+            if self._auto_close_begin():
+                return
         super().keyPressEvent(ev)
+
+    def _auto_close_begin(self) -> bool:
+        """If the cursor sits right after ``\\begin{xxx``, insert the
+        closing ``}`` plus ``\\n\\square\\n\\end{xxx}`` and return True."""
+        cursor = self.textCursor()
+        text = self.toPlainText()
+        before = text[:cursor.position()]
+        m = _BEGIN_RE.search(before + "}")
+        if not m:
+            return False
+        env = m.group(1)
+        self.insertPlainText(f"}}\n\\square\n\\end{{{env}}}")
+        return True
 
     def _jump_placeholder(self, forward: bool) -> None:
         text = self.toPlainText()
@@ -1311,6 +1330,33 @@ class MainWindow(QMainWindow):
         m_insert = mb.addMenu("&Insert")
         m_insert.addAction(self.act_math_inline); m_insert.addAction(self.act_math_block)
         m_insert.addAction(self.act_symbol); m_insert.addAction(self.act_equation_builder)
+        m_env = m_insert.addMenu("Math &environment")
+        _ENVS = [
+            ("equation",  r"\begin{equation}" "\n" r"\square" "\n" r"\end{equation}"),
+            ("equation*", r"\begin{equation*}" "\n" r"\square" "\n" r"\end{equation*}"),
+            ("align",     r"\begin{align}" "\n" r"\square &= \square \\" "\n"
+                          r"\square &= \square" "\n" r"\end{align}"),
+            ("align*",    r"\begin{align*}" "\n" r"\square &= \square \\" "\n"
+                          r"\square &= \square" "\n" r"\end{align*}"),
+            ("gather",    r"\begin{gather}" "\n" r"\square \\" "\n"
+                          r"\square" "\n" r"\end{gather}"),
+            ("gather*",   r"\begin{gather*}" "\n" r"\square \\" "\n"
+                          r"\square" "\n" r"\end{gather*}"),
+            ("multline",  r"\begin{multline}" "\n" r"\square \\" "\n"
+                          r"\square" "\n" r"\end{multline}"),
+            ("cases",     r"\begin{cases}" "\n" r"\square & \text{if } \square \\" "\n"
+                          r"\square & \text{otherwise}" "\n" r"\end{cases}"),
+            ("split",     r"\begin{split}" "\n" r"\square &= \square \\" "\n"
+                          r"\square &= \square" "\n" r"\end{split}"),
+            ("pmatrix",   r"\begin{pmatrix}" "\n" r"\square & \square \\" "\n"
+                          r"\square & \square" "\n" r"\end{pmatrix}"),
+            ("bmatrix",   r"\begin{bmatrix}" "\n" r"\square & \square \\" "\n"
+                          r"\square & \square" "\n" r"\end{bmatrix}"),
+        ]
+        for env_name, env_latex in _ENVS:
+            m_env.addAction(
+                env_name,
+                lambda ltx=env_latex: self._editor.insert_math_block_with(ltx))
         m_insert.addSeparator()
         m_insert.addAction(self.act_abstract); m_insert.addAction(self.act_keywords)
         m_insert.addSeparator()
@@ -3423,11 +3469,12 @@ class MainWindow(QMainWindow):
                 cursor = console.textCursor()
                 cursor.movePosition(QTextCursor.Start)
                 console.setTextCursor(cursor)
-        # Auto-switch to Console tab on error so the user sees the log
+        # Signal the error without stealing focus from the Visual tab,
+        # so the user can fix the LaTeX without losing their place.
         if not result.ok:
-            self._tabs.setCurrentIndex(3)
-            if self._side_by_side:
-                self._side_tabs.setCurrentIndex(1)
+            self._tabs.tabBar().setTabTextColor(3, QColor("#c0392b"))
+        else:
+            self._tabs.tabBar().setTabTextColor(3, QColor())
 
     # ----- cross-tab "Show in …" navigation -----
 
