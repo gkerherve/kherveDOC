@@ -7,16 +7,16 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QSettings, QSize, QThread, QTimer, Signal
 from PySide6.QtGui import (
-    QAction, QActionGroup, QColor, QGuiApplication, QIcon, QKeySequence, QPixmap,
-    QTextCursor, QTextDocument,
+    QAction, QActionGroup, QColor, QFont, QGuiApplication, QIcon, QKeySequence,
+    QPixmap, QTextCursor, QTextDocument,
 )
 from PySide6.QtWidgets import (
     QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog,
-    QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame,
-    QGridLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
-    QMainWindow, QMenu, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea,
-    QSlider, QSpinBox, QSplitter, QStackedWidget, QStatusBar, QTabWidget,
-    QToolBar, QToolButton, QVBoxLayout, QWidget,
+    QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFontComboBox,
+    QFormLayout, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QInputDialog,
+    QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox, QPlainTextEdit,
+    QPushButton, QScrollArea, QSlider, QSpinBox, QSplitter, QStackedWidget,
+    QStatusBar, QTabWidget, QToolBar, QToolButton, QVBoxLayout, QWidget,
 )
 
 from . import (
@@ -189,7 +189,6 @@ class DocSettingsDialog(QDialog):
 
     def _build_text_tab(self, meta: DocMeta) -> QWidget:
         # Visual editor font (what the user sees while editing)
-        from PySide6.QtWidgets import QFontComboBox
         self._visual_font = QFontComboBox()
         self._visual_font.setCurrentFont(QFont(meta.visual_font_family))
 
