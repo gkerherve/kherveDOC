@@ -364,6 +364,25 @@ def commit() -> QIcon:
     return QIcon(px)
 
 
+def branch() -> QIcon:
+    """Git branch icon — a forking line with two dots."""
+    px, p = _new_canvas()
+    col = _accent()
+    p.setPen(QPen(col, 2.0, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    p.setBrush(Qt.NoBrush)
+    # Main trunk
+    p.drawLine(8, 4, 8, 20)
+    # Fork line
+    p.drawLine(8, 12, 16, 6)
+    # Dots
+    p.setPen(Qt.NoPen)
+    p.setBrush(QBrush(col))
+    p.drawEllipse(QRect(5, 17, 6, 6))  # trunk tip
+    p.drawEllipse(QRect(13, 3, 6, 6))  # fork tip
+    p.end()
+    return QIcon(px)
+
+
 def spell_check() -> QIcon:
     """ABC with a red wavy underline — the universal "spell check"
     toolbar glyph. Renders cleanly at 24×24 in both light and dark

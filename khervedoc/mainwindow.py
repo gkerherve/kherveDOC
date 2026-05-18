@@ -1100,6 +1100,11 @@ class MainWindow(QMainWindow):
             statusTip="Browse every saved snapshot of this document "
                       "and see what changed each time",
             triggered=self._show_history)
+        self.act_branches = QAction(
+            icons.branch(),
+            "&Branches…", self,
+            statusTip="View, create, switch or delete branches",
+            triggered=self._show_branches)
 
         # Review
         self.act_highlight = QAction(
@@ -1255,9 +1260,10 @@ class MainWindow(QMainWindow):
         m_git.addAction(self.act_commit_now)
         m_git.addAction(self.act_pull)
         m_git.addSeparator()
-        m_git.addAction(self.act_configure_remotes)
-        m_git.addSeparator()
         m_git.addAction(self.act_history)
+        m_git.addAction(self.act_branches)
+        m_git.addSeparator()
+        m_git.addAction(self.act_configure_remotes)
 
         # Examples menu — each entry opens that example in a new window
         # so the user's current document isn't replaced.
@@ -1419,6 +1425,11 @@ class MainWindow(QMainWindow):
         self._heading_combo.addItem("Author", -2)
         self._heading_combo.addItem("Abstract", -3)
         self._heading_combo.addItem("Keywords", -4)
+        # Chapter sits between Keywords and Heading 1 because in
+        # LaTeX it outranks every \section / \subsection in the
+        # outline. Only valid for book / report / memoir classes;
+        # _sync_chapter_enabled greys it out for everything else.
+        self._heading_combo.addItem("Chapter", -5)
         for level in range(1, 6):
             self._heading_combo.addItem(f"Heading {level}", level)
         self._heading_combo.setMinimumWidth(120)
@@ -1527,13 +1538,26 @@ class MainWindow(QMainWindow):
 
     def _update_title(self) -> None:
         name = self._current_path.name if self._current_path else "Untitled"
-        self.setWindowTitle(f"kherveDOC {version_string()} — {name}")
+        branch_suffix = ""
+        if self._current_path and git_backend.is_available():
+            _br = git_backend.current_branch(self._current_path.parent)
+            if _br:
+                branch_suffix = f" [{_br}]"
+        self.setWindowTitle(
+            f"kherveDOC {version_string()} — {name}{branch_suffix}")
         # Status bar shows "filename  —  full/parent/directory/" so the user
         # can identify the document at a glance and still see where it lives.
         if self._current_path is not None:
             parent = str(self._current_path.parent)
+            branch_tag = ""
+            if branch_suffix:
+                bname = branch_suffix.strip(" []")
+                branch_tag = (
+                    f"  <span style='background:#d0e8ff;color:#0a5090;"
+                    f"padding:1px 5px;border-radius:3px;"
+                    f"font-weight:bold;'>{bname}</span>")
             self._path_label.setText(
-                f"<b>{self._current_path.name}</b>  —  "
+                f"<b>{self._current_path.name}</b>{branch_tag}  —  "
                 f"<span style='color:#666'>{parent}</span>")
             self._path_label.setToolTip(str(self._current_path))
         else:
@@ -1843,7 +1867,39 @@ class MainWindow(QMainWindow):
         if meta.documentclass == cls: return
         meta.documentclass = cls
         self._editor.set_meta(meta)
+        self._sync_chapter_enabled()
         self._kick_compile()
+
+    def _sync_chapter_enabled(self) -> None:
+        """Grey out the heading combo's "Chapter" entry whenever the
+        current documentclass doesn't support \\chapter (article,
+        letter, beamer). The user can still see the entry — they
+        just can't pick it — which makes the constraint visible
+        without hiding the feature."""
+        if not hasattr(self, "_heading_combo"):
+            return  # toolbar not built yet
+        from .editor import class_supports_chapter
+        meta = self._editor.meta()
+        allowed = class_supports_chapter(meta.documentclass)
+        model = self._heading_combo.model()
+        for i in range(self._heading_combo.count()):
+            if self._heading_combo.itemData(i) == -5:
+                item = model.item(i)
+                if item is not None:
+                    flags = item.flags()
+                    if allowed:
+                        item.setFlags(flags | Qt.ItemIsEnabled
+                                            | Qt.ItemIsSelectable)
+                        item.setToolTip("")
+                    else:
+                        item.setFlags(flags & ~Qt.ItemIsEnabled
+                                            & ~Qt.ItemIsSelectable)
+                        item.setToolTip(
+                            "Chapter is only available in the book, "
+                            "report and memoir document classes — "
+                            "the current class is "
+                            f"{meta.documentclass!r}.")
+                break
 
     def _on_zoom_slider_changed(self, pct: int) -> None:
         # Snap to 5%-multiples so drag movements feel less twitchy.
@@ -2027,6 +2083,7 @@ class MainWindow(QMainWindow):
         self.act_hrule.setIcon(icons.horizontal_rule())
         self.act_commit_now.setIcon(icons.commit())
         self.act_history.setIcon(icons.history())
+        self.act_branches.setIcon(icons.branch())
         self.act_spell_check.setIcon(icons.spell_check())
         self.act_highlight.setIcon(icons.highlight())
         self.act_comment.setIcon(icons.comment())
@@ -2427,6 +2484,24 @@ class MainWindow(QMainWindow):
                             file_stem=stem)
         dlg.exec()
 
+    def _show_branches(self) -> None:
+        """Open the history dialog (which now includes branch management)
+        without file_stem filtering so all branches are visible."""
+        if self._current_path is None:
+            QMessageBox.information(
+                self, "Branches",
+                "Save your document first so the repository exists.")
+            return
+        if not git_backend.is_available():
+            QMessageBox.warning(
+                self, "Branches",
+                "The pygit2 library is not installed.\n\n"
+                "To fix this, run:  pip install pygit2")
+            return
+        from .history_dialog import HistoryDialog
+        dlg = HistoryDialog(self._current_path.parent, self)
+        dlg.exec()
+
     def _about(self) -> None:
         tec = "installed" if tectonic_available() else "not found"
         QMessageBox.about(
@@ -2722,6 +2797,10 @@ class MainWindow(QMainWindow):
             self._latex_view.set_source(
                 serialize_document(self._editor.get_document()))
         self._sync_toolbar_state()
+        # Re-evaluate Chapter availability — importing a .tex (or
+        # switching docclass via the LaTeX tab) may have changed
+        # whether \chapter is allowed.
+        self._sync_chapter_enabled()
         if self._auto_compile:
             self._kick_compile()
 

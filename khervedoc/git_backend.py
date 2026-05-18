@@ -539,6 +539,250 @@ def _commit_touches_stem(commit, stem: str) -> bool:
     return False
 
 
+def list_branches(repo_dir: Path) -> list[dict]:
+    """Return info about every local and remote-tracking branch.
+
+    Each entry is a dict:
+      - name:    short name (e.g. 'dev', 'main')
+      - ref:     full ref (e.g. 'refs/heads/dev')
+      - oid:     hex OID the branch points to
+      - current: True if this is HEAD
+      - remote:  None for local branches, or the remote name ('origin')
+    """
+    if not _PYGIT2_OK:
+        return []
+    repo = _repo_for(repo_dir)
+    if repo is None:
+        return []
+    cur = current_branch(repo_dir)
+    out: list[dict] = []
+    for ref_name in repo.references:
+        if ref_name.startswith("refs/heads/"):
+            short = ref_name[len("refs/heads/"):]
+            try:
+                oid = str(repo.references[ref_name].peel(pygit2.Commit).id)
+            except Exception:
+                continue
+            out.append({"name": short, "ref": ref_name, "oid": oid,
+                        "current": short == cur, "remote": None})
+        elif ref_name.startswith("refs/remotes/"):
+            parts = ref_name[len("refs/remotes/"):].split("/", 1)
+            if len(parts) == 2 and parts[1] != "HEAD":
+                try:
+                    oid = str(repo.references[ref_name].peel(pygit2.Commit).id)
+                except Exception:
+                    continue
+                out.append({"name": parts[1], "ref": ref_name, "oid": oid,
+                            "current": False, "remote": parts[0]})
+    return out
+
+
+def create_branch(repo_dir: Path, name: str,
+                  start_oid: str | None = None) -> tuple[bool, str]:
+    """Create a new local branch pointing at *start_oid* (default HEAD).
+
+    Does NOT switch to it — call switch_branch() afterwards if desired.
+    Returns (ok, message)."""
+    if not _PYGIT2_OK:
+        return False, "pygit2 is not installed."
+    repo = _repo_for(repo_dir)
+    if repo is None:
+        return False, "Not a git repository."
+    if repo.head_is_unborn:
+        return False, "Repository has no commits yet — save first."
+    try:
+        if start_oid:
+            target = repo.get(start_oid).peel(pygit2.Commit)
+        else:
+            target = repo.head.peel(pygit2.Commit)
+        repo.branches.local.create(name, target)
+        return True, f"Branch '{name}' created."
+    except Exception as exc:
+        return False, str(exc)
+
+
+def switch_branch(repo_dir: Path, name: str) -> tuple[bool, str]:
+    """Switch HEAD to an existing local branch. Working-tree files are
+    updated to match. Returns (ok, message)."""
+    if not _PYGIT2_OK:
+        return False, "pygit2 is not installed."
+    repo = _repo_for(repo_dir)
+    if repo is None:
+        return False, "Not a git repository."
+    ref = f"refs/heads/{name}"
+    try:
+        branch_ref = repo.references[ref]
+    except KeyError:
+        return False, f"Branch '{name}' does not exist."
+    try:
+        commit = branch_ref.peel(pygit2.Commit)
+        repo.checkout_tree(commit, strategy=pygit2.GIT_CHECKOUT_SAFE)
+        repo.set_head(ref)
+        return True, f"Switched to branch '{name}'."
+    except Exception as exc:
+        return False, str(exc)
+
+
+def delete_branch(repo_dir: Path, name: str) -> tuple[bool, str]:
+    """Delete a local branch. Cannot delete the current branch.
+    Returns (ok, message)."""
+    if not _PYGIT2_OK:
+        return False, "pygit2 is not installed."
+    repo = _repo_for(repo_dir)
+    if repo is None:
+        return False, "Not a git repository."
+    cur = current_branch(repo_dir)
+    if name == cur:
+        return False, "Cannot delete the branch you are currently on."
+    try:
+        branch = repo.branches.local[name]
+        branch.delete()
+        return True, f"Branch '{name}' deleted."
+    except KeyError:
+        return False, f"Branch '{name}' does not exist."
+    except Exception as exc:
+        return False, str(exc)
+
+
+def history_graph(repo_dir: Path, limit: int = 300) -> list[dict]:
+    """Build a commit list with graph-rail info for DAG visualisation.
+
+    Returns commits in topological order (newest first). Each entry
+    extends history_detailed's dict with:
+      - parents:       list of full OIDs of parent commits
+      - rail:          int — which column (0-based) this commit draws in
+      - rails_before:  list of (from_rail, to_rail) active BEFORE this row
+      - rails_after:   list of (from_rail, to_rail) active AFTER this row
+      - branches:      list of branch-name strings that point at this OID
+      - is_merge:      True if >1 parent
+    """
+    if not _PYGIT2_OK:
+        return []
+    repo = _repo_for(repo_dir)
+    if repo is None or repo.head_is_unborn:
+        return []
+
+    # Collect branch tips so we can label commits.
+    branch_map: dict[str, list[str]] = {}  # oid → [branch names]
+    for ref_name in repo.references:
+        if ref_name.startswith("refs/heads/"):
+            short = ref_name[len("refs/heads/"):]
+            try:
+                oid = str(repo.references[ref_name].peel(pygit2.Commit).id)
+            except Exception:
+                continue
+            branch_map.setdefault(oid, []).append(short)
+        elif ref_name.startswith("refs/remotes/"):
+            parts = ref_name[len("refs/remotes/"):].split("/", 1)
+            if len(parts) == 2 and parts[1] != "HEAD":
+                try:
+                    oid = str(repo.references[ref_name].peel(pygit2.Commit).id)
+                except Exception:
+                    continue
+                branch_map.setdefault(oid, []).append(f"{parts[0]}/{parts[1]}")
+
+    # Walk ALL refs so we see every branch, not just HEAD.
+    seen: set[str] = set()
+    raw_commits: list = []
+    for ref_name in repo.references:
+        try:
+            tip = repo.references[ref_name].peel(pygit2.Commit)
+        except Exception:
+            continue
+        for commit in repo.walk(tip.id, pygit2.GIT_SORT_TOPOLOGICAL | pygit2.GIT_SORT_TIME):
+            oid = str(commit.id)
+            if oid in seen:
+                continue
+            seen.add(oid)
+            raw_commits.append(commit)
+            if len(raw_commits) >= limit:
+                break
+        if len(raw_commits) >= limit:
+            break
+
+    # Re-sort by topo+time (walk order from multiple refs may interleave).
+    raw_commits.sort(key=lambda c: -c.commit_time)
+
+    # Assign rails: each "active line" occupies a column. When a commit
+    # is encountered its OID is on one of the active rails; when it has
+    # parents those parents continue (or fork) the rails.
+    active: list[str | None] = []  # active[rail] = oid we expect next
+
+    rows: list[dict] = []
+    for commit in raw_commits:
+        oid = str(commit.id)
+        parent_oids = [str(p.id) for p in commit.parents]
+        msg = (commit.message or "").rstrip()
+        lines = msg.splitlines()
+        subject = lines[0] if lines else ""
+        body = "\n".join(lines[1:]).strip("\n") if len(lines) > 1 else ""
+        author = commit.author
+
+        # Find which rail this commit sits on.
+        if oid in active:
+            rail = active.index(oid)
+        else:
+            # New branch head — allocate a fresh rail.
+            if None in active:
+                rail = active.index(None)
+                active[rail] = oid
+            else:
+                rail = len(active)
+                active.append(oid)
+
+        # Snapshot rails BEFORE this commit (for drawing incoming lines).
+        rails_before = []
+        for i, a in enumerate(active):
+            if a is not None:
+                rails_before.append((i, i))
+
+        # Update active rails for this commit's parents.
+        if not parent_oids:
+            active[rail] = None
+        elif len(parent_oids) == 1:
+            active[rail] = parent_oids[0]
+        else:
+            # Merge commit: first parent stays on this rail,
+            # additional parents get their own rails.
+            active[rail] = parent_oids[0]
+            for extra_parent in parent_oids[1:]:
+                if extra_parent not in active:
+                    if None in active:
+                        slot = active.index(None)
+                        active[slot] = extra_parent
+                    else:
+                        active.append(extra_parent)
+
+        # Collapse trailing Nones to keep the graph compact.
+        while active and active[-1] is None:
+            active.pop()
+
+        # Snapshot rails AFTER this commit.
+        rails_after = []
+        for i, a in enumerate(active):
+            if a is not None:
+                rails_after.append((i, i))
+
+        rows.append({
+            "oid": oid,
+            "short_oid": oid[:8],
+            "timestamp": datetime.fromtimestamp(commit.commit_time).isoformat(
+                timespec="seconds"),
+            "epoch": int(commit.commit_time),
+            "author": f"{author.name} <{author.email}>",
+            "subject": subject,
+            "body": body,
+            "parents": parent_oids,
+            "rail": rail,
+            "rails_before": rails_before,
+            "rails_after": rails_after,
+            "branches": branch_map.get(oid, []),
+            "is_merge": len(parent_oids) > 1,
+        })
+
+    return rows
+
+
 def diff_for_commit(repo_dir: Path, oid: str) -> str:
     """Return the unified diff produced by the given commit, as a single
     str. For a root commit (no parents) the diff is against an empty
