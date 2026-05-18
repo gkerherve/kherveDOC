@@ -241,7 +241,7 @@ def compile_tex(
         tex_source = _rewrite_includegraphics(tex_source, source_dir)
     if use_compile_range:
         tex_source = _apply_compile_range(tex_source)
-    tex_source = _apply_not_compile_ranges(tex_source)
+        tex_source = _apply_not_compile_ranges(tex_source)
     tex_path = workdir / f"{basename}.tex"
     tex_path.write_text(tex_source, encoding="utf-8")
 
