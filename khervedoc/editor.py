@@ -138,6 +138,10 @@ _STATE_ABSTRACT = 9     # Abstract paragraph; consecutive blocks merge
 _STATE_KEYWORDS = 10    # Keyword line; consecutive blocks merge with \sep
 _STATE_CHAPTER = 11     # \chapter — only valid in report/book/memoir classes
 _STATE_FRAME = 12       # \begin{frame} — only valid in beamer class
+# Unnumbered variants: \section*{}, \subsection*{}, etc.
+# State = 20 + level for headings, 31 for chapter*.
+_STATE_HEADING_STAR_BASE = 20   # 21..25 = heading 1*..5*
+_STATE_CHAPTER_STAR = 31
 _STATE_MATH_BLOCK = 99
 _STATE_FIGURE = 100
 _STATE_TABLE = 101
@@ -964,10 +968,12 @@ class DocumentEditor(QWidget):
                 self._insert_inline(cursor, inline, base_format=cfmt)
             return
         if isinstance(block, Section):
-            # level=0 represents \chapter; the rest map directly to
-            # the QTextBlock's userState (which is what _classify_
-            # text_block reads back).
-            state = _STATE_CHAPTER if block.level == 0 else block.level
+            if block.level == 0:
+                state = _STATE_CHAPTER_STAR if not block.numbered else _STATE_CHAPTER
+            elif not block.numbered:
+                state = _STATE_HEADING_STAR_BASE + block.level
+            else:
+                state = block.level
             cursor.block().setUserState(state)
             cfmt = _heading_char_format(block.level)
             for inline in block.children:
@@ -1401,8 +1407,15 @@ class DocumentEditor(QWidget):
             return Keywords(children=self._strip_implicit_marks(children, ["italic"]))
         if state == _STATE_CHAPTER:
             return Section(level=0, children=self._strip_implicit_marks(children, ["bold"]))
+        if state == _STATE_CHAPTER_STAR:
+            return Section(level=0, numbered=False,
+                           children=self._strip_implicit_marks(children, ["bold"]))
         if state == _STATE_FRAME:
             return Frame(children=self._strip_implicit_marks(children, ["bold"]))
+        if _STATE_HEADING_STAR_BASE < state <= _STATE_HEADING_STAR_BASE + 5:
+            level = state - _STATE_HEADING_STAR_BASE
+            return Section(level=level, numbered=False,
+                           children=self._strip_implicit_marks(children, ["bold"]))
         if 1 <= state <= 5:
             return Section(level=state,
                            children=self._strip_implicit_marks(children, ["bold"]))
@@ -1592,6 +1605,31 @@ class DocumentEditor(QWidget):
             fmt.setFont(f)
             block_cursor.setCharFormat(fmt)
         self._on_text_changed()
+
+    def toggle_heading_numbered(self, numbered: bool) -> None:
+        """Toggle the numbered/starred state of the current heading block."""
+        block = self._edit.textCursor().block()
+        state = block.userState()
+        if numbered:
+            if state == _STATE_CHAPTER_STAR:
+                block.setUserState(_STATE_CHAPTER)
+            elif _STATE_HEADING_STAR_BASE < state <= _STATE_HEADING_STAR_BASE + 5:
+                block.setUserState(state - _STATE_HEADING_STAR_BASE)
+        else:
+            if state == _STATE_CHAPTER:
+                block.setUserState(_STATE_CHAPTER_STAR)
+            elif 1 <= state <= 5:
+                block.setUserState(_STATE_HEADING_STAR_BASE + state)
+        self._on_text_changed()
+
+    def is_heading_numbered(self) -> bool:
+        """Return True if the current block is a numbered heading."""
+        state = self._edit.textCursor().block().userState()
+        if state == _STATE_CHAPTER_STAR:
+            return False
+        if _STATE_HEADING_STAR_BASE < state <= _STATE_HEADING_STAR_BASE + 5:
+            return False
+        return True
 
     def apply_alignment(self, name: str) -> None:
         """name ∈ {"left", "center", "right", "justify"}."""
@@ -2311,15 +2349,19 @@ class DocumentEditor(QWidget):
     def current_heading_level(self) -> int:
         """Returns -1 = Title, -2 = Author, -3 = Abstract, -4 = Keywords,
         -5 = Chapter, -6 = Frame, 0 = Body, 1..5 = Heading,
-        -99 = non-text block."""
+        -99 = non-text block.
+        Starred (unnumbered) headings return the same code as their
+        numbered counterparts — use is_heading_numbered() to distinguish."""
         state = self._edit.textCursor().block().userState()
         if state == _STATE_TITLE: return -1
         if state == _STATE_AUTHOR: return -2
         if state == _STATE_ABSTRACT: return -3
         if state == _STATE_KEYWORDS: return -4
-        if state == _STATE_CHAPTER: return -5
+        if state in (_STATE_CHAPTER, _STATE_CHAPTER_STAR): return -5
         if state == _STATE_FRAME: return -6
         if 1 <= state <= 5: return state
+        if _STATE_HEADING_STAR_BASE < state <= _STATE_HEADING_STAR_BASE + 5:
+            return state - _STATE_HEADING_STAR_BASE
         if state == _STATE_PARAGRAPH: return 0
         return -99
 

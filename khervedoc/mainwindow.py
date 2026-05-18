@@ -1528,6 +1528,15 @@ class MainWindow(QMainWindow):
             lambda idx: self._editor.apply_heading(self._heading_combo.itemData(idx)))
         tb.addWidget(self._heading_combo)
 
+        self._numbered_cb = QCheckBox("Numbered", self)
+        self._numbered_cb.setChecked(True)
+        self._numbered_cb.setToolTip(
+            "Uncheck to produce \\section*{} (unnumbered, hidden from "
+            "table of contents)")
+        self._numbered_cb.toggled.connect(
+            lambda checked: self._editor.toggle_heading_numbered(checked))
+        tb.addWidget(self._numbered_cb)
+
         # Narrow template combo — just the document-class shortcodes.
         self._template_combo = QComboBox(self)
         for cls in TEMPLATE_CHOICES:
@@ -3434,6 +3443,14 @@ class MainWindow(QMainWindow):
             self.act_h_body.setChecked(True)
         elif 1 <= level <= 5:
             self.heading_actions[level - 1].setChecked(True)
+
+        # Sync the "Numbered" checkbox — only meaningful for headings/chapters.
+        is_heading = (1 <= level <= 5) or level == -5
+        self._numbered_cb.setEnabled(is_heading)
+        if is_heading:
+            self._numbered_cb.blockSignals(True)
+            self._numbered_cb.setChecked(e.is_heading_numbered())
+            self._numbered_cb.blockSignals(False)
 
         # Keep the template combo in sync with the document class.
         meta_cls = e.meta().documentclass
