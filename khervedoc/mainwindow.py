@@ -23,7 +23,10 @@ from . import (
     __version__, equations, git_backend, icons, kdocz, page_sizes,
     symbols, themes, version_string,
 )
-from .compiler import CompileResult, compile_tex, tectonic_available
+from .compiler import (
+    CompileResult, compile_tex, compile_typst,
+    tectonic_available, typst_available,
+)
 from .editor import DocumentEditor, TEMPLATE_CHOICES
 from . import examples, importers
 from .latex_view import LatexView
@@ -40,23 +43,26 @@ from .serializer import serialize_document
 class _CompileWorker(QThread):
     finished_with = Signal(object)
 
-    def __init__(self, tex_source: str, workdir: Path,
+    def __init__(self, source: str, workdir: Path,
                  source_dir: Path | None = None,
                  skip_images: bool = False,
-                 use_compile_range: bool = False):
+                 use_compile_range: bool = False,
+                 compiler: str = "latex"):
         super().__init__()
-        self._tex = tex_source
+        self._source = source
         self._workdir = workdir
         self._source_dir = source_dir
         self._skip_images = skip_images
         self._use_compile_range = use_compile_range
+        self._compiler = compiler
 
     def run(self) -> None:
+        fn = compile_typst if self._compiler == "typst" else compile_tex
         self.finished_with.emit(
-            compile_tex(self._tex, self._workdir,
-                        source_dir=self._source_dir,
-                        skip_images=self._skip_images,
-                        use_compile_range=self._use_compile_range))
+            fn(self._source, self._workdir,
+               source_dir=self._source_dir,
+               skip_images=self._skip_images,
+               use_compile_range=self._use_compile_range))
 
 
 class _GitNetworkWorker(QThread):
@@ -638,8 +644,12 @@ class MainWindow(QMainWindow):
     # menu can list every open document.
     _windows: list["MainWindow"] = []
 
+    _OPENABLE_SUFFIXES = {".kdocz", ".kdoc.json", ".tex", ".md",
+                          ".markdown", ".docx", ".json"}
+
     def __init__(self, theme_name: str | None = None):
         super().__init__()
+        self.setAcceptDrops(True)
         MainWindow._windows.append(self)
         # Read persisted theme when not explicitly provided (e.g. new windows).
         if theme_name is None:
@@ -1707,15 +1717,16 @@ class MainWindow(QMainWindow):
     def _open(self) -> None:
         path_s, _ = QFileDialog.getOpenFileName(
             self, "Open document", "",
-            "All supported (*.kdocz *.kdoc.json *.tex *.md *.markdown);;"
+            "All supported (*.kdocz *.kdoc.json *.tex *.md *.markdown *.docx);;"
             "Bundled (*.kdocz);;JSON (*.kdoc.json);;LaTeX (*.tex);;"
-            "Markdown (*.md *.markdown);;All files (*)")
+            "Markdown (*.md *.markdown);;Word (*.docx);;All files (*)")
         if path_s:
             self._open_path(Path(path_s))
 
     def _open_path(self, path: Path) -> None:
         self._io_label.setText("Loading\u2026")
         self._io_label.repaint()
+        is_import = False
         try:
             if kdocz.is_kdocz_path(path):
                 doc, extract_dir = kdocz.load_kdocz(path)
@@ -1723,9 +1734,23 @@ class MainWindow(QMainWindow):
             elif path.suffix.lower() == ".tex":
                 doc = importers.import_tex(path.read_text(encoding="utf-8"))
                 self._kdocz_extract_dir = None
+                is_import = True
             elif path.suffix.lower() in (".md", ".markdown"):
                 doc = importers.import_md(path.read_text(encoding="utf-8"))
                 self._kdocz_extract_dir = None
+                is_import = True
+            elif path.suffix.lower() == ".docx":
+                if not importers.docx_available():
+                    self._io_label.setText("")
+                    QMessageBox.warning(
+                        self, "python-docx missing",
+                        "python-docx is not installed. Run "
+                        "pip install python-docx to enable .docx import.")
+                    return
+                image_dir = self._build_dir / f"{path.stem}_images"
+                doc = importers.import_docx(path, image_dir)
+                self._kdocz_extract_dir = None
+                is_import = True
             else:
                 doc = from_json(path.read_text(encoding="utf-8"))
                 self._kdocz_extract_dir = None
@@ -1733,20 +1758,51 @@ class MainWindow(QMainWindow):
             self._io_label.setText("")
             QMessageBox.critical(self, "Open failed", str(exc))
             return
-        self._current_path = path
-        self._import_source_dir = None  # current_path supersedes any prior import
-        self._sync_editor_source_dir()
-        self._editor.set_document_dir(path.parent)
-        # Show the cached PDF instantly while recompilation runs in the background
-        cached_pdf = path.parent / f"{self._doc_stem(path)}.pdf"
-        if cached_pdf.exists():
-            self._preview.show_pdf(cached_pdf)
-            if self._side_by_side:
-                self._pdf_side_panel.show_pdf(cached_pdf)
-        self._editor.set_document(doc)
-        self._update_title()
-        self._remember_recent(path)
+        if is_import:
+            self._current_path = None
+            self._import_source_dir = path.parent
+            self._sync_editor_source_dir()
+            self._editor.set_document(doc)
+            self.setWindowTitle(
+                f"KherveTeX {version_string()} — {path.stem} (imported)")
+            self._status.showMessage(
+                f"Imported {path.name} — Save As to keep it", 6000)
+        else:
+            self._current_path = path
+            self._import_source_dir = None
+            self._sync_editor_source_dir()
+            self._editor.set_document_dir(path.parent)
+            cached_pdf = path.parent / f"{self._doc_stem(path)}.pdf"
+            if cached_pdf.exists():
+                self._preview.show_pdf(cached_pdf)
+                if self._side_by_side:
+                    self._pdf_side_panel.show_pdf(cached_pdf)
+            self._editor.set_document(doc)
+            self._update_title()
+            self._remember_recent(path)
         self._io_label.setText("")
+
+    # ---- drag-and-drop document files ----
+
+    def dragEnterEvent(self, event) -> None:
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                if url.isLocalFile():
+                    suffix = Path(url.toLocalFile()).suffix.lower()
+                    if suffix in self._OPENABLE_SUFFIXES:
+                        event.acceptProposedAction()
+                        return
+        super().dragEnterEvent(event)
+
+    def dropEvent(self, event) -> None:
+        for url in event.mimeData().urls():
+            if url.isLocalFile():
+                path = Path(url.toLocalFile())
+                if path.suffix.lower() in self._OPENABLE_SUFFIXES:
+                    self._open_path(path)
+                    event.acceptProposedAction()
+                    return
+        super().dropEvent(event)
 
     def _save(self) -> None:
         if self._current_path is None:

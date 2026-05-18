@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication
@@ -22,6 +23,12 @@ def main() -> int:
     theme = themes.apply_theme(app, theme_name)
     win = MainWindow(theme_name=theme_name)
     win.show()
+    # Open a file passed on the command line (e.g. double-click association).
+    args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    if args:
+        path = Path(args[0])
+        if path.exists():
+            win._open_path(path)
     return app.exec()
 
 
