@@ -801,10 +801,14 @@ class DocumentEditor(QWidget):
         if eq_dir is None or not eq_dir.exists():
             return
         live: set[str] = set()
-        for block in doc.body:
-            if isinstance(block, MathBlock):
-                h = _hashlib.md5(block.latex.encode()).hexdigest()[:12]
-                live.add(f"math_{h}.png")
+        def _collect(blocks):
+            for block in blocks:
+                if isinstance(block, MathBlock):
+                    h = _hashlib.md5(block.latex.encode()).hexdigest()[:12]
+                    live.add(f"math_{h}.png")
+                elif isinstance(block, Section):
+                    _collect(block.children)
+        _collect(doc.children)
         for f in eq_dir.glob("math_*.png"):
             if f.name not in live:
                 f.unlink(missing_ok=True)
