@@ -624,6 +624,7 @@ class DocumentEditor(QWidget):
         self._edit.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._edit.setContextMenuPolicy(Qt.CustomContextMenu)
         self._edit.customContextMenuRequested.connect(self._show_context_menu)
+        self._extra_context_actions: list[tuple[str, object]] = []
 
         self._page = QFrame()
         self._page.setObjectName("page")
@@ -699,6 +700,33 @@ class DocumentEditor(QWidget):
     @property
     def text_edit(self) -> PagedTextEdit:
         return self._edit
+
+    def cursor_snippet(self, max_chars: int = 30) -> str:
+        """Return a short text snippet around the cursor for cross-tab nav."""
+        cursor = self._edit.textCursor()
+        block = cursor.block()
+        text = block.text().strip()
+        # Strip object replacement chars and control chars
+        text = text.replace("\ufffc", "").replace("\u2028", " ").strip()
+        if len(text) > max_chars:
+            # Centre the snippet around the cursor position within the block
+            pos_in_block = cursor.positionInBlock()
+            start = max(0, pos_in_block - max_chars // 2)
+            text = text[start:start + max_chars]
+        return text
+
+    def scroll_to_snippet(self, snippet: str) -> bool:
+        """Find *snippet* in the document and scroll to it. Returns True
+        if found."""
+        if not snippet:
+            return False
+        doc = self._edit.document()
+        cursor = doc.find(snippet)
+        if cursor.isNull():
+            return False
+        self._edit.setTextCursor(cursor)
+        self._edit.centerCursor()
+        return True
 
     def set_source_dir(self, path: Path | None) -> None:
         self._source_dir = path
@@ -2043,6 +2071,10 @@ class DocumentEditor(QWidget):
             if qtable.columns() > 1:
                 menu.addAction("Delete column",
                                lambda: self._table_delete_col(qtable, col))
+        if self._extra_context_actions:
+            menu.addSeparator()
+            for label, callback in self._extra_context_actions:
+                menu.addAction(label, callback)
         menu.exec(self._edit.viewport().mapToGlobal(pos))
 
     def _prepend_spell_suggestions(self, menu, word_cursor, word: str) -> None:

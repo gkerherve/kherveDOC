@@ -823,6 +823,20 @@ class MainWindow(QMainWindow):
         self._latex_view.latexEdited.connect(self._on_latex_edited)
         self._suppress_latex_update = False
 
+        # Cross-tab "Show in …" context-menu actions
+        self._editor._extra_context_actions = [
+            ("Show in LaTeX", self._nav_formatted_to_latex),
+            ("Show in PDF", self._nav_formatted_to_pdf),
+        ]
+        self._latex_view._extra_context_actions = [
+            ("Show in Formatted", self._nav_latex_to_formatted),
+            ("Show in PDF", self._nav_latex_to_pdf),
+        ]
+        self._preview._extra_context_actions = [
+            ("Show in Formatted", self._nav_pdf_to_formatted),
+            ("Show in LaTeX", self._nav_pdf_to_latex),
+        ]
+
         # Apply the full named theme (tab styling, editor, latex view).
         self._apply_named_theme(self._theme_name, startup=True)
 
@@ -2904,6 +2918,78 @@ class MainWindow(QMainWindow):
         if self._pending_recompile:
             self._pending_recompile = False
             self._kick_compile()
+
+    # ----- cross-tab "Show in …" navigation -----
+
+    def _nav_formatted_to_latex(self) -> None:
+        snippet = self._editor.cursor_snippet()
+        if snippet and self._latex_view.scroll_to_snippet(snippet):
+            self._tabs.setCurrentIndex(1)
+
+    def _nav_formatted_to_pdf(self) -> None:
+        # Use page anchors to find which PDF page contains the cursor
+        anchors = self._editor.text_edit.page_anchor_positions()
+        if not anchors:
+            self._tabs.setCurrentIndex(2)
+            return
+        cursor = self._editor.text_edit.textCursor()
+        block = cursor.block()
+        doc_layout = self._editor.text_edit.document().documentLayout()
+        cursor_y = doc_layout.blockBoundingRect(block).top()
+        # Find the last anchor whose y is <= cursor_y
+        page = 0
+        for page_no, y in anchors:
+            if y <= cursor_y:
+                page = page_no - 1  # anchors use 1-based page numbers
+            else:
+                break
+        self._tabs.setCurrentIndex(2)
+        self._preview.go_to_page(page)
+
+    def _nav_latex_to_formatted(self) -> None:
+        snippet = self._latex_view.cursor_snippet()
+        if snippet and self._editor.scroll_to_snippet(snippet):
+            self._tabs.setCurrentIndex(0)
+
+    def _nav_latex_to_pdf(self) -> None:
+        # Find the text at cursor in the LaTeX, search for it in the PDF
+        # via the same anchor approach: serialize to find position
+        snippet = self._latex_view.cursor_snippet()
+        if snippet and self._editor.scroll_to_snippet(snippet):
+            self._nav_formatted_to_pdf()
+        else:
+            self._tabs.setCurrentIndex(2)
+
+    def _nav_pdf_to_formatted(self) -> None:
+        page = self._preview.current_page()
+        anchors = self._editor.text_edit.page_anchor_positions()
+        # Find the anchor for this page and scroll the editor there
+        for page_no, y in anchors:
+            if page_no - 1 == page:
+                cursor = self._editor.text_edit.textCursor()
+                block = self._editor.text_edit.document().firstBlock()
+                doc_layout = self._editor.text_edit.document().documentLayout()
+                while block.isValid():
+                    if doc_layout.blockBoundingRect(block).top() >= y:
+                        cursor.setPosition(block.position())
+                        self._editor.text_edit.setTextCursor(cursor)
+                        self._editor.text_edit.centerCursor()
+                        break
+                    block = block.next()
+                break
+        self._tabs.setCurrentIndex(0)
+
+    def _nav_pdf_to_latex(self) -> None:
+        page = self._preview.current_page()
+        anchors = self._editor.text_edit._page_anchors
+        # Get the text snippet for the current page
+        for page_no, snippet in anchors:
+            if page_no - 1 == page:
+                if self._latex_view.scroll_to_snippet(snippet):
+                    self._tabs.setCurrentIndex(1)
+                    return
+                break
+        self._tabs.setCurrentIndex(1)
 
     # ----- toolbar state sync -----
 

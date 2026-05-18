@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QMenu, QVBoxLayout, QWidget
 
 
 try:
@@ -32,6 +32,7 @@ class PdfPreview(QWidget):
         self._zoom_percent = 100
         self._fit_to_width = True
         self._current_pdf: Path | None = None
+        self._extra_context_actions: list[tuple[str, object]] = []
 
         self._status = QLabel(self)
         self._status.hide()
@@ -50,6 +51,9 @@ class PdfPreview(QWidget):
             # in MultiPage mode. Qt's default is 3 px which is too tight
             # to read as "next sheet of paper".
             self._view.setPageSpacing(18)
+            self._view.setContextMenuPolicy(Qt.CustomContextMenu)
+            self._view.customContextMenuRequested.connect(
+                self._show_context_menu)
             layout.addWidget(self._view, 1)
         else:
             # Defensive fallback message. PySide6 6.4+ ships QtPdf with
@@ -112,3 +116,32 @@ class PdfPreview(QWidget):
 
     def zoom_percent(self) -> int:
         return self._zoom_percent
+
+    def current_page(self) -> int:
+        """Return the 0-based page index currently most visible."""
+        if not _QTPDF_AVAILABLE or self._view is None:
+            return 0
+        nav = self._view.pageNavigator()
+        return nav.currentPage() if nav else 0
+
+    def go_to_page(self, page: int) -> None:
+        """Scroll to the given 0-based page."""
+        if not _QTPDF_AVAILABLE or self._view is None:
+            return
+        nav = self._view.pageNavigator()
+        if nav:
+            from PySide6.QtCore import QPointF
+            nav.jump(page, QPointF(0, 0))
+
+    def page_count(self) -> int:
+        if not _QTPDF_AVAILABLE:
+            return 0
+        return self._doc.pageCount()
+
+    def _show_context_menu(self, pos) -> None:
+        if not self._extra_context_actions:
+            return
+        menu = QMenu(self)
+        for label, callback in self._extra_context_actions:
+            menu.addAction(label, callback)
+        menu.exec(self._view.viewport().mapToGlobal(pos))

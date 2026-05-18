@@ -13,7 +13,7 @@ from PySide6.QtGui import (
     QTextDocument,
 )
 from PySide6.QtWidgets import (
-    QCompleter, QPlainTextEdit, QVBoxLayout, QWidget,
+    QCompleter, QMenu, QPlainTextEdit, QVBoxLayout, QWidget,
 )
 
 
@@ -415,6 +415,10 @@ class LatexView(QWidget):
         self._debounce.timeout.connect(self._emit_edited)
         self._edit.textChanged.connect(self._on_text_changed)
 
+        self._extra_context_actions: list[tuple[str, object]] = []
+        self._edit.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._edit.customContextMenuRequested.connect(self._show_context_menu)
+
     # ----- public API -----
 
     def set_source(self, src: str) -> None:
@@ -435,6 +439,53 @@ class LatexView(QWidget):
 
     def source(self) -> str:
         return self._edit.toPlainText()
+
+    def cursor_snippet(self, max_chars: int = 40) -> str:
+        """Return a short plain-text snippet around the cursor for
+        cross-tab navigation. Strips LaTeX commands to get usable text."""
+        cursor = self._edit.textCursor()
+        block = cursor.block()
+        text = block.text().strip()
+        # Strip common LaTeX noise to get searchable plain text
+        import re
+        text = re.sub(r"\\[a-zA-Z]+\*?\{?", " ", text)
+        text = re.sub(r"[{}\\&%$]", "", text)
+        text = " ".join(text.split()).strip()
+        if len(text) > max_chars:
+            pos = cursor.positionInBlock()
+            start = max(0, pos - max_chars // 2)
+            text = text[start:start + max_chars]
+        return text.strip()
+
+    def scroll_to_snippet(self, snippet: str) -> bool:
+        """Find *snippet* in the LaTeX source and scroll to it."""
+        if not snippet:
+            return False
+        import re
+        src = self._edit.toPlainText()
+        idx = src.find(snippet)
+        if idx < 0:
+            words = snippet.split()[:3]
+            if words:
+                pattern = r"[\s\\{}]*".join(re.escape(w) for w in words)
+                m = re.search(pattern, src)
+                if m:
+                    idx = m.start()
+        if idx < 0:
+            return False
+        cursor = self._edit.textCursor()
+        cursor.setPosition(idx)
+        self._edit.setTextCursor(cursor)
+        self._edit.centerCursor()
+        return True
+
+    def _show_context_menu(self, pos) -> None:
+        menu = self._edit.createStandardContextMenu()
+        if self._extra_context_actions:
+            menu.addSeparator()
+            for label, callback in self._extra_context_actions:
+                menu.addAction(label, callback)
+        menu.exec(self._edit.viewport().mapToGlobal(pos))
 
     def set_dark(self, dark: bool) -> None:
         self._highlighter.set_dark(dark)
