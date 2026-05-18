@@ -690,8 +690,8 @@ class MainWindow(QMainWindow):
         self._preview = PdfPreview(self)
 
         self._tabs = QTabWidget(self)
-        self._tabs.addTab(self._editor, "Formatted")
-        self._tabs.addTab(self._latex_view, "LaTeX")
+        self._tabs.addTab(self._editor, "Visual")
+        self._tabs.addTab(self._latex_view, "Code")
         self._tabs.addTab(self._preview, "PDF")
         self._tabs.currentChanged.connect(self._on_tab_changed)
 
@@ -841,20 +841,20 @@ class MainWindow(QMainWindow):
 
         # Cross-tab "Show in …" context-menu actions
         self._editor._extra_context_actions = [
-            ("Show in LaTeX", self._nav_formatted_to_latex),
+            ("Show in Code", self._nav_formatted_to_latex),
             ("Show in PDF", self._nav_formatted_to_pdf),
         ]
         self._latex_view._extra_context_actions = [
-            ("Show in Formatted", self._nav_latex_to_formatted),
+            ("Show in Visual", self._nav_latex_to_formatted),
             ("Show in PDF", self._nav_latex_to_pdf),
         ]
         self._preview._extra_context_actions = [
-            ("Show in Formatted", self._nav_pdf_to_formatted),
-            ("Show in LaTeX", self._nav_pdf_to_latex),
+            ("Show in Visual", self._nav_pdf_to_formatted),
+            ("Show in Code", self._nav_pdf_to_latex),
         ]
         self._pdf_side_panel._extra_context_actions = [
-            ("Show in Formatted", self._nav_pdf_to_formatted),
-            ("Show in LaTeX", self._nav_pdf_to_latex),
+            ("Show in Visual", self._nav_pdf_to_formatted),
+            ("Show in Code", self._nav_pdf_to_latex),
         ]
 
         # Apply the full named theme (tab styling, editor, latex view).
@@ -1064,10 +1064,10 @@ class MainWindow(QMainWindow):
                                     triggered=e.insert_multicol_region)
 
         # View
-        self.act_view_formatted = QAction("Show &Formatted tab", self,
+        self.act_view_formatted = QAction("Show &Visual tab", self,
                                           shortcut=QKeySequence("Ctrl+1"),
                                           triggered=lambda: self._tabs.setCurrentIndex(0))
-        self.act_view_latex = QAction("Show &LaTeX tab", self,
+        self.act_view_latex = QAction("Show &Code tab", self,
                                       shortcut=QKeySequence("Ctrl+2"),
                                       triggered=lambda: self._tabs.setCurrentIndex(1))
         self.act_view_pdf = QAction("Show &PDF tab", self,
@@ -2756,10 +2756,10 @@ class MainWindow(QMainWindow):
 
             "<h3>The three tabs</h3>"
             "<ul>"
-            "<li><b>Formatted</b> &mdash; WYSIWYG editor. Type, format text, "
+            "<li><b>Visual</b> &mdash; WYSIWYG editor. Type, format text, "
             "insert figures and equations just like in a word processor.</li>"
-            "<li><b>LaTeX</b> &mdash; Raw LaTeX source with syntax highlighting "
-            "and autocomplete. Edits here are parsed back into the Formatted "
+            "<li><b>Code</b> &mdash; Raw LaTeX source with syntax highlighting "
+            "and autocomplete. Edits here are parsed back into the Visual "
             "tab automatically.</li>"
             "<li><b>PDF</b> &mdash; Live preview of the compiled document "
             "(requires <i>tectonic</i>).</li>"
@@ -2771,7 +2771,7 @@ class MainWindow(QMainWindow):
 
             "<h3>Zoom controls</h3>"
             "<p>Two independent zoom sliders sit in the status bar at the bottom. "
-            "The editor zoom appears on the Formatted tab; the PDF zoom appears "
+            "The editor zoom appears on the Visual tab; the PDF zoom appears "
             "on the PDF tab (and whenever the side panel is open).</p>"
         ), "Getting started")
 
@@ -2822,7 +2822,7 @@ class MainWindow(QMainWindow):
             "<h3>Figures &amp; tables</h3>"
             "<p>Use <b>Insert &gt; Figure</b> to add an image. The path is "
             "resolved relative to the document folder. A thumbnail preview "
-            "appears in the Formatted tab.</p>"
+            "appears in the Visual tab.</p>"
             "<p><b>Insert &gt; Table</b> opens a dialog for rows, columns, "
             "caption and alignment.</p>"
 
@@ -2844,7 +2844,7 @@ class MainWindow(QMainWindow):
             "to lock shapes to grid intersections. The grid is not visible "
             "in the exported image.</p>"
             "<p><b>Re-editing:</b> double-click any drawing figure in the "
-            "Formatted tab to reopen the drawing dialog with all original "
+            "Visual tab to reopen the drawing dialog with all original "
             "shapes intact for further editing.</p>"
 
             "<h3>References</h3>"
@@ -2930,8 +2930,8 @@ class MainWindow(QMainWindow):
         ), "Version control")
 
         tabs.addTab(_page(
-            "<h2>LaTeX tab</h2>"
-            "<p>The LaTeX tab gives you direct access to the document source "
+            "<h2>Code tab</h2>"
+            "<p>The Code tab gives you direct access to the document source "
             "with full syntax highlighting and autocomplete.</p>"
 
             "<h3>Syntax highlighting</h3>"
@@ -2963,25 +2963,25 @@ class MainWindow(QMainWindow):
             "<code>Enter</code> or click to accept a suggestion.</p>"
 
             "<h3>Two-way editing</h3>"
-            "<p>Changes in the LaTeX tab are parsed back into the Formatted "
-            "tab after a short pause (1.5 s). Edits in the Formatted tab "
+            "<p>Changes in the Code tab are parsed back into the Visual "
+            "tab after a short pause (1.5 s). Edits in the Visual tab "
             "update the LaTeX source immediately.</p>"
-        ), "LaTeX tab")
+        ), "Code tab")
 
         tabs.addTab(_page(
             "<h2>PDF &amp; navigation</h2>"
 
             "<h3>Cross-tab navigation</h3>"
-            "<p>Right-click anywhere in the <b>Formatted</b>, <b>LaTeX</b>, "
+            "<p>Right-click anywhere in the <b>Visual</b>, <b>Code</b>, "
             "or <b>PDF</b> tab to see <i>Show in&hellip;</i> actions that "
             "jump to the same location in another tab:</p>"
             "<ul>"
-            "<li>Formatted &rarr; <i>Show in LaTeX</i>, "
+            "<li>Visual &rarr; <i>Show in Code</i>, "
             "<i>Show in PDF</i></li>"
-            "<li>LaTeX &rarr; <i>Show in Formatted</i>, "
+            "<li>Code &rarr; <i>Show in Visual</i>, "
             "<i>Show in PDF</i></li>"
-            "<li>PDF &rarr; <i>Show in Formatted</i>, "
-            "<i>Show in LaTeX</i></li>"
+            "<li>PDF &rarr; <i>Show in Visual</i>, "
+            "<i>Show in Code</i></li>"
             "</ul>"
 
             "<h3>PDF find bar</h3>"
@@ -2998,7 +2998,7 @@ class MainWindow(QMainWindow):
             "<p>The bottom bar shows (left to right):</p>"
             "<ul>"
             "<li>Document file path</li>"
-            "<li>Editor zoom slider (Formatted tab)</li>"
+            "<li>Editor zoom slider (Visual tab)</li>"
             "<li>PDF zoom slider (PDF tab or side panel)</li>"
             "<li>Tectonic status (OK or NOT FOUND)</li>"
             "<li>Loading/Saving indicator during file I/O</li>"
@@ -3037,8 +3037,8 @@ class MainWindow(QMainWindow):
                 ("Ctrl+Shift+E", "Equation builder"),
             ]),
             ("View", [
-                ("Ctrl+1", "Formatted tab"),
-                ("Ctrl+2", "LaTeX tab"),
+                ("Ctrl+1", "Visual tab"),
+                ("Ctrl+2", "Code tab"),
                 ("Ctrl+3", "PDF tab"),
                 ("Ctrl+4", "PDF side panel"),
                 ("Ctrl+F", "Find (text or PDF search)"),
