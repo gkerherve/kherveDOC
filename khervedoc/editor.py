@@ -1395,14 +1395,15 @@ class DocumentEditor(QWidget):
             return Section(level=0, children=self._strip_implicit_marks(children, ["bold"]))
         if state == _STATE_FRAME:
             return Frame(children=self._strip_implicit_marks(children, ["bold"]))
+        if 1 <= state <= 5:
+            return Section(level=state,
+                           children=self._strip_implicit_marks(children, ["bold"]))
 
         # Empty block: no fragments to inspect — fall back to state.
         it = block.begin()
         if it.atEnd():
             if state == _STATE_TITLE: return Title(children=children)
             if state == _STATE_AUTHOR: return Author(children=children)
-            if 1 <= state <= 5:
-                return Section(level=state, children=children)
             return Paragraph(children=children, alignment=align_name)
 
         # Note: bold/italic that come from the *style itself* are stripped
