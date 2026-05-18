@@ -627,10 +627,11 @@ class DocumentEditor(QWidget):
         # to real A4/Letter/Legal paper at 96 DPI. The text flows as one
         # editable surface but page-break lines mark the paginations Latex
         # will produce in the PDF.
+        self._visual_font_family = "Georgia"
         self._edit = PagedTextEdit()
         self._edit.setAcceptRichText(False)
         self._edit.setFrameShape(QFrame.NoFrame)
-        f = QFont("Georgia"); f.setPointSize(12)
+        f = QFont(self._visual_font_family); f.setPointSize(12)
         self._edit.setFont(f)
         # ~1 inch of inner padding at 100% zoom; scaled by set_zoom_percent
         # so the number of characters per line stays constant when zooming.
@@ -821,15 +822,44 @@ class DocumentEditor(QWidget):
 
     def set_meta(self, meta: DocMeta) -> None:
         prev_size = self._meta.page_size if self._meta else None
+        prev_vfont = self._visual_font_family
         self._meta = meta
         if meta.page_size != prev_size:
             self._apply_page_size(page_sizes.by_code(meta.page_size))
+        if meta.visual_font_family != prev_vfont:
+            self._apply_visual_font(meta.visual_font_family)
         self._on_text_changed()
 
     def set_page_size(self, code: str) -> None:
         self._meta.page_size = code
         self._apply_page_size(page_sizes.by_code(code))
         self._on_text_changed()
+
+    def _apply_visual_font(self, family: str) -> None:
+        """Switch the visual editor's body font to *family*, updating
+        all existing Paragraph blocks so the change is immediate."""
+        self._visual_font_family = family
+        f = QFont(family)
+        f.setPointSize(self._body_font_pt)
+        self._edit.setFont(f)
+        self._building = True
+        try:
+            doc = self._edit.document()
+            block = doc.firstBlock()
+            zoom = self._zoom_percent / 100 if self._zoom_percent else 1.0
+            while block.isValid():
+                state = block.userState()
+                if state in (0, -1):
+                    bc = QTextCursor(block)
+                    bc.select(QTextCursor.BlockUnderCursor)
+                    fmt = bc.charFormat()
+                    bf = fmt.font()
+                    bf.setFamily(family)
+                    fmt.setFont(bf)
+                    bc.setCharFormat(fmt)
+                block = block.next()
+        finally:
+            self._building = False
 
     def _apply_page_size(self, page: "page_sizes.PageSize") -> None:
         # Honour the current zoom so switching page sizes while zoomed in
@@ -865,6 +895,11 @@ class DocumentEditor(QWidget):
         self._building = True
         try:
             self._meta = doc.meta
+            if doc.meta.visual_font_family != self._visual_font_family:
+                self._visual_font_family = doc.meta.visual_font_family
+                f = QFont(self._visual_font_family)
+                f.setPointSize(self._body_font_pt)
+                self._edit.setFont(f)
             self._edit.clear()
             cursor = self._edit.textCursor()
             cursor.movePosition(QTextCursor.Start)
@@ -1621,7 +1656,7 @@ class DocumentEditor(QWidget):
             # paragraph carrying an inherited heading font would still
             # render larger than its neighbours.
             fmt = QTextCharFormat()
-            f = QFont("Georgia")
+            f = QFont(self._visual_font_family)
             f.setPointSizeF(self._body_font_pt * (self._zoom_percent / 100))
             fmt.setFont(f)
             block_cursor.setCharFormat(fmt)
@@ -1713,7 +1748,7 @@ class DocumentEditor(QWidget):
         current zoom so scaled-up text on screen still matches the
         body when the user presses Enter and types."""
         fmt = QTextCharFormat()
-        f = QFont("Georgia")
+        f = QFont(self._visual_font_family)
         zoom = self._zoom_percent / 100 if self._zoom_percent else 1.0
         f.setPointSizeF(self._body_font_pt * zoom)
         fmt.setFont(f)
@@ -1743,7 +1778,7 @@ class DocumentEditor(QWidget):
                     bc = QTextCursor(block)
                     bc.select(QTextCursor.BlockUnderCursor)
                     fmt = QTextCharFormat()
-                    f = QFont("Georgia")
+                    f = QFont(self._visual_font_family)
                     f.setPointSizeF(pt * zoom)
                     fmt.setFont(f)
                     bc.setCharFormat(fmt)

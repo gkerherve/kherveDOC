@@ -188,6 +188,12 @@ class DocSettingsDialog(QDialog):
         return w
 
     def _build_text_tab(self, meta: DocMeta) -> QWidget:
+        # Visual editor font (what the user sees while editing)
+        from PySide6.QtWidgets import QFontComboBox
+        self._visual_font = QFontComboBox()
+        self._visual_font.setCurrentFont(QFont(meta.visual_font_family))
+
+        # Output font (what LaTeX / Typst compiles to)
         self._font_family = QComboBox()
         for code, label in _FONT_FAMILIES:
             self._font_family.addItem(label, code)
@@ -211,7 +217,11 @@ class DocSettingsDialog(QDialog):
 
         w = QWidget()
         form = QFormLayout(w)
-        form.addRow("Body font:", self._font_family)
+        form.addRow(QLabel("<b>Visual editor</b>"))
+        form.addRow("Editor font:", self._visual_font)
+        form.addRow(QLabel(""))
+        form.addRow(QLabel("<b>Compiled output (LaTeX / Typst)</b>"))
+        form.addRow("Output font:", self._font_family)
         form.addRow("Body size:", self._body_pt)
         form.addRow("Line spacing:", self._line_spacing)
         form.addRow("", self._para_indent)
@@ -278,6 +288,7 @@ class DocSettingsDialog(QDialog):
             margin_right_cm=self._m_right.value(),
             body_font_pt=int(self._body_pt.currentData() or 12),
             body_font_family=str(self._font_family.currentData() or "default"),
+            visual_font_family=self._visual_font.currentFont().family(),
             line_spacing=self._line_spacing.value(),
             paragraph_indent=self._para_indent.isChecked(),
             column_count=int(self._columns.currentData() or 1),
@@ -613,41 +624,73 @@ _RECENT_FILES_MAX = 8
 
 
 class _FindBar(QWidget):
-    """Compact find bar shown at the bottom of the editor area."""
+    """Compact find & replace bar shown at the bottom of the editor area."""
 
     find_next = Signal()
     find_prev = Signal()
+    replace_one = Signal()
+    replace_all = Signal()
     closed = Signal()
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(6, 2, 6, 2)
+        grid = QGridLayout(self)
+        grid.setContentsMargins(6, 2, 6, 2)
+        grid.setVerticalSpacing(2)
 
-        lay.addWidget(QLabel("Find:"))
+        # Row 0: Find
+        grid.addWidget(QLabel("Find:"), 0, 0)
         self.field = QLineEdit(self)
         self.field.setPlaceholderText("Search text...")
         self.field.setClearButtonEnabled(True)
         self.field.returnPressed.connect(self.find_next)
-        lay.addWidget(self.field, 1)
+        grid.addWidget(self.field, 0, 1)
 
         prev_btn = QPushButton("Previous", self)
         prev_btn.clicked.connect(self.find_prev)
-        lay.addWidget(prev_btn)
+        grid.addWidget(prev_btn, 0, 2)
 
         next_btn = QPushButton("Next", self)
         next_btn.setDefault(True)
         next_btn.clicked.connect(self.find_next)
-        lay.addWidget(next_btn)
+        grid.addWidget(next_btn, 0, 3)
 
         self.case_cb = QCheckBox("Match case", self)
-        lay.addWidget(self.case_cb)
+        grid.addWidget(self.case_cb, 0, 4)
 
         close_btn = QPushButton("x", self)
         close_btn.setFixedWidth(28)
         close_btn.setFlat(True)
         close_btn.clicked.connect(self.closed)
-        lay.addWidget(close_btn)
+        grid.addWidget(close_btn, 0, 5)
+
+        # Row 1: Replace (hidden until toggled via Ctrl+H)
+        self._replace_label = QLabel("Replace:")
+        grid.addWidget(self._replace_label, 1, 0)
+        self.replace_field = QLineEdit(self)
+        self.replace_field.setPlaceholderText("Replacement text...")
+        self.replace_field.setClearButtonEnabled(True)
+        grid.addWidget(self.replace_field, 1, 1)
+
+        replace_btn = QPushButton("Replace", self)
+        replace_btn.clicked.connect(self.replace_one)
+        grid.addWidget(replace_btn, 1, 2)
+
+        replace_all_btn = QPushButton("Replace all", self)
+        replace_all_btn.clicked.connect(self.replace_all)
+        grid.addWidget(replace_all_btn, 1, 3)
+
+        self._replace_widgets = [
+            self._replace_label, self.replace_field,
+            replace_btn, replace_all_btn,
+        ]
+        self._replace_visible = False
+        self.set_replace_visible(False)
+
+    def set_replace_visible(self, visible: bool) -> None:
+        self._replace_visible = visible
+        for w in self._replace_widgets:
+            w.setVisible(visible)
 
     def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key_Escape:
@@ -751,6 +794,8 @@ class MainWindow(QMainWindow):
         self._find_bar.hide()
         self._find_bar.find_next.connect(lambda: self._do_find(forward=True))
         self._find_bar.find_prev.connect(lambda: self._do_find(forward=False))
+        self._find_bar.replace_one.connect(self._do_replace)
+        self._find_bar.replace_all.connect(self._do_replace_all)
         self._find_bar.closed.connect(self._find_bar.hide)
 
         central = QWidget(self)
@@ -973,6 +1018,9 @@ class MainWindow(QMainWindow):
         self.act_find = QAction("&Find...", self,
                                 shortcut=QKeySequence.Find,
                                 triggered=self._show_find_bar)
+        self.act_replace = QAction("&Replace...", self,
+                                   shortcut=QKeySequence("Ctrl+H"),
+                                   triggered=self._show_replace_bar)
 
         # Alignment (exclusive group — exactly one is checked at any time)
         self.alignment_group = QActionGroup(self)
@@ -1309,6 +1357,7 @@ class MainWindow(QMainWindow):
         m_edit.addAction(self.act_paste); m_edit.addAction(self.act_select_all)
         m_edit.addSeparator()
         m_edit.addAction(self.act_find)
+        m_edit.addAction(self.act_replace)
         m_edit.addSeparator()
         m_edit.addAction(self.act_clear_fmt)
 
@@ -1781,6 +1830,7 @@ class MainWindow(QMainWindow):
         meta = self._editor.meta()
         self._settings.setValue("default/body_font_pt", meta.body_font_pt)
         self._settings.setValue("default/body_font_family", meta.body_font_family)
+        self._settings.setValue("default/visual_font_family", meta.visual_font_family)
         self._settings.setValue("default/line_spacing", meta.line_spacing)
         self._settings.setValue("default/paragraph_indent", meta.paragraph_indent)
         self._settings.setValue("default/margin_top_cm", meta.margin_top_cm)
@@ -2268,6 +2318,15 @@ class MainWindow(QMainWindow):
         if self._tabs.currentIndex() == 2:
             self._preview.show_find_bar()
             return
+        self._find_bar.set_replace_visible(False)
+        self._find_bar.show()
+        self._find_bar.field.setFocus()
+        self._find_bar.field.selectAll()
+
+    def _show_replace_bar(self) -> None:
+        if self._tabs.currentIndex() >= 2:
+            return
+        self._find_bar.set_replace_visible(True)
         self._find_bar.show()
         self._find_bar.field.setFocus()
         self._find_bar.field.selectAll()
@@ -2311,6 +2370,56 @@ class MainWindow(QMainWindow):
                     global_pos.x(), global_pos.y(), 50, 80)
         else:
             self._status.showMessage(f'"{text}" not found', 3000)
+
+    def _current_find_widget(self):
+        tab = self._tabs.currentIndex()
+        if tab == 0:
+            return self._editor.text_edit
+        if tab == 1:
+            return self._latex_view._edit
+        return None
+
+    def _do_replace(self) -> None:
+        widget = self._current_find_widget()
+        if widget is None:
+            return
+        search = self._find_bar.field.text()
+        if not search:
+            return
+        cursor = widget.textCursor()
+        if not cursor.hasSelection():
+            self._do_find(forward=True)
+            return
+        # Check the current selection matches the search term.
+        sel = cursor.selectedText()
+        match = (sel == search) if self._find_bar.case_cb.isChecked() else (
+            sel.lower() == search.lower())
+        if match:
+            cursor.insertText(self._find_bar.replace_field.text())
+        self._do_find(forward=True)
+
+    def _do_replace_all(self) -> None:
+        widget = self._current_find_widget()
+        if widget is None:
+            return
+        search = self._find_bar.field.text()
+        replacement = self._find_bar.replace_field.text()
+        if not search:
+            return
+        cursor = widget.textCursor()
+        cursor.beginEditBlock()
+        cursor.movePosition(QTextCursor.Start)
+        widget.setTextCursor(cursor)
+        flags = QTextDocument.FindFlags()
+        if self._find_bar.case_cb.isChecked():
+            flags |= QTextDocument.FindCaseSensitively
+        count = 0
+        while widget.find(search, flags):
+            widget.textCursor().insertText(replacement)
+            count += 1
+        cursor.endEditBlock()
+        self._status.showMessage(
+            f'Replaced {count} occurrence{"s" if count != 1 else ""}', 3000)
 
     def _on_fontsize_changed(self, *_) -> None:
         try:
@@ -2889,13 +2998,6 @@ class MainWindow(QMainWindow):
 
         html = (
             f"<h2 style='margin-bottom:2pt'>KherveTeX {version_string()}</h2>"
-            f"<p style='color:#555;margin-top:0'>A WYSIWYG document editor "
-            f"that produces publication-quality LaTeX output with built-in "
-            f"Git version control.</p>"
-            f"<p><b>Source:</b> "
-            f"<a href='https://github.com/gkerherve/KherveTeX'>"
-            f"github.com/gkerherve/KherveTeX</a> &nbsp;·&nbsp; "
-            f"<b>License:</b> MIT</p>"
             f"<hr>"
             f"<h3>About the author</h3>"
             f"<p><b>Gwilherm Kerherv&eacute;</b> &nbsp;—&nbsp; "
@@ -3251,6 +3353,7 @@ class MainWindow(QMainWindow):
                 ("Ctrl+4", "PDF side panel"),
                 ("Ctrl+5", "Console tab"),
                 ("Ctrl+F", "Find (text or PDF search)"),
+                ("Ctrl+H", "Find & Replace"),
             ]),
         ]
         html = "<h3>Keyboard shortcuts</h3>"
@@ -3610,6 +3713,8 @@ def _apply_user_defaults(meta: DocMeta) -> DocMeta:
                                     type=int))
     meta.body_font_family = str(s.value("default/body_font_family",
                                         meta.body_font_family))
+    meta.visual_font_family = str(s.value("default/visual_font_family",
+                                          meta.visual_font_family))
     meta.line_spacing = float(s.value("default/line_spacing", meta.line_spacing,
                                       type=float))
     meta.paragraph_indent = bool(s.value("default/paragraph_indent",

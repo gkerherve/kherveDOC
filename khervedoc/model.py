@@ -245,9 +245,13 @@ class DocMeta:
     # Body type size — the LaTeX article class only accepts 10 / 11 / 12 pt
     # as a class option; anything else is rounded to the nearest of those.
     body_font_pt: int = 12
-    # Font family. "default" leaves Computer Modern in place. Other values
-    # map to the loaded packages — see serializer._FONT_FAMILY_PACKAGES.
+    # Font family for compiled output. "default" leaves Computer Modern in
+    # place. Other values map to LaTeX packages — see
+    # serializer._FONT_FAMILY_PACKAGES.
     body_font_family: str = "default"
+    # Font family used in the visual editor (WYSIWYG display only, does
+    # not affect compiled LaTeX/Typst output).
+    visual_font_family: str = "Georgia"
     # Line spacing multiplier — 1.0 single, 1.15 / 1.5 / 2.0 typical.
     line_spacing: float = 1.0
     # Indent the first line of each paragraph? Most modern docs prefer no
