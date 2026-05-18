@@ -2277,10 +2277,16 @@ class DocumentEditor(QWidget):
         c.block().setUserState(_STATE_PARAGRAPH)
 
     def insert_compile_marker(self, marker_type: str) -> None:
-        """Insert a compile-range marker (start or end) at the cursor."""
-        from .compiler import _COMPILE_START, _COMPILE_END
-        text = _COMPILE_START if marker_type == "start" else _COMPILE_END
-        self._insert_raw_block(text)
+        """Insert a compile-range or not-compile marker at the cursor."""
+        from .compiler import (_COMPILE_START, _COMPILE_END,
+                               _NOT_COMPILE_START, _NOT_COMPILE_END)
+        mapping = {
+            "start": _COMPILE_START,
+            "end": _COMPILE_END,
+            "not_start": _NOT_COMPILE_START,
+            "not_end": _NOT_COMPILE_END,
+        }
+        self._insert_raw_block(mapping[marker_type])
 
     def insert_page_break(self) -> None:
         self._insert_raw_block(r"\newpage")

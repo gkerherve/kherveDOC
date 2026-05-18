@@ -1039,6 +1039,14 @@ class MainWindow(QMainWindow):
             "Compile end marker", self,
             statusTip="Insert a compile-range end marker",
             triggered=lambda: e.insert_compile_marker("end"))
+        self.act_not_compile_start = QAction(
+            "Not-compile start marker", self,
+            statusTip="Insert a not-compile start marker (content after this is skipped)",
+            triggered=lambda: e.insert_compile_marker("not_start"))
+        self.act_not_compile_end = QAction(
+            "Not-compile end marker", self,
+            statusTip="Insert a not-compile end marker (resume compiling here)",
+            triggered=lambda: e.insert_compile_marker("not_end"))
         self.act_code_block = QAction("&Code block...", self,
                                       triggered=e.insert_code_block)
         self.act_symbol = QAction(icons.symbol(), "&Symbol...", self,
@@ -1292,6 +1300,8 @@ class MainWindow(QMainWindow):
         m_insert.addSeparator()
         m_insert.addAction(self.act_compile_start)
         m_insert.addAction(self.act_compile_end)
+        m_insert.addAction(self.act_not_compile_start)
+        m_insert.addAction(self.act_not_compile_end)
 
         m_view = mb.addMenu("&View")
         m_view.addAction(self.act_view_formatted)

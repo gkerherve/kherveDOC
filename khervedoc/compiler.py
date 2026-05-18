@@ -105,8 +105,10 @@ def _strip_images(tex_source: str) -> str:
     return _INCLUDEGRAPHICS_RE.sub(_sub, tex_source)
 
 
-_COMPILE_START = "% ===== KHERVETEX COMPILE START ====="
-_COMPILE_END   = "% ===== KHERVETEX COMPILE END ====="
+_COMPILE_START     = "% ===== KHERVETEX COMPILE START ====="
+_COMPILE_END       = "% ===== KHERVETEX COMPILE END ====="
+_NOT_COMPILE_START = "% ===== KHERVETEX NOT COMPILE START ====="
+_NOT_COMPILE_END   = "% ===== KHERVETEX NOT COMPILE END ====="
 
 
 def _apply_compile_range(tex_source: str) -> str:
@@ -165,6 +167,48 @@ def _apply_compile_range(tex_source: str) -> str:
     return "\n".join(result)
 
 
+def _apply_not_compile_ranges(tex_source: str) -> str:
+    r"""Hide content between each NOT COMPILE START/END marker pair.
+
+    Multiple pairs are supported. Content between each pair is wrapped
+    in \iffalse...\fi. Unpaired markers are ignored.
+    """
+    lines = tex_source.split("\n")
+    # Collect all paired ranges
+    starts: list[int] = []
+    ends: list[int] = []
+    for i, ln in enumerate(lines):
+        stripped = ln.strip()
+        if stripped == _NOT_COMPILE_START:
+            starts.append(i)
+        elif stripped == _NOT_COMPILE_END:
+            ends.append(i)
+    if not starts or not ends:
+        return tex_source
+    # Match each start with the nearest following end
+    pairs: list[tuple[int, int]] = []
+    used_ends: set[int] = set()
+    for s in starts:
+        for e in ends:
+            if e > s and e not in used_ends:
+                pairs.append((s, e))
+                used_ends.add(e)
+                break
+    if not pairs:
+        return tex_source
+    # Build result, wrapping each pair in \iffalse..\fi
+    result: list[str] = []
+    prev = 0
+    for s, e in sorted(pairs):
+        result.extend(lines[prev:s])
+        result.append(r"\iffalse")
+        result.extend(lines[s:e + 1])
+        result.append(r"\fi")
+        prev = e + 1
+    result.extend(lines[prev:])
+    return "\n".join(result)
+
+
 def compile_tex(
     tex_source: str,
     workdir: Path,
@@ -197,6 +241,7 @@ def compile_tex(
         tex_source = _rewrite_includegraphics(tex_source, source_dir)
     if use_compile_range:
         tex_source = _apply_compile_range(tex_source)
+    tex_source = _apply_not_compile_ranges(tex_source)
     tex_path = workdir / f"{basename}.tex"
     tex_path.write_text(tex_source, encoding="utf-8")
 
