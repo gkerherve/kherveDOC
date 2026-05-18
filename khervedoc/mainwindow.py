@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 
 from . import (
     __version__, equations, git_backend, icons, kdocz, page_sizes,
-    symbols, version_string,
+    symbols, themes, version_string,
 )
 from .compiler import CompileResult, compile_tex, tectonic_available
 from .editor import DocumentEditor, TEMPLATE_CHOICES
@@ -631,9 +631,11 @@ class MainWindow(QMainWindow):
     # menu can list every open document.
     _windows: list["MainWindow"] = []
 
-    def __init__(self):
+    def __init__(self, theme_name: str = "Light"):
         super().__init__()
         MainWindow._windows.append(self)
+        self._theme_name = theme_name
+        self._theme = themes.THEMES.get(theme_name, themes.THEMES["Light"])
         self._current_path: Path | None = None
         # Imported (.tex/.docx) files don't get a "current path" — the user
         # has to Save As before kherveDOC knows where to save the .kdocz.
@@ -718,7 +720,7 @@ class MainWindow(QMainWindow):
 
         # Left side: full document path (or "Untitled" before first save).
         self._path_label = QLabel("Untitled", self)
-        self._path_label.setStyleSheet("color: #444; padding: 0 6px;")
+        self._path_label.setStyleSheet(themes.status_label_stylesheet(self._theme))
         self._path_label.setMinimumWidth(200)
         self._path_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self._status.addWidget(self._path_label, 1)   # stretch=1 → takes the space
@@ -755,12 +757,12 @@ class MainWindow(QMainWindow):
         self._zoom_label = QLabel("100%", self)
         self._zoom_label.setMinimumWidth(42)
         self._zoom_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self._zoom_label.setStyleSheet("padding-right: 6px; color: #444;")
+        self._zoom_label.setStyleSheet(f"padding-right: 6px; color: {self._theme['status_text']};")
         self._status.addPermanentWidget(self._zoom_label)
 
         # PDF-specific zoom (separate from the editor zoom).
         self._pdf_zoom_sep = QLabel(" | PDF:", self)
-        self._pdf_zoom_sep.setStyleSheet("color: #888; padding: 0 2px;")
+        self._pdf_zoom_sep.setStyleSheet(f"color: {self._theme['text_muted']}; padding: 0 2px;")
         self._status.addPermanentWidget(self._pdf_zoom_sep)
 
         self._pdf_zoom_out_btn = QToolButton(self)
@@ -792,7 +794,7 @@ class MainWindow(QMainWindow):
         self._pdf_zoom_label = QLabel("100%", self)
         self._pdf_zoom_label.setMinimumWidth(42)
         self._pdf_zoom_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self._pdf_zoom_label.setStyleSheet("padding-right: 6px; color: #444;")
+        self._pdf_zoom_label.setStyleSheet(f"padding-right: 6px; color: {self._theme['status_text']};")
         self._status.addPermanentWidget(self._pdf_zoom_label)
 
         self._tectonic_label = QLabel(
@@ -808,9 +810,8 @@ class MainWindow(QMainWindow):
         self._pdf_zoom_label.hide()
 
         # Set icon colors before building actions so they render correctly.
-        self._is_dark = self._settings.value("theme_dark", False, type=bool)
-        if self._is_dark:
-            icons.set_dark(True)
+        self._is_dark = themes.is_dark(self._theme_name)
+        icons.set_dark(self._is_dark)
 
         self._build_actions()
         self._build_menus()
@@ -821,9 +822,8 @@ class MainWindow(QMainWindow):
         self._latex_view.latexEdited.connect(self._on_latex_edited)
         self._suppress_latex_update = False
 
-        # Apply persisted theme styling to editor/latex panels.
-        if self._is_dark:
-            self._toggle_theme(True)
+        # Apply the full named theme (tab styling, editor, latex view).
+        self._apply_named_theme(self._theme_name, startup=True)
 
         # Restore side-by-side panel state.
         if self._settings.value("side_by_side", False, type=bool):
@@ -1025,10 +1025,16 @@ class MainWindow(QMainWindow):
         self.act_side_by_side = QAction("PDF &side panel", self,
                                         shortcut=QKeySequence("Ctrl+4"),
                                         checkable=True, triggered=self._toggle_side_by_side)
-        self.act_dark_theme = QAction("&Dark theme", self,
-                                      checkable=True, triggered=self._toggle_theme)
-        self.act_dark_theme.setChecked(
-            self._settings.value("theme_dark", False, type=bool))
+        self._theme_actions: dict[str, QAction] = {}
+        self._theme_group = QActionGroup(self)
+        for name in themes.THEME_NAMES:
+            act = QAction(name, self, checkable=True)
+            act.triggered.connect(
+                lambda checked=False, n=name: self._apply_named_theme(n))
+            self._theme_group.addAction(act)
+            self._theme_actions[name] = act
+            if name == self._theme_name:
+                act.setChecked(True)
         # Spell-check toggle. Disabled (greyed out) when pyspellchecker
         # isn't installed so the user knows the feature exists even on
         # a stripped-down environment.
@@ -1205,7 +1211,9 @@ class MainWindow(QMainWindow):
         m_view.addAction(self.act_side_by_side)
         m_view.addSeparator()
         m_view.addAction(self.act_spell_check)
-        m_view.addAction(self.act_dark_theme)
+        m_theme = m_view.addMenu("&Theme")
+        for name in themes.THEME_NAMES:
+            m_theme.addAction(self._theme_actions[name])
 
         m_review = mb.addMenu("&Review")
         m_review.addAction(self.act_highlight)
@@ -1534,6 +1542,7 @@ class MainWindow(QMainWindow):
             w._refresh_window_menu()
 
     def closeEvent(self, event) -> None:
+        self._settings.setValue("theme_name", self._theme_name)
         self._settings.setValue("theme_dark", self._is_dark)
         self._settings.setValue("side_by_side", self._side_by_side)
         # Persist document-default preferences so new documents start
@@ -1590,6 +1599,12 @@ class MainWindow(QMainWindow):
         self._import_source_dir = None  # current_path supersedes any prior import
         self._sync_editor_source_dir()
         self._editor.set_document_dir(path.parent)
+        # Show the cached PDF instantly while recompilation runs in the background
+        cached_pdf = path.parent / f"{self._doc_stem(path)}.pdf"
+        if cached_pdf.exists():
+            self._preview.show_pdf(cached_pdf)
+            if self._side_by_side:
+                self._pdf_side_panel.show_pdf(cached_pdf)
         self._editor.set_document(doc)
         self._update_title()
         self._remember_recent(path)
@@ -1965,39 +1980,54 @@ class MainWindow(QMainWindow):
         self._editor.set_spell_check_enabled(enabled)
         self._settings.setValue("spell_check", enabled)
 
-    def _toggle_theme(self, dark: bool) -> None:
-        from .__main__ import apply_theme
+    def _apply_named_theme(self, name: str, startup: bool = False) -> None:
         app = QApplication.instance()
-        apply_theme(app, dark)
+        t = themes.apply_theme(app, name)
+        self._theme_name = name
+        self._theme = t
+        dark = themes.is_dark(name)
+        self._is_dark = dark
+
+        self._settings.setValue("theme_name", name)
         self._settings.setValue("theme_dark", dark)
+
+        # Tab styling
+        self._tabs.setStyleSheet(themes.tab_stylesheet(t))
+
+        # Icons
         icons.set_dark(dark)
-        self._refresh_icons()
+        if not startup:
+            self._refresh_icons()
+
+        # LaTeX view
         self._latex_view.set_dark(dark)
-        # Re-render tables / figures so their hard-coded cell
-        # colours match the new theme (light text on pale orange
-        # was invisible in dark mode, etc.).
+        self._latex_view.setStyleSheet(themes.latex_view_stylesheet(t))
+
+        # Editor page / desk
         self._editor.set_dark(dark)
-        # Update the editor page styling for dark mode.
-        if dark:
-            self._editor.text_edit.setStyleSheet(
-                "QTextEdit { background: #2d2d2d; color: #d4d4d4; border: none; }")
-            page = self._editor.findChild(QWidget, "page")
-            if page:
-                page.setStyleSheet(
-                    "#page { background: #2d2d2d; border: 1px solid #555; }")
-            desk = self._editor.findChild(QWidget, "desk")
-            if desk:
-                desk.setStyleSheet("#desk { background: #1a1a1a; }")
-        else:
-            self._editor.text_edit.setStyleSheet(
-                "QTextEdit { background: white; border: none; }")
-            page = self._editor.findChild(QWidget, "page")
-            if page:
-                page.setStyleSheet(
-                    "#page { background: white; border: 1px solid #b8bcc1; }")
-            desk = self._editor.findChild(QWidget, "desk")
-            if desk:
-                desk.setStyleSheet("#desk { background: #d0d4d8; }")
+        self._editor.text_edit.setStyleSheet(
+            themes.editor_textedit_stylesheet(t))
+        page = self._editor.findChild(QWidget, "page")
+        if page:
+            page.setStyleSheet(themes.editor_page_stylesheet(t))
+        desk = self._editor.findChild(QWidget, "desk")
+        if desk:
+            desk.setStyleSheet(themes.editor_desk_stylesheet(t))
+
+        # Status bar labels
+        sl = themes.status_label_stylesheet(t)
+        self._path_label.setStyleSheet(sl)
+        self._zoom_label.setStyleSheet(
+            f"padding-right: 6px; color: {t['status_text']};")
+        self._pdf_zoom_sep.setStyleSheet(
+            f"color: {t['text_muted']}; padding: 0 2px;")
+        self._pdf_zoom_label.setStyleSheet(
+            f"padding-right: 6px; color: {t['status_text']};")
+
+        # Check the right radio in the theme menu
+        act = self._theme_actions.get(name)
+        if act and not act.isChecked():
+            act.setChecked(True)
 
     def _insert_symbol(self) -> None:
         # Lazy-create the palette once, then re-show on subsequent clicks.
@@ -2675,6 +2705,15 @@ class MainWindow(QMainWindow):
             self._preview.show_pdf(result.pdf_path)
             if self._side_by_side:
                 self._pdf_side_panel.show_pdf(result.pdf_path)
+            # Cache the PDF next to the document for instant loading
+            if self._current_path is not None:
+                import shutil
+                cached = (self._current_path.parent
+                          / f"{self._doc_stem(self._current_path)}.pdf")
+                try:
+                    shutil.copy2(result.pdf_path, cached)
+                except OSError:
+                    pass
             # Tell the editor how many pages the PDF has AND give it
             # the first-text snippet of each subsequent page so the
             # break-line overlay can anchor itself to the actual
