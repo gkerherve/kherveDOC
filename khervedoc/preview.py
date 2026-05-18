@@ -128,10 +128,21 @@ class PdfPreview(QWidget):
         """Scroll to the given 0-based page."""
         if not _QTPDF_AVAILABLE or self._view is None:
             return
-        nav = self._view.pageNavigator()
-        if nav:
-            from PySide6.QtCore import QPointF
-            nav.jump(page, QPointF(0, 0))
+        n = self._doc.pageCount()
+        if n < 1 or page < 0:
+            return
+        page = min(page, n - 1)
+        # Compute the vertical offset by summing page heights (in points,
+        # scaled by the current zoom factor) plus inter-page spacing.
+        zoom = self._view.zoomFactor()
+        spacing = self._view.pageSpacing()
+        y = 0.0
+        for i in range(page):
+            size = self._doc.pagePointSize(i)
+            y += size.height() * zoom + spacing
+        vbar = self._view.verticalScrollBar()
+        if vbar:
+            vbar.setValue(int(y))
 
     def page_count(self) -> int:
         if not _QTPDF_AVAILABLE:
