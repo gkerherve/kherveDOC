@@ -1122,6 +1122,19 @@ class MainWindow(QMainWindow):
             shortcut=QKeySequence("Ctrl+Shift+]"),
             triggered=self._editor.next_comment)
 
+        # Compile
+        self.act_compile_now = QAction(
+            icons.compile_pdf(), "&Compile PDF", self,
+            shortcut=QKeySequence("Ctrl+Shift+C"),
+            statusTip="Compile the PDF now",
+            triggered=self._kick_compile)
+        self._auto_compile = True
+        self.act_auto_compile = QAction(
+            icons.auto_compile_on(), "Auto-compile", self,
+            checkable=True, checked=True,
+            statusTip="Toggle automatic PDF compilation on every edit",
+            triggered=self._toggle_auto_compile)
+
         # Help
         self.act_help_guide = QAction("&User guide", self,
                                       shortcut=QKeySequence("F1"),
@@ -1457,6 +1470,17 @@ class MainWindow(QMainWindow):
         tb.addAction(self.act_reject_comment)
         tb.addSeparator()
         tb.addAction(self.act_commit_now); tb.addAction(self.act_history)
+
+        # Right-aligned compile buttons: push them to the far right
+        # with a stretching spacer widget.
+        spacer = QWidget()
+        sp = spacer.sizePolicy()
+        sp.setHorizontalStretch(1)
+        sp.setHorizontalPolicy(sp.Policy.Expanding)
+        spacer.setSizePolicy(sp)
+        tb.addWidget(spacer)
+        tb.addAction(self.act_compile_now)
+        tb.addAction(self.act_auto_compile)
 
         # Left vertical toolbar for Insert / layout actions. Matches
         # the top toolbar's 24px icon size for a consistent look.
@@ -1969,6 +1993,11 @@ class MainWindow(QMainWindow):
         self.act_reject_comment.setIcon(icons.reject_change())
         self.act_prev_comment.setIcon(icons.prev_comment())
         self.act_next_comment.setIcon(icons.next_comment())
+        self.act_compile_now.setIcon(icons.compile_pdf())
+        if self._auto_compile:
+            self.act_auto_compile.setIcon(icons.auto_compile_on())
+        else:
+            self.act_auto_compile.setIcon(icons.auto_compile_off())
         for i, a in enumerate(self.heading_actions, start=1):
             a.setIcon(icons.heading(i))
         self._zoom_out_btn.setIcon(icons.zoom_out())
@@ -2652,7 +2681,8 @@ class MainWindow(QMainWindow):
             self._latex_view.set_source(
                 serialize_document(self._editor.get_document()))
         self._sync_toolbar_state()
-        self._kick_compile()
+        if self._auto_compile:
+            self._kick_compile()
 
     def _on_latex_edited(self, text: str) -> None:
         """User edited the LaTeX tab — reparse, replace the document
@@ -2671,7 +2701,8 @@ class MainWindow(QMainWindow):
             # without overwriting the user's LaTeX.
             QTimer.singleShot(700,
                 lambda: setattr(self, "_suppress_latex_update", False))
-        self._kick_compile()
+        if self._auto_compile:
+            self._kick_compile()
 
     def _resolved_source_dir(self) -> Path | None:
         """Where to look for relative asset paths (\\includegraphics etc.).
@@ -2683,6 +2714,16 @@ class MainWindow(QMainWindow):
 
     def _sync_editor_source_dir(self) -> None:
         self._editor.set_source_dir(self._resolved_source_dir())
+
+    def _toggle_auto_compile(self, checked: bool) -> None:
+        self._auto_compile = checked
+        if checked:
+            self.act_auto_compile.setIcon(icons.auto_compile_on())
+            self.act_auto_compile.setToolTip("Auto-compile: ON (click to disable)")
+            self._kick_compile()
+        else:
+            self.act_auto_compile.setIcon(icons.auto_compile_off())
+            self.act_auto_compile.setToolTip("Auto-compile: OFF (click to enable)")
 
     def _kick_compile(self) -> None:
         if not tectonic_available():

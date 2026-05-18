@@ -720,3 +720,60 @@ def next_comment() -> QIcon:
     p.drawLine(QPointF(4, 12), QPointF(17, 12))
     p.end()
     return QIcon(px)
+
+
+# ----- compile / auto-compile -----
+
+def compile_pdf() -> QIcon:
+    """Play-triangle over a small PDF page — "compile now" button."""
+    px, p = _new_canvas()
+    page_bg = QColor("#2d2d2d") if _dark else Qt.white
+    p.setPen(QPen(_fg(), 1.2)); p.setBrush(QBrush(page_bg))
+    p.drawPolygon([QPointF(3, 2), QPointF(13, 2), QPointF(16, 5),
+                   QPointF(16, 18), QPointF(3, 18)])
+    green = QColor("#5fba7d") if _dark else QColor("#2a8c4a")
+    p.setPen(Qt.NoPen); p.setBrush(QBrush(green))
+    p.drawPolygon([QPointF(13, 8), QPointF(13, 20), QPointF(22, 14)])
+    p.end()
+    return QIcon(px)
+
+
+def auto_compile_on() -> QIcon:
+    """Circular arrow (sync) — auto-compile is ON."""
+    px, p = _new_canvas()
+    green = QColor("#5fba7d") if _dark else QColor("#2a8c4a")
+    p.setPen(QPen(green, 2.2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    p.setBrush(Qt.NoBrush)
+    path = QPainterPath()
+    path.arcMoveTo(QRectF(4, 4, 16, 16), 60)
+    path.arcTo(QRectF(4, 4, 16, 16), 60, -300)
+    p.drawPath(path)
+    tip = path.currentPosition()
+    p.setPen(Qt.NoPen); p.setBrush(QBrush(green))
+    p.drawPolygon([QPointF(tip.x() - 4, tip.y() - 1),
+                   QPointF(tip.x() + 1, tip.y() - 5),
+                   QPointF(tip.x() + 1, tip.y() + 3)])
+    p.end()
+    return QIcon(px)
+
+
+def auto_compile_off() -> QIcon:
+    """Circular arrow (sync) with a diagonal strike — auto-compile is OFF."""
+    px, p = _new_canvas()
+    grey = QColor("#888") if _dark else QColor("#999")
+    p.setPen(QPen(grey, 2.2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    p.setBrush(Qt.NoBrush)
+    path = QPainterPath()
+    path.arcMoveTo(QRectF(4, 4, 16, 16), 60)
+    path.arcTo(QRectF(4, 4, 16, 16), 60, -300)
+    p.drawPath(path)
+    tip = path.currentPosition()
+    p.setPen(Qt.NoPen); p.setBrush(QBrush(grey))
+    p.drawPolygon([QPointF(tip.x() - 4, tip.y() - 1),
+                   QPointF(tip.x() + 1, tip.y() - 5),
+                   QPointF(tip.x() + 1, tip.y() + 3)])
+    red = QColor("#ff5555") if _dark else QColor("#c00")
+    p.setPen(QPen(red, 2.4, Qt.SolidLine, Qt.RoundCap))
+    p.drawLine(QPointF(5, 5), QPointF(19, 19))
+    p.end()
+    return QIcon(px)
