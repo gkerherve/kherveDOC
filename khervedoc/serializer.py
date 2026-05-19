@@ -370,7 +370,11 @@ def serialize_document(doc: Document) -> str:
                   or bool(getattr(m, "class_options", "")))
 
     # Margins flow into geometry per-side so users can pick asymmetric layouts.
-    if is_journal:
+    # Journal classes with explicit class_options (e.g. WileyNJDv5) often
+    # define their own layout that conflicts with geometry — skip it for
+    # those. All other classes (including custom ones like resume) get
+    # geometry so user margins are honoured.
+    if bool(getattr(m, "class_options", "")):
         geometry = ""
     else:
         geometry = (
