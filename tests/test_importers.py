@@ -755,11 +755,13 @@ def test_wiley_body_frontmatter_extraction():
 \address[2]{\orgname{ETH}}
 \authormark{Alice \textsc{et al.}}
 \titlemark{My paper}
+\abstract[Abstract]{This is the abstract text.}
+\keywords[Keywords]{XPS, fitting}
 \maketitle
 Hello world.
 \end{document}"""
     doc = _round_trip(src)
-    # Body-level author/address commands captured in frontmatter_extras.
+    # Body-level author/address/abstract commands captured in frontmatter_extras.
     fm = doc.meta.frontmatter_extras
     assert r"\author[1]{Alice}" in fm
     assert r"\author[2]{Bob}" in fm
@@ -767,6 +769,8 @@ Hello world.
     assert r"\address[2]" in fm
     assert r"\authormark{" in fm
     assert r"\titlemark{" in fm
+    assert r"\abstract[Abstract]{This is the abstract text.}" in fm
+    assert r"\keywords[Keywords]{XPS, fitting}" in fm
     # The body should NOT contain those commands as InlineRaw.
     for block in doc.children:
         if isinstance(block, Paragraph):
@@ -778,11 +782,13 @@ Hello world.
     body = out.split("\\begin{document}")[1]
     assert r"\author[1]{Alice}" in body
     assert r"\author[2]{Bob}" in body
+    assert r"\abstract[Abstract]{This is the abstract text.}" in body
     assert r"\maketitle" in body
-    # \maketitle appears after the author block.
+    # \maketitle appears after the author/abstract block.
     author_pos = body.index(r"\author[1]{Alice}")
+    abstract_pos = body.index(r"\abstract[Abstract]")
     maketitle_pos = body.index(r"\maketitle")
-    assert author_pos < maketitle_pos
+    assert author_pos < abstract_pos < maketitle_pos
 
 
 def test_journal_figure_placement_htbp():

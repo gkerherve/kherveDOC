@@ -110,7 +110,7 @@ def _extract_preamble_extras(src: str, *, strip_author: bool = True) -> str:
 # so the round-trip re-emits them correctly.
 _BODY_FRONTMATTER_CMDS = (
     "author", "address", "authormark", "titlemark", "cortext",
-    "fntext", "ead", "journal",
+    "fntext", "ead", "journal", "abstract", "keywords",
 )
 
 
