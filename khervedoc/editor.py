@@ -23,8 +23,9 @@ from PySide6.QtGui import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog, QFrame, QHBoxLayout, QInputDialog, QMenu, QMessageBox,
-    QScrollArea, QVBoxLayout, QWidget,
+    QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QFrame,
+    QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox,
+    QPushButton, QScrollArea, QSpinBox, QVBoxLayout, QWidget,
 )
 
 from . import page_sizes
@@ -632,6 +633,108 @@ def _typed_stub_char_format(color_hex: str) -> QTextCharFormat:
     return fmt
 
 
+# ---- Insert dialogs (consolidated) ------------------------------------
+
+class _InsertFigureDialog(QDialog):
+    """Single dialog for inserting a figure: path, caption, label."""
+
+    def __init__(self, parent=None, *, path_value: str = "",
+                 path_readonly: bool = False,
+                 title: str = "Insert figure"):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setMinimumWidth(420)
+        form = QFormLayout()
+
+        # Path row with browse button.
+        path_row = QHBoxLayout()
+        self._path = QLineEdit(path_value)
+        self._path.setReadOnly(path_readonly)
+        path_row.addWidget(self._path, 1)
+        if not path_readonly:
+            browse = QPushButton("Browse...")
+            browse.clicked.connect(self._browse)
+            path_row.addWidget(browse)
+        form.addRow("Image path:", path_row)
+
+        self._caption = QLineEdit()
+        form.addRow("Caption:", self._caption)
+
+        self._label = QLineEdit()
+        self._label.setPlaceholderText("e.g. fig:my-figure")
+        form.addRow("Label:", self._label)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+
+        layout = QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addWidget(buttons)
+
+    def _browse(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select image",
+            filter="Images (*.png *.jpg *.jpeg *.pdf *.eps *.svg);;All (*)")
+        if path:
+            self._path.setText(path)
+
+    def path(self) -> str:
+        return self._path.text().strip()
+
+    def caption(self) -> str:
+        return self._caption.text().strip()
+
+    def label(self) -> str:
+        return self._label.text().strip()
+
+
+class _InsertTableDialog(QDialog):
+    """Single dialog for inserting a table: rows, columns, caption, label."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Insert table")
+        self.setMinimumWidth(320)
+        form = QFormLayout()
+
+        self._rows = QSpinBox()
+        self._rows.setRange(1, 50)
+        self._rows.setValue(3)
+        form.addRow("Rows:", self._rows)
+
+        self._cols = QSpinBox()
+        self._cols.setRange(1, 20)
+        self._cols.setValue(3)
+        form.addRow("Columns:", self._cols)
+
+        self._caption = QLineEdit()
+        form.addRow("Caption:", self._caption)
+
+        self._label = QLineEdit()
+        self._label.setPlaceholderText("e.g. tab:my-table")
+        form.addRow("Label:", self._label)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+
+        layout = QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addWidget(buttons)
+
+    def dimensions(self) -> tuple[int, int]:
+        return self._rows.value(), self._cols.value()
+
+    def caption(self) -> str:
+        return self._caption.text().strip()
+
+    def label(self) -> str:
+        return self._label.text().strip()
+
+
 class DocumentEditor(QWidget):
     """Rich-text editor that maintains a bidirectional binding with Document."""
 
@@ -1111,12 +1214,6 @@ class DocumentEditor(QWidget):
         elif isinstance(block, Table):
             self._insert_table_widget(cursor, block)
         elif isinstance(block, RawLatex):
-            # Pick the background colour from the content so code
-            # listings, bibliography blocks and generic raw LaTeX are
-            # each immediately recognisable. The block's userState +
-            # background style already says "this is raw LaTeX", so we
-            # don't prepend a "[RAW] " / "[CODE] " label any more — it
-            # was developer noise on screen.
             cursor.block().setUserState(_STATE_RAW)
             text = block.text
             if "\\begin{lstlisting}" in text or "\\begin{verbatim}" in text:
@@ -1128,10 +1225,31 @@ class DocumentEditor(QWidget):
             else:
                 cursor.setBlockFormat(_raw_block_format())
                 color = "#b71c1c"      # red
-            # Multi-line content: substitute U+2028 for '\n' so Qt keeps
-            # every line in the same block; the readback undoes it.
-            visible = text.replace("\n", _LINE_SEP)
-            cursor.insertText(visible, _typed_stub_char_format(color))
+            # For figure*/table* blocks that contain an image, show a
+            # preview thumbnail above the raw LaTeX source.
+            if ("\\begin{figure*}" in text or "\\begin{table*}" in text):
+                inc = _re.search(
+                    r"\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}", text)
+                if inc:
+                    self._insert_figure_thumbnail(cursor, inc.group(1))
+                    cursor.insertText("\n")
+                # Show a compact summary instead of the full LaTeX.
+                cap = _re.search(r"\\caption\{", text)
+                cap_text = ""
+                if cap:
+                    from .importers import _consume_braced
+                    cap_text, _ = _consume_braced(text, cap.end() - 1)
+                lab = _re.search(r"\\label\{([^}]*)\}", text)
+                env = "figure*" if "\\begin{figure*}" in text else "table*"
+                summary = f"[{env}]"
+                if cap_text:
+                    summary += f" {cap_text}"
+                if lab:
+                    summary += f"  ({lab.group(1)})"
+                cursor.insertText(summary, _typed_stub_char_format("#1565c0"))
+            else:
+                visible = text.replace("\n", _LINE_SEP)
+                cursor.insertText(visible, _typed_stub_char_format(color))
 
     # ---------- figure thumbnail ----------
 
@@ -2178,20 +2296,20 @@ class DocumentEditor(QWidget):
         self._on_image_received(str(dest))
 
     def insert_figure(self) -> None:
-        path, ok = QInputDialog.getText(self, "Insert figure", "Image path:")
-        if not ok or not path: return
-        cap, _ = QInputDialog.getText(self, "Figure caption", "Caption:")
-        label, _ = QInputDialog.getText(self, "Figure label", "Label (optional):")
+        dlg = _InsertFigureDialog(self)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        path = dlg.path()
+        if not path:
+            return
         c = self._edit.textCursor()
-        fig = Figure(path=path, caption=cap, label=label or None,
+        fig = Figure(path=path, caption=dlg.caption(), label=dlg.label() or None,
                      width="0.8\\textwidth")
         self._insert_figure_widget(c, fig)
 
     def insert_drawing(self) -> None:
-        """Open the freehand drawing dialog. On OK, write the result
-        into the document's images folder and drop a Figure block at
-        the cursor pointing at it — same as a normal figure, just
-        the source happens to be a sketch the user made in-app."""
+        """Open the freehand drawing dialog. On OK, ask for caption/label
+        via combined dialog, then insert as a Figure block."""
         from .drawing_dialog import DrawingDialog
         dlg = DrawingDialog(self._images_dir, self)
         if dlg.exec() != QDialog.Accepted:
@@ -2199,13 +2317,14 @@ class DocumentEditor(QWidget):
         path = dlg.saved_path()
         if path is None:
             return
-        cap, _ = QInputDialog.getText(
-            self, "Drawing caption", "Caption (optional):")
-        label, _ = QInputDialog.getText(
-            self, "Drawing label", "Label (optional, for cross-references):")
+        cdlg = _InsertFigureDialog(self, path_value=str(path),
+                                   path_readonly=True,
+                                   title="Drawing details")
+        if cdlg.exec() != QDialog.Accepted:
+            return
         c = self._edit.textCursor()
-        fig = Figure(path=str(path), caption=cap, label=label or None,
-                     width="0.7\\textwidth")
+        fig = Figure(path=str(path), caption=cdlg.caption(),
+                     label=cdlg.label() or None, width="0.7\\textwidth")
         self._insert_figure_widget(c, fig)
         self._on_text_changed()
 
@@ -2273,14 +2392,14 @@ class DocumentEditor(QWidget):
         self._on_text_changed()
 
     def insert_table(self) -> None:
-        rows, ok = QInputDialog.getInt(self, "Insert table", "Rows:", 3, 1, 50)
-        if not ok: return
-        cols, ok = QInputDialog.getInt(self, "Insert table", "Columns:", 3, 1, 20)
-        if not ok: return
-        cap, _ = QInputDialog.getText(self, "Caption", "Caption:")
+        dlg = _InsertTableDialog(self)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        r, co = dlg.dimensions()
         c = self._edit.textCursor()
-        table = Table(rows=[["cell"] * cols for _ in range(rows)],
-                      caption=cap, label=None, alignment="")
+        table = Table(rows=[["cell"] * co for _ in range(r)],
+                      caption=dlg.caption(), label=dlg.label() or None,
+                      alignment="")
         self._insert_table_widget(c, table)
 
     # ---- table context menu & manipulation ----
