@@ -101,10 +101,42 @@ def _render_math_image(latex: str, font_size: int = 14,
     raw = raw.replace("\\nonumber", "")
     raw = raw.replace("\\notag", "")
     raw = raw.replace("\\label{", "\\mathrm{")  # hide labels
-    # Split multi-line math on \\ and clean up alignment markers.
-    lines = _re.split(r"\\\\", raw)
-    lines = [ln.replace("&", " ").strip() for ln in lines]
-    lines = [ln for ln in lines if ln]
+    # Handle \begin{cases}...\end{cases} sub-environments: matplotlib's
+    # mathtext can't render them, so we expand into separate lines with
+    # a left-brace prefix to visually indicate the case structure.
+    _cases_re = _re.compile(
+        r"\\begin\{(cases|rcases|dcases)\}(.*?)\\end\{\1\}", _re.DOTALL)
+    cm = _cases_re.search(raw)
+    if cm:
+        prefix = raw[:cm.start()].strip().rstrip("=").strip()
+        case_body = cm.group(2).strip()
+        suffix = raw[cm.end():].strip()
+        case_lines = _re.split(r"\\\\", case_body)
+        case_lines = [ln.replace("&", "\\quad ").strip()
+                       for ln in case_lines if ln.strip()]
+        lines = []
+        if prefix:
+            lines.append(prefix + " =")
+        for j, cl in enumerate(case_lines):
+            # Use \left\{ ... \right. (invisible right) for the first
+            # line, plain indent for subsequent lines.
+            if j == 0:
+                lines.append("\\left\\{ " + cl + " \\right.")
+            else:
+                lines.append("\\;\\;\\;\\;\\; " + cl)
+        if suffix:
+            lines.append(suffix)
+    else:
+        # Strip matrix-like sub-envs that mathtext can't handle.
+        raw = _re.sub(
+            r"\\begin\{(matrix|pmatrix|bmatrix|vmatrix|Bmatrix|"
+            r"smallmatrix)\}(.*?)\\end\{\1\}",
+            lambda m2: m2.group(2).replace("&", "\\;\\;"),
+            raw, flags=_re.DOTALL)
+        # Split multi-line math on \\ and clean up alignment markers.
+        lines = _re.split(r"\\\\", raw)
+        lines = [ln.replace("&", " ").strip() for ln in lines]
+        lines = [ln for ln in lines if ln]
     if not lines:
         _MATH_IMAGE_CACHE[latex] = None
         return None
