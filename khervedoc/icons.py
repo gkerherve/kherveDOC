@@ -56,6 +56,36 @@ def _glyph_icon(letter: str, *, bold=False, italic=False, underline=False,
     return QIcon(px)
 
 
+def app_icon() -> QIcon:
+    """Application icon: white 'KT' monogram on a rounded accent-blue square.
+
+    Rendered at several sizes so the taskbar, title bar, and Alt-Tab all
+    get a sharp copy.
+    """
+    icon = QIcon()
+    for sz in (16, 24, 32, 48, 64, 128, 256):
+        px = QPixmap(sz, sz)
+        px.fill(Qt.transparent)
+        p = QPainter(px)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        p.setRenderHint(QPainter.TextAntialiasing, True)
+        # Rounded-rect background in accent blue.
+        radius = sz * 0.18
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor("#1a6dd8"))
+        p.drawRoundedRect(QRectF(0, 0, sz, sz), radius, radius)
+        # White "KT" text, sized to fill the square.
+        f = QFont("Georgia")
+        f.setPixelSize(int(sz * 0.52))
+        f.setBold(True)
+        p.setFont(f)
+        p.setPen(QColor("#ffffff"))
+        p.drawText(QRectF(0, 0, sz, sz), Qt.AlignCenter, "KT")
+        p.end()
+        icon.addPixmap(px)
+    return icon
+
+
 # ----- text formatting -----
 
 def bold() -> QIcon:       return _glyph_icon("B", bold=True)

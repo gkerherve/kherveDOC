@@ -7,13 +7,14 @@ from pathlib import Path
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication
 
-from . import themes
+from . import icons, themes
 from .mainwindow import MainWindow
 
 
 def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("KherveTeX")
+    app.setWindowIcon(icons.app_icon())
     settings = QSettings("kherveDOC", "kherveDOC")
     # Migrate legacy boolean → named theme on first run after upgrade.
     theme_name = settings.value("theme_name", "")
