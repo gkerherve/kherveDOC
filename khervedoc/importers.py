@@ -104,6 +104,67 @@ def _extract_preamble_extras(src: str, *, strip_author: bool = True) -> str:
     return preamble.strip()
 
 
+# Commands that journal classes (Wiley, etc.) place inside the body
+# between \begin{document} and \maketitle.  These are metadata, not
+# document content — we extract them and store in frontmatter_extras
+# so the round-trip re-emits them correctly.
+_BODY_FRONTMATTER_CMDS = (
+    "author", "address", "authormark", "titlemark", "cortext",
+    "fntext", "ead", "journal",
+)
+
+
+def _extract_body_frontmatter(body: str) -> tuple[str, str]:
+    r"""Extract body-level frontmatter commands from Wiley-style templates.
+
+    These classes put \author[1]{...}, \address[1]{...}, \authormark{...},
+    \titlemark{...} etc. AFTER \begin{document} rather than in the preamble
+    or inside a \begin{frontmatter} block.
+
+    Returns (frontmatter_commands, cleaned_body).
+    """
+    # Find the boundary: \maketitle or the first \section-like command.
+    boundary = re.search(
+        r"\\(?:maketitle|section|chapter)\b", body)
+    if not boundary:
+        return "", body
+    prefix = body[:boundary.start()]
+    # Also capture \title{...} from the body prefix (the model already
+    # extracts one via _extract_braced, but we need to remove it from
+    # the body so it doesn't appear as InlineRaw).
+    cmds_to_extract = list(_BODY_FRONTMATTER_CMDS) + ["title"]
+    collected: list[str] = []
+    cleaned = prefix
+    for cmd in cmds_to_extract:
+        pat = re.compile(r"\\" + re.escape(cmd) + r"\b")
+        while True:
+            m = pat.search(cleaned)
+            if not m:
+                break
+            # Walk past optional [...] and required {...} arguments.
+            start = m.start()
+            p = m.end()
+            while p < len(cleaned) and cleaned[p] == "[":
+                depth = 1; j = p + 1
+                while j < len(cleaned) and depth > 0:
+                    if cleaned[j] == "[": depth += 1
+                    elif cleaned[j] == "]": depth -= 1
+                    j += 1
+                p = j
+            if p < len(cleaned) and cleaned[p] == "{":
+                _, p = _consume_braced(cleaned, p)
+            fragment = cleaned[start:p]
+            if cmd != "title":          # title already in model
+                collected.append(fragment)
+            cleaned = cleaned[:start] + cleaned[p:]
+    # Remove \maketitle from the body — the serializer re-emits it.
+    rest = body[boundary.start():]
+    rest = re.sub(r"\\maketitle\b\s*", "", rest, count=1)
+    cleaned_body = cleaned.strip() + "\n" + rest
+    frontmatter = "\n".join(collected)
+    return frontmatter, cleaned_body
+
+
 def _extract_frontmatter_extras(src: str) -> str:
     r"""Return whatever lives inside \begin{frontmatter} that the model
     doesn't already represent (so it can be re-emitted verbatim for
@@ -792,7 +853,8 @@ def import_tex(tex_source: str) -> Document:
     # so the round-trip reproduces the journal's title-block layout
     # (author superscript, affiliation line, "Corresponding author"
     # footnote) instead of dropping these as unknown macros.
-    if doc_class.lower().startswith("elsarticle"):
+    is_elsarticle = doc_class.lower().startswith("elsarticle")
+    if is_elsarticle:
         frontmatter_extras = _extract_frontmatter_extras(tex_source)
     else:
         frontmatter_extras = ""
@@ -817,6 +879,15 @@ def import_tex(tex_source: str) -> Document:
 
     body_m = _BODY_RE.search(tex_source)
     body = body_m.group(1) if body_m else tex_source
+
+    # Non-elsarticle journal classes (Wiley, etc.) place author/address
+    # commands in the body rather than the preamble or a frontmatter env.
+    # Extract them before parsing blocks so they don't become InlineRaw.
+    if not is_standard and not is_elsarticle:
+        body_fm, body = _extract_body_frontmatter(body)
+        if body_fm:
+            frontmatter_extras = body_fm
+            meta.frontmatter_extras = frontmatter_extras
 
     children = _parse_blocks(body)
 

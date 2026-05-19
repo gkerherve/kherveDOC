@@ -103,7 +103,8 @@ _ALIGN_ENVS = {"left": "flushleft", "center": "center", "right": "flushright"}
 _CHAPTER_CLASSES = {"report", "book", "memoir"}
 
 
-def serialize_block(node: Block, *, has_chapters: bool = False) -> str:
+def serialize_block(node: Block, *, has_chapters: bool = False,
+                    float_h: bool = True) -> str:
     if isinstance(node, Paragraph):
         body = serialize_inlines(node.children)
         # LaTeX defaults to fully-justified text. If the editor shows the
@@ -152,8 +153,9 @@ def serialize_block(node: Block, *, has_chapters: bool = False) -> str:
         path = node.path.replace("\\", "/")
         cap = escape_text(node.caption)
         lab = _maybe_label(node.label) if node.label else ""
+        placement = "H" if float_h else "htbp"
         return (
-            "\\begin{figure}[H]\n"
+            f"\\begin{{figure}}[{placement}]\n"
             "  \\centering\n"
             f"  \\includegraphics[width={node.width}]{{{path}}}\n"
             f"  \\caption{{{cap}}}\n"
@@ -174,8 +176,9 @@ def serialize_block(node: Block, *, has_chapters: bool = False) -> str:
         body = "\n    ".join(body_rows)
         cap = escape_text(node.caption)
         lab = _maybe_label(node.label) if node.label else ""
+        placement = "H" if float_h else "htbp"
         return (
-            "\\begin{table}[H]\n"
+            f"\\begin{{table}}[{placement}]\n"
             "  \\centering\n"
             f"  \\begin{{tabular}}{{{align}}}\n"
             f"    \\hline\n"
@@ -466,7 +469,8 @@ def serialize_document(doc: Document) -> str:
 
         body_parts: list[str] = []
         for i, b in enumerate(body_blocks):
-            body_parts.append(serialize_block(b, has_chapters=has_chapters))
+            body_parts.append(serialize_block(b, has_chapters=has_chapters,
+                                               float_h=not is_journal))
             if i < len(body_blocks) - 1:
                 body_parts.append("\n")
         body = "".join(body_parts)
@@ -487,16 +491,27 @@ def serialize_document(doc: Document) -> str:
     # the preamble, abstract / keywords flow inline in the body.
     # For journal classes preamble_extras already carries the full
     # \title{} / \author[]{} blocks — don't emit duplicates.
+    # Also check frontmatter_extras which holds body-level author
+    # commands extracted from Wiley-style templates.
     extras_src = (m.preamble_extras or "")
+    fm_extras = (m.frontmatter_extras or "").strip()
+    all_extras = extras_src + "\n" + fm_extras
     preamble_meta = ""
     if has_metadata:
-        if not re.search(r"\\title\b", extras_src):
+        if not re.search(r"\\title\b", all_extras):
             preamble_meta += f"\\title{{{title_text or '~'}}}\n"
-        if not re.search(r"\\author\b", extras_src):
+        if not re.search(r"\\author\b", all_extras):
             preamble_meta += f"\\author{{{author_text or '~'}}}\n"
 
     parts: list[str] = []
     emitted_maketitle = False
+    # Wiley-style journal classes: emit body-level frontmatter commands
+    # (multi-author, addresses, etc.) at the top of the body, followed
+    # by \maketitle.
+    if fm_extras and not is_elsarticle:
+        parts.append(fm_extras + "\n")
+        parts.append("\\maketitle\n")
+        emitted_maketitle = True
     children = doc.children
     n = len(children)
     i = 0
@@ -554,7 +569,13 @@ def serialize_document(doc: Document) -> str:
                 if i < n: parts.append("\n")
                 continue
 
-            rendered = serialize_block(block, has_chapters=has_chapters)
+            # Skip Title/Author blocks when body frontmatter already
+            # carries the full metadata + \maketitle.
+            if fm_extras and isinstance(block, (Title, Author)):
+                i += 1
+                continue
+            rendered = serialize_block(block, has_chapters=has_chapters,
+                                       float_h=not is_journal)
             if isinstance(block, Title):
                 emitted_maketitle = True
             parts.append(rendered)

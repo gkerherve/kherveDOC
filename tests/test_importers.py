@@ -724,3 +724,64 @@ A highly motivated scientist.
     # No auto-generated geometry/font for non-standard class
     preamble = out.split("\\begin{document}")[0]
     assert "setspace" not in preamble
+
+
+def test_wiley_body_frontmatter_extraction():
+    """WileyNJDv5-style: author/address commands in the body (after
+    \\begin{document}) are extracted into frontmatter_extras and
+    re-emitted before \\maketitle on round-trip."""
+    src = r"""\documentclass[VANCOUVER,LATO2COL]{WileyNJDv5}
+\usepackage{tikz}
+\title{My paper}
+\begin{document}
+\author[1]{Alice}
+\author[2]{Bob}
+\address[1]{\orgname{MIT}}
+\address[2]{\orgname{ETH}}
+\authormark{Alice \textsc{et al.}}
+\titlemark{My paper}
+\maketitle
+Hello world.
+\end{document}"""
+    doc = _round_trip(src)
+    # Body-level author/address commands captured in frontmatter_extras.
+    fm = doc.meta.frontmatter_extras
+    assert r"\author[1]{Alice}" in fm
+    assert r"\author[2]{Bob}" in fm
+    assert r"\address[1]" in fm
+    assert r"\address[2]" in fm
+    assert r"\authormark{" in fm
+    assert r"\titlemark{" in fm
+    # The body should NOT contain those commands as InlineRaw.
+    for block in doc.children:
+        if isinstance(block, Paragraph):
+            for child in block.children:
+                if isinstance(child, InlineRaw):
+                    assert "\\author" not in child.latex
+    # Round-trip: commands re-emitted in body, before \maketitle.
+    out = serialize_document(doc)
+    body = out.split("\\begin{document}")[1]
+    assert r"\author[1]{Alice}" in body
+    assert r"\author[2]{Bob}" in body
+    assert r"\maketitle" in body
+    # \maketitle appears after the author block.
+    author_pos = body.index(r"\author[1]{Alice}")
+    maketitle_pos = body.index(r"\maketitle")
+    assert author_pos < maketitle_pos
+
+
+def test_journal_figure_placement_htbp():
+    """Journal classes use [htbp] for floats since the float package
+    (which provides [H]) is not loaded for them."""
+    src = r"""\documentclass[VANCOUVER]{WileyNJDv5}
+\begin{document}
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.8\textwidth]{img.png}
+  \caption{A figure}
+\end{figure}
+\end{document}"""
+    doc = _round_trip(src)
+    out = serialize_document(doc)
+    assert "\\begin{figure}[htbp]" in out
+    assert "\\begin{figure}[H]" not in out
