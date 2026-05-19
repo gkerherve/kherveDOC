@@ -801,10 +801,9 @@ def _parse_tabular(align_spec: str, body: str) -> Table:
             continue
         cells = [c.strip() for c in line.split("&")]
         rows.append(cells)
-    alignment = "".join(c for c in align_spec if c in "lcr|p")
-    # If alignment includes column-separator pipes we strip them; the
-    # serializer doesn't model vertical rules yet.
-    alignment = alignment.replace("|", "").replace("p", "l")
+    # Preserve the raw alignment spec so p{0.55\columnwidth} etc.
+    # survive the round-trip. Strip only vertical-rule pipes.
+    alignment = align_spec.replace("|", "").strip()
     return Table(rows=rows, alignment=alignment or "")
 
 

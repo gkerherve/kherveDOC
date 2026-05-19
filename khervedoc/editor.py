@@ -1317,8 +1317,21 @@ class DocumentEditor(QWidget):
                     cell.setFormat(cf)
                 cell_cursor = cell.firstCursorPosition()
                 text = row[c] if c < len(row) else ""
-                fmt = header_char if r == 0 else cell_char
-                cell_cursor.insertText(text, fmt)
+                # Strip LaTeX formatting commands for display; the
+                # raw text is preserved in the model for serialization.
+                display = _re.sub(r"\\textbf\{([^}]*)\}", r"\1", text)
+                display = _re.sub(r"\\textit\{([^}]*)\}", r"\1", display)
+                display = _re.sub(r"\\emph\{([^}]*)\}", r"\1", display)
+                display = _re.sub(r"\\texttt\{([^}]*)\}", r"\1", display)
+                # Detect if the cell was bold/italic for visual styling.
+                is_bold = "\\textbf{" in text
+                is_italic = "\\textit{" in text or "\\emph{" in text
+                fmt = QTextCharFormat(header_char if r == 0 else cell_char)
+                if is_bold:
+                    fmt.setFontWeight(QFont.Bold)
+                if is_italic:
+                    fmt.setFontItalic(True)
+                cell_cursor.insertText(display.strip(), fmt)
         if has_caption:
             # Merge all cells in the last row for the caption.
             qtable.mergeCells(nrows, 0, 1, ncols)
