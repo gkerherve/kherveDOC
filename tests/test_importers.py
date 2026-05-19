@@ -827,3 +827,30 @@ def test_figure_star_preserved_as_raw():
     assert r"\begin{figure*}" in out
     assert r"\end{figure*}" in out
     assert r"\caption{A wide figure}" in out
+
+
+def test_tabular_p_column_spec():
+    r"""Tables with p{width} column specs parse correctly — the nested
+    braces in p{0.55\columnwidth} must not truncate the alignment."""
+    src = r"""\documentclass{article}
+\begin{document}
+\begin{table}[H]
+\begin{tabular}{p{0.55\columnwidth} p{0.45\columnwidth}}
+\hline
+\textbf{Method} & \textbf{Description} \\
+\hline
+Levenberg-Marquardt & Efficient for least-squares \\
+Powell & Derivative-free \\
+\hline
+\end{tabular}
+\caption{Optimization methods}
+\label{tab:methods}
+\end{table}
+\end{document}"""
+    doc = _round_trip(src)
+    tables = [b for b in doc.children if isinstance(b, Table)]
+    assert len(tables) == 1
+    t = tables[0]
+    assert len(t.rows) == 3      # header + 2 data rows
+    assert t.rows[0][0].strip() == r"\textbf{Method}"
+    assert t.caption == "Optimization methods"

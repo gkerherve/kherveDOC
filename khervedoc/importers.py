@@ -277,7 +277,7 @@ _BLOCK_DISPATCH = [
     ("figure_star",     re.compile(r"\\begin\{figure\*\}(?:\[[^\]]*\])?(.*?)\\end\{figure\*\}", re.DOTALL)),
     ("table",           re.compile(r"\\begin\{table\}(?:\[[^\]]*\])?(.*?)\\end\{table\}", re.DOTALL)),
     ("table_star",      re.compile(r"\\begin\{table\*\}(?:\[[^\]]*\])?(.*?)\\end\{table\*\}", re.DOTALL)),
-    ("standalone_tabular", re.compile(r"\\begin\{tabular\}\{([^}]*)\}(.*?)\\end\{tabular\}", re.DOTALL)),
+    ("standalone_tabular", re.compile(r"\\begin\{tabular\}(\{.*?)\\end\{tabular\}", re.DOTALL)),
     # Verbatim-style code blocks: preserved as RawLatex so the source survives.
     ("verbatim",        re.compile(r"\\begin\{verbatim\}(.*?)\\end\{verbatim\}", re.DOTALL)),
     ("lstlisting",      re.compile(r"\\begin\{lstlisting\}(?:\[[^\]]*\])?(.*?)\\end\{lstlisting\}", re.DOTALL)),
@@ -651,7 +651,13 @@ def _dispatch(kind: str, m) -> object:
     if kind == "table_star":
         return RawLatex(text=m.group(0))
     if kind == "standalone_tabular":
-        return _parse_tabular(m.group(1), m.group(2))
+        # group(1) = everything from the opening { of the alignment spec
+        # to \end{tabular}. Use balanced-brace extraction to split
+        # the alignment spec (may contain p{0.55\columnwidth}) from body.
+        raw = m.group(1)
+        align_spec, end_pos = _consume_braced(raw, 0)
+        tab_body = raw[end_pos:]
+        return _parse_tabular(align_spec or "", tab_body)
     if kind == "verbatim":
         return RawLatex(text=f"\\begin{{verbatim}}{m.group(1)}\\end{{verbatim}}")
     if kind == "lstlisting":
@@ -753,8 +759,16 @@ def _parse_table_env(body: str) -> object:
     """Parse a \\begin{table}...\\end{table} float. If it wraps a tabular,
     return a Table; otherwise fall back to a RawLatex block so nothing
     is lost."""
-    tab = re.search(r"\\begin\{tabular\}\{([^}]*)\}(.*?)\\end\{tabular\}",
-                    body, re.DOTALL)
+    tab_start = re.search(r"\\begin\{tabular\}\{", body)
+    tab_end_m = re.search(r"\\end\{tabular\}", body)
+    tab = None
+    tab_align = ""
+    tab_body = ""
+    if tab_start and tab_end_m:
+        brace_pos = tab_start.end() - 1   # position of the opening {
+        tab_align, after = _consume_braced(body, brace_pos)
+        tab_body = body[after:tab_end_m.start()]
+        tab = True
     cap_match = re.search(r"\\caption\{", body)
     caption = ""
     if cap_match:
@@ -764,7 +778,7 @@ def _parse_table_env(body: str) -> object:
     label = lab.group(1) if lab else None
     if not tab:
         return RawLatex(text=f"\\begin{{table}}{body}\\end{{table}}")
-    table = _parse_tabular(tab.group(1), tab.group(2))
+    table = _parse_tabular(tab_align or "", tab_body)
     table.caption = caption
     table.label = label
     return table

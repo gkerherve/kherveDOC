@@ -1170,6 +1170,15 @@ class DocumentEditor(QWidget):
         # Move the cursor past the table so subsequent content goes after it.
         cursor.movePosition(QTextCursor.End)
 
+    def _capped_math_size(self, img: QImage) -> tuple[int, int]:
+        """Return (width, height) capped to 90% of the editor viewport."""
+        max_w = int(self._edit.viewport().width() * 0.9)
+        w, h = img.width(), img.height()
+        if w > max_w and max_w > 0:
+            h = int(h * max_w / w)
+            w = max_w
+        return w, h
+
     def _insert_math_image(self, cursor: QTextCursor, latex: str) -> None:
         """Render math to a PNG and insert it into the document."""
         png_path = _render_math_image(latex, cache_dir=self._equations_dir)
@@ -1180,10 +1189,11 @@ class DocumentEditor(QWidget):
             return
         url = QUrl.fromLocalFile(str(png_path))
         self._edit.document().addResource(2, url, img)
+        w, h = self._capped_math_size(img)
         img_fmt = QTextImageFormat()
         img_fmt.setName(url.toString())
-        img_fmt.setWidth(img.width())
-        img_fmt.setHeight(img.height())
+        img_fmt.setWidth(w)
+        img_fmt.setHeight(h)
         cursor.insertImage(img_fmt)
         cursor.insertText(_LINE_SEP)
 
@@ -2511,9 +2521,10 @@ class DocumentEditor(QWidget):
                     img_fmt = fmt.toImageFormat()
                     if img_fmt.name() == url.toString():
                         return  # already up to date
+                    w, h = self._capped_math_size(img)
                     img_fmt.setName(url.toString())
-                    img_fmt.setWidth(img.width())
-                    img_fmt.setHeight(img.height())
+                    img_fmt.setWidth(w)
+                    img_fmt.setHeight(h)
                     cursor = QTextCursor(block)
                     cursor.setPosition(frag.position())
                     cursor.setPosition(frag.position() + frag.length(),
