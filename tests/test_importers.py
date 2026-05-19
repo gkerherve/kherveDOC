@@ -704,8 +704,8 @@ Hello world.
 
 def test_resume_class_round_trip():
     """Custom resume class: \\name / \\address survive in preamble_extras,
-    rSection → Section, rSubsection → Paragraph + List, and no geometry or
-    font packages are injected for this non-standard class."""
+    rSection / rSubsection preserved as RawLatex for exact PDF output, and
+    no geometry or font packages are injected for this non-standard class."""
     src = r"""\documentclass{resume}
 \usepackage[left=0.75in,top=0.6in,right=0.75in,bottom=0.6in]{geometry}
 \usepackage{hyperref}
@@ -726,24 +726,19 @@ A highly motivated scientist.
     # \name and \address preserved in preamble_extras
     assert r"\name{Gwilherm Kerherve" in doc.meta.preamble_extras
     assert r"\address{" in doc.meta.preamble_extras
-    # rSection parsed into a Section heading
-    sections = [b for b in doc.children if isinstance(b, Section)]
-    assert any("Key Skills" in c.text for s in sections for c in s.children
-               if isinstance(c, Text))
-    # rSubsection parsed into Paragraph (header) + List (items)
-    paras = [b for b in doc.children if isinstance(b, Paragraph)]
-    assert any("Imperial College" in c.text for p in paras for c in p.children
-               if isinstance(c, Text))
-    lists = [b for b in doc.children if isinstance(b, ListNode)]
-    assert len(lists) >= 1
+    # rSection / rSubsection preserved as RawLatex for faithful PDF output
+    raws = [b for b in doc.children if isinstance(b, RawLatex)]
+    assert any("rSection" in r.text for r in raws)
     # Geometry margins extracted
-    assert abs(doc.meta.margin_left_cm - 1.91) < 0.1  # 0.75in ≈ 1.905cm
-    assert abs(doc.meta.margin_top_cm - 1.52) < 0.1   # 0.6in ≈ 1.524cm
-    # No auto-generated geometry/font for non-standard class
+    assert abs(doc.meta.margin_left_cm - 1.91) < 0.1
+    assert abs(doc.meta.margin_top_cm - 1.52) < 0.1
+    # Round-trip: environments survive verbatim
     out = serialize_document(doc)
+    assert "rSection" in out
+    assert r"\name{Gwilherm Kerherve" in out
+    # No auto-generated geometry/font for non-standard class
     preamble = out.split("\\begin{document}")[0]
     assert "setspace" not in preamble
-    assert r"\name{Gwilherm Kerherve" in out
 
 
 def test_wiley_body_frontmatter_extraction():

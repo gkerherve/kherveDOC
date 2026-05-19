@@ -284,19 +284,38 @@ def _body_font_pt_class_option(pt: int) -> str:
     return f"{min((10, 11, 12), key=lambda v: abs(v - pt))}pt"
 
 
+_STANDARD_SERIALIZER_CLASSES = {
+    "article", "report", "book", "letter", "memoir", "beamer",
+    "scrartcl", "scrreprt", "scrbook",
+    "elsarticle",
+}
+
+
 def _class_options(m) -> str:
     """Comma-joined documentclass options: font size, twocolumn, etc.
 
     If `class_options` is set (journal templates), emit it verbatim
     so options like "VANCOUVER,LATO2COL" survive the round-trip.
+    For non-standard classes with no explicit options, return empty
+    string so the serializer omits the brackets entirely — custom
+    classes set their own font size and layout internally.
     """
     raw = getattr(m, "class_options", "")
     if raw:
         return raw
+    if (m.documentclass or "").lower() not in _STANDARD_SERIALIZER_CLASSES:
+        return ""
     opts = [_body_font_pt_class_option(m.body_font_pt)]
     if getattr(m, "column_count", 1) == 2:
         opts.append("twocolumn")
     return ",".join(opts)
+
+
+def _documentclass_line(m) -> str:
+    opts = _class_options(m)
+    if opts:
+        return f"\\documentclass[{opts}]{{{m.documentclass}}}"
+    return f"\\documentclass{{{m.documentclass}}}"
 
 
 def _wrap_multicols(body: str, n: int) -> str:
@@ -347,11 +366,7 @@ def serialize_document(doc: Document) -> str:
     has_chapters = (m.documentclass or "").lower() in _CHAPTER_CLASSES
     # Non-standard classes carry their own layout — don't inject geometry,
     # setspace, or font packages that may conflict.
-    _STANDARD_CLASSES = {
-        "article", "report", "book", "letter", "memoir", "beamer",
-        "scrartcl", "scrreprt", "scrbook",
-    }
-    is_journal = ((m.documentclass or "").lower() not in _STANDARD_CLASSES
+    is_journal = ((m.documentclass or "").lower() not in _STANDARD_SERIALIZER_CLASSES
                   or bool(getattr(m, "class_options", "")))
 
     # Margins flow into geometry per-side so users can pick asymmetric layouts.
@@ -478,8 +493,7 @@ def serialize_document(doc: Document) -> str:
             body = _wrap_multicols(body, m.column_count)
 
         return (
-            f"\\documentclass[{_class_options(m)}]"
-            f"{{{m.documentclass}}}\n"
+            f"{_documentclass_line(m)}\n"
             f"{packages}\n"
             f"\\begin{{document}}\n"
             f"{frontmatter}"
@@ -590,8 +604,7 @@ def serialize_document(doc: Document) -> str:
         body = _wrap_multicols(body, m.column_count)
 
     return (
-        f"\\documentclass[{_class_options(m)}]"
-        f"{{{m.documentclass}}}\n"
+        f"{_documentclass_line(m)}\n"
         f"{packages}\n"
         f"{preamble_meta}"
         f"\\begin{{document}}\n"
