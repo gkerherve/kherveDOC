@@ -138,6 +138,17 @@ def _render_math_image(latex: str, font_size: int = 14,
         lines = _re.split(r"\\\\", raw)
         lines = [ln.replace("&", " ").strip() for ln in lines]
         lines = [ln for ln in lines if ln]
+    # Fix \left / \right pairs that span multiple lines: matplotlib
+    # requires them balanced on every line. Strip the sizing prefix
+    # from any unmatched \left or \right, keeping the bare delimiter.
+    for idx, ln in enumerate(lines):
+        n_left = len(_re.findall(r"\\left\b", ln))
+        n_right = len(_re.findall(r"\\right\b", ln))
+        if n_left != n_right:
+            ln = _re.sub(r"\\left\b\s*", "", ln)
+            ln = _re.sub(r"\\right\b\s*", "", ln)
+            lines[idx] = ln.strip()
+    lines = [ln for ln in lines if ln]
     if not lines:
         _MATH_IMAGE_CACHE[latex] = None
         return None
