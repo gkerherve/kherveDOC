@@ -295,6 +295,10 @@ _BLOCK_DISPATCH = [
     # Sections / titles.
     ("section",         _SECTION_RE),
     ("maketitle",       re.compile(r"\\maketitle\b")),
+    # Resume-class environments — parse into proper model nodes so the
+    # visual editor renders readable content instead of raw LaTeX.
+    ("rSection",        re.compile(r"\\begin\{rSection\}\{([^}]*)\}(.*?)\\end\{rSection\}", re.DOTALL)),
+    ("rSubsection",     re.compile(r"\\begin\{rSubsection\}\{([^}]*)\}\{([^}]*)\}\{([^}]*)\}\{([^}]*)\}(.*?)\\end\{rSubsection\}", re.DOTALL)),
     # Last-resort: any other \begin{...}...\end{...} we don't understand
     # gets wrapped in a RawLatex block instead of leaking its body as
     # plain text. Must remain LAST so the specific handlers above win.
@@ -686,6 +690,45 @@ def _dispatch(kind: str, m) -> object:
             if isinstance(sub, Paragraph):
                 sub.alignment = align_name
         return sub_blocks
+    if kind == "rSection":
+        title = m.group(1).strip()
+        body = m.group(2).strip()
+        blocks: list = [Section(level=1, children=_parse_inlines(title))]
+        blocks.extend(_parse_blocks(body))
+        return blocks
+    if kind == "rSubsection":
+        company = m.group(1).strip()
+        dates = m.group(2).strip()
+        job_title = m.group(3).strip()
+        location = m.group(4).strip()
+        body = m.group(5).strip()
+        blocks: list = []
+        # Build a formatted header paragraph: bold company + dates,
+        # then italic title + location on a new line.
+        header_inlines: list = []
+        if company:
+            header_inlines.append(Text(text=company, marks=["bold"]))
+        if dates:
+            if company:
+                header_inlines.append(Text(text=" — "))
+            header_inlines.append(Text(text=dates))
+        if job_title or location:
+            header_inlines.append(Text(text="\n"))
+            if job_title:
+                header_inlines.append(Text(text=job_title, marks=["italic"]))
+            if location:
+                if job_title:
+                    header_inlines.append(Text(text=" — "))
+                header_inlines.append(Text(text=location, marks=["italic"]))
+        if header_inlines:
+            blocks.append(Paragraph(children=header_inlines))
+        # Parse \item entries as an unordered list.
+        if r"\item" in body:
+            blocks.append(_parse_list(body, ordered=False))
+        elif body:
+            for para in _split_paragraphs(body):
+                blocks.append(Paragraph(children=_parse_inlines(para)))
+        return blocks
     if kind == "unknown_env":
         env_name = m.group(1)
         # Some envs are pure wrappers we want to strip entirely
@@ -805,11 +848,22 @@ def import_tex(tex_source: str) -> Document:
                 if p not in ("geometry", "setspace")]
 
     page_size = "A4"
+    margins = {"top": 2.5, "bottom": 2.5, "left": 2.5, "right": 2.5}
     if geom_m:
-        opts = geom_m.group(1).lower()
-        if "letterpaper" in opts: page_size = "Letter"
-        elif "legalpaper" in opts: page_size = "Legal"
-        elif "a4paper" in opts:    page_size = "A4"
+        opts_lower = geom_m.group(1).lower()
+        if "letterpaper" in opts_lower: page_size = "Letter"
+        elif "legalpaper" in opts_lower: page_size = "Legal"
+        elif "a4paper" in opts_lower:    page_size = "A4"
+        for side in margins:
+            dim_m = re.search(rf"{side}\s*=\s*([\d.]+)\s*(in|cm|mm|pt)",
+                              opts_lower)
+            if dim_m:
+                val = float(dim_m.group(1))
+                unit = dim_m.group(2)
+                if unit == "in": val *= 2.54
+                elif unit == "mm": val /= 10
+                elif unit == "pt": val *= 0.03528
+                margins[side] = round(val, 2)
 
     # Strip nested macros from the author line — \corref{} etc. clutter
     # the visible author name. The cleaned author can still live in
@@ -871,6 +925,10 @@ def import_tex(tex_source: str) -> Document:
         class_options=class_options,
         packages=packages or ["amsmath", "graphicx"],
         page_size=page_size,
+        margin_top_cm=margins["top"],
+        margin_bottom_cm=margins["bottom"],
+        margin_left_cm=margins["left"],
+        margin_right_cm=margins["right"],
         body_font_pt=body_font_pt,
         column_count=column_count,
         frontmatter_extras=frontmatter_extras,

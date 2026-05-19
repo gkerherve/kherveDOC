@@ -645,6 +645,19 @@ Hello.
     assert doc.meta.body_font_pt == 11
 
 
+def test_geometry_margins_parsed():
+    src = r"""\documentclass{article}
+\usepackage[left=1in,right=1in,top=0.5in,bottom=0.5in]{geometry}
+\begin{document}
+Hello.
+\end{document}"""
+    doc = _round_trip(src)
+    assert abs(doc.meta.margin_left_cm - 2.54) < 0.01
+    assert abs(doc.meta.margin_right_cm - 2.54) < 0.01
+    assert abs(doc.meta.margin_top_cm - 1.27) < 0.01
+    assert abs(doc.meta.margin_bottom_cm - 1.27) < 0.01
+
+
 def test_align_star_imports_as_math_block_then_round_trips_without_double_wrap():
     """align* env at top level should import as a MathBlock that, on
     serialise, emits \\begin{align*}...\\end{align*} verbatim — not
@@ -691,8 +704,8 @@ Hello world.
 
 def test_resume_class_round_trip():
     """Custom resume class: \\name / \\address survive in preamble_extras,
-    rSection / rSubsection environments survive as RawLatex, and no
-    geometry or font packages are injected for this non-standard class."""
+    rSection → Section, rSubsection → Paragraph + List, and no geometry or
+    font packages are injected for this non-standard class."""
     src = r"""\documentclass{resume}
 \usepackage[left=0.75in,top=0.6in,right=0.75in,bottom=0.6in]{geometry}
 \usepackage{hyperref}
@@ -702,8 +715,9 @@ def test_resume_class_round_trip():
 \begin{document}
 A highly motivated scientist.
 \begin{rSection}{Key Skills}
-\begin{rSubsection}{}{}{}{}
-\item Expertise in XPS
+\begin{rSubsection}{Imperial College}{2020 - Present}{Research Manager}{London}
+\item Maintain the XPS
+\item Train users
 \end{rSubsection}
 \end{rSection}
 \end{document}"""
@@ -712,18 +726,24 @@ A highly motivated scientist.
     # \name and \address preserved in preamble_extras
     assert r"\name{Gwilherm Kerherve" in doc.meta.preamble_extras
     assert r"\address{" in doc.meta.preamble_extras
-    # rSection / rSubsection preserved as RawLatex
-    raws = [b for b in doc.children if isinstance(b, RawLatex)]
-    assert any("rSection" in r.text for r in raws)
-    # Round-trip serialization
-    out = serialize_document(doc)
-    assert "\\documentclass" in out
-    assert "resume" in out
-    assert r"\name{Gwilherm Kerherve" in out
-    assert "rSection" in out
+    # rSection parsed into a Section heading
+    sections = [b for b in doc.children if isinstance(b, Section)]
+    assert any("Key Skills" in c.text for s in sections for c in s.children
+               if isinstance(c, Text))
+    # rSubsection parsed into Paragraph (header) + List (items)
+    paras = [b for b in doc.children if isinstance(b, Paragraph)]
+    assert any("Imperial College" in c.text for p in paras for c in p.children
+               if isinstance(c, Text))
+    lists = [b for b in doc.children if isinstance(b, ListNode)]
+    assert len(lists) >= 1
+    # Geometry margins extracted
+    assert abs(doc.meta.margin_left_cm - 1.91) < 0.1  # 0.75in ≈ 1.905cm
+    assert abs(doc.meta.margin_top_cm - 1.52) < 0.1   # 0.6in ≈ 1.524cm
     # No auto-generated geometry/font for non-standard class
+    out = serialize_document(doc)
     preamble = out.split("\\begin{document}")[0]
     assert "setspace" not in preamble
+    assert r"\name{Gwilherm Kerherve" in out
 
 
 def test_wiley_body_frontmatter_extraction():
