@@ -806,3 +806,24 @@ def test_journal_figure_placement_htbp():
     out = serialize_document(doc)
     assert "\\begin{figure}[htbp]" in out
     assert "\\begin{figure}[H]" not in out
+
+
+def test_figure_star_preserved_as_raw():
+    r"""figure* (two-column spanning) environments are preserved verbatim
+    as RawLatex so tikzpicture and complex layouts survive the round-trip."""
+    src = r"""\documentclass{article}
+\begin{document}
+\begin{figure*}[tb]
+  \centering
+  \includegraphics[width=\textwidth]{wide.png}
+  \caption{A wide figure}
+  \label{fig:wide}
+\end{figure*}
+\end{document}"""
+    doc = _round_trip(src)
+    raws = [b for b in doc.children if isinstance(b, RawLatex)]
+    assert any("figure*" in r.text for r in raws)
+    out = serialize_document(doc)
+    assert r"\begin{figure*}" in out
+    assert r"\end{figure*}" in out
+    assert r"\caption{A wide figure}" in out

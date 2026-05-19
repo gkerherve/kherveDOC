@@ -273,8 +273,10 @@ _BLOCK_DISPATCH = [
     ("itemize",         re.compile(r"\\begin\{itemize\}(.*?)\\end\{itemize\}", re.DOTALL)),
     ("enumerate",       re.compile(r"\\begin\{enumerate\}(.*?)\\end\{enumerate\}", re.DOTALL)),
     # Floats and tables
-    ("figure",          re.compile(r"\\begin\{figure\*?\}(?:\[[^\]]*\])?(.*?)\\end\{figure\*?\}", re.DOTALL)),
-    ("table",           re.compile(r"\\begin\{table\*?\}(?:\[[^\]]*\])?(.*?)\\end\{table\*?\}", re.DOTALL)),
+    ("figure",          re.compile(r"\\begin\{figure\}(?:\[[^\]]*\])?(.*?)\\end\{figure\}", re.DOTALL)),
+    ("figure_star",     re.compile(r"\\begin\{figure\*\}(?:\[[^\]]*\])?(.*?)\\end\{figure\*\}", re.DOTALL)),
+    ("table",           re.compile(r"\\begin\{table\}(?:\[[^\]]*\])?(.*?)\\end\{table\}", re.DOTALL)),
+    ("table_star",      re.compile(r"\\begin\{table\*\}(?:\[[^\]]*\])?(.*?)\\end\{table\*\}", re.DOTALL)),
     ("standalone_tabular", re.compile(r"\\begin\{tabular\}\{([^}]*)\}(.*?)\\end\{tabular\}", re.DOTALL)),
     # Verbatim-style code blocks: preserved as RawLatex so the source survives.
     ("verbatim",        re.compile(r"\\begin\{verbatim\}(.*?)\\end\{verbatim\}", re.DOTALL)),
@@ -639,8 +641,15 @@ def _dispatch(kind: str, m) -> object:
         return _parse_list(m.group(1), ordered=True)
     if kind == "figure":
         return _parse_figure(m.group(1))
+    if kind == "figure_star":
+        # Two-column figures (figure*) often contain tikzpicture or
+        # complex layouts the Figure model can't represent — preserve
+        # the entire environment verbatim so it round-trips correctly.
+        return RawLatex(text=m.group(0))
     if kind == "table":
         return _parse_table_env(m.group(1))
+    if kind == "table_star":
+        return RawLatex(text=m.group(0))
     if kind == "standalone_tabular":
         return _parse_tabular(m.group(1), m.group(2))
     if kind == "verbatim":
