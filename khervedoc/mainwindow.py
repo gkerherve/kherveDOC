@@ -1942,7 +1942,8 @@ class MainWindow(QMainWindow):
                 if url.isLocalFile():
                     suffix = Path(url.toLocalFile()).suffix.lower()
                     if suffix in self._OPENABLE_SUFFIXES | self._IMAGE_SUFFIXES:
-                        event.acceptProposedAction()
+                        event.setDropAction(Qt.LinkAction)
+                        event.accept()
                         return
         super().dragEnterEvent(event)
 
@@ -1953,11 +1954,13 @@ class MainWindow(QMainWindow):
                 suffix = path.suffix.lower()
                 if suffix in self._OPENABLE_SUFFIXES:
                     self._open_path(path)
-                    event.acceptProposedAction()
+                    event.setDropAction(Qt.LinkAction)
+                    event.accept()
                     return
                 if suffix in self._IMAGE_SUFFIXES:
                     self._editor.drop_image_file(path)
-                    event.acceptProposedAction()
+                    event.setDropAction(Qt.LinkAction)
+                    event.accept()
                     return
         super().dropEvent(event)
 
