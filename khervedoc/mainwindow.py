@@ -4068,7 +4068,11 @@ class MainWindow(QMainWindow):
 
     def _on_latex_edited(self, text: str) -> None:
         """User edited the Code tab — reparse, replace the document
-        model, and let the Visual view + PDF rerender from it."""
+        model, and let the Visual view + PDF rerender from it.
+
+        The source may be temporarily invalid while the user types, so
+        every stage is wrapped so a bad parse or a model rebuild never
+        crashes the application."""
         if self._compiler == "typst":
             return
         try:
@@ -4079,6 +4083,10 @@ class MainWindow(QMainWindow):
         self._suppress_latex_update = True
         try:
             self._editor.set_document(doc)
+        except Exception as exc:
+            self._status.showMessage(
+                f"Could not apply LaTeX changes: {exc}", 5000)
+            return
         finally:
             # The editor emits documentChanged on a debounce; release the
             # flag after the debounce window so the round-trip can finish
