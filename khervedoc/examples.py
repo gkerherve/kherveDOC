@@ -3615,170 +3615,147 @@ def recipe() -> Document:
 
 # --------------------------------------------------- daily journal
 
-def _daily_page_latex(year: int, month: int, day: int,
-                      start_hour: int, end_hour: int) -> str:
-    """Build one page of a daily planner spread in raw LaTeX.
+def _daily_planner_latex(year: int, month: int, day: int) -> str:
+    """Build a single-page daily planner in raw LaTeX.
 
-    Layout matches a classic day-per-page planner:
-    - Header: large day number, weekday name, month + day text
-    - Left column: half-hourly schedule grid
-    - Right column: Notes / Memo ruled lines
-    - Bottom boxes: Top priorities (checkboxes) and
-      Low priorities + Follow up
+    Layout (all on one A4 page with 0.5 cm margins):
+    - Header: day number in black box, weekday, date right-aligned
+    - Middle: schedule grid 8:00–20:00 (left) + Notes/Memo (right)
+    - Bottom: Top priorities (left) + Low priorities / Follow up (right)
     """
     import calendar as _cal
     import datetime as _dt
 
-    d = _dt.date(year, month, day)
-    weekday = _cal.day_name[d.weekday()].lower()
-    month_name = _cal.month_name[month].lower()
+    dt = _dt.date(year, month, day)
+    weekday = _cal.day_name[dt.weekday()]
+    month_name = _cal.month_name[month]
 
-    lines: list[str] = []
+    L: list[str] = []
 
     # --- Header ---
-    lines.append(
+    L.append(
         "\\noindent"
-        "\\begin{minipage}[t]{0.06\\textwidth}"
-        "\\colorbox{black}{\\makebox[1.1cm][c]"
-        "{\\textcolor{white}{\\Large\\bfseries " + str(day) + "}}}"
-        "\\end{minipage}"
-        "\\begin{minipage}[t]{0.44\\textwidth}"
-        "\\vspace{1pt}{\\large\\bfseries " + weekday + "}"
-        "\\end{minipage}"
+        "\\fcolorbox{black}{black}"
+        "{\\textcolor{white}{\\Large\\bfseries\\,\\," + str(day) + "\\,\\,}}"
+        "\\hspace{4pt}"
+        "{\\large\\bfseries " + weekday.lower() + "}"
         "\\hfill"
-        "\\begin{minipage}[t]{0.44\\textwidth}"
-        "\\raggedleft\\vspace{1pt}{\\large " + month_name + " "
-        + str(day) + "}"
-        "\\end{minipage}"
+        "{\\large " + month_name.lower() + " " + str(day) + "}"
     )
-    lines.append("\\vspace{4pt}")
-    lines.append("\\noindent\\rule{\\textwidth}{0.6pt}")
-    lines.append("\\vspace{4pt}")
+    L.append("\\vspace{2pt}")
+    L.append("\\noindent\\rule{\\textwidth}{0.5pt}")
+    L.append("\\vspace{3pt}")
 
-    # --- Schedule grid + Notes/Memo side by side ---
-    lines.append(
-        "\\noindent"
-        "\\begin{minipage}[t]{0.48\\textwidth}"
+    # --- Schedule grid (left) + Notes/Memo (right) ---
+    # Row height: fit 8:00–20:00 = 13 hours in ~21 cm available height
+    # after header (~1.2 cm) and bottom boxes (~6 cm) → ~22 cm for grid.
+    # Each hour row = 22/13 ≈ 1.69 cm; use 0.76 cm per half-hour slot.
+    slot_h = "0.76cm"
+
+    L.append("\\noindent\\begin{minipage}[t]{0.48\\textwidth}")
+    L.append("\\renewcommand{\\arraystretch}{0}")
+    L.append("\\begin{tabular}{@{}r|p{4.5cm}@{}}")
+    for h in range(8, 21):
+        L.append(
+            f"\\scriptsize {h:02d}:00 & "
+            f"\\rule{{0pt}}{{{slot_h}}} \\\\"
+            "\\cline{2-2}"
+        )
+        L.append(
+            f"\\scriptsize {h:02d}:30 & "
+            f"\\rule{{0pt}}{{{slot_h}}} \\\\"
+            "\\cline{2-2}"
+        )
+    L.append("\\end{tabular}")
+    L.append("\\end{minipage}")
+    L.append("\\hfill")
+
+    # Notes / Memo column — same height as schedule grid
+    n_note_lines = 26   # matches 13 hours × 2 slots
+    L.append("\\begin{minipage}[t]{0.48\\textwidth}")
+    L.append(
+        "{\\scriptsize\\textbf{Notes} \\textbar\\ Memo}"
+        "\\par\\vspace{2pt}"
     )
-    # Schedule table
-    lines.append(
-        "\\begin{tabular}{@{}r|p{3.8cm}@{}}"
+    for _ in range(n_note_lines):
+        L.append(
+            "\\noindent\\rule{\\textwidth}{0.2pt}"
+            "\\par\\vspace{4.3pt}"
+        )
+    L.append("\\end{minipage}")
+
+    L.append("\\vspace{4pt}")
+
+    # --- Bottom boxes: Top priorities (left) + Low priorities & Follow up (right) ---
+    L.append("\\noindent\\begin{minipage}[t]{0.48\\textwidth}")
+    L.append(
+        "\\fbox{\\begin{minipage}"
+        "{\\dimexpr\\textwidth-2\\fboxsep-2\\fboxrule}"
+        "{\\scriptsize\\textbf{Top priorities}}\\par\\vspace{2pt}"
     )
-    for h in range(start_hour, end_hour + 1):
-        lines.append(
-            f"\\footnotesize {h:02d}:00 & "
-            f"\\rule{{0pt}}{{0.42cm}} \\\\"
+    for _ in range(6):
+        L.append(
+            "\\noindent$\\square$\\hspace{4pt}"
+            "\\rule{0.86\\textwidth}{0.2pt}"
+            "\\par\\vspace{2pt}"
         )
-        lines.append("\\cline{2-2}")
-        lines.append(
-            f"\\footnotesize {h:02d}:30 & "
-            f"\\rule{{0pt}}{{0.42cm}} \\\\"
-        )
-        lines.append("\\cline{2-2}")
-    lines.append("\\end{tabular}")
-    lines.append("\\end{minipage}")
-    lines.append("\\hfill")
-    lines.append(
-        "\\begin{minipage}[t]{0.48\\textwidth}"
+    L.append("\\end{minipage}}")
+    L.append("\\end{minipage}")
+    L.append("\\hfill")
+
+    L.append("\\begin{minipage}[t]{0.48\\textwidth}")
+    # Low priorities
+    L.append(
+        "\\fbox{\\begin{minipage}"
+        "{\\dimexpr\\textwidth-2\\fboxsep-2\\fboxrule}"
+        "{\\scriptsize\\textbf{Low priorities}}\\par\\vspace{2pt}"
     )
-    # Notes / Memo
-    lines.append(
-        "{\\footnotesize\\textbf{Notes} \\textbar\\ Memo}"
-        "\\par\\vspace{4pt}"
+    for _ in range(3):
+        L.append(
+            "\\noindent$\\square$\\hspace{4pt}"
+            "\\rule{0.86\\textwidth}{0.2pt}"
+            "\\par\\vspace{2pt}"
+        )
+    L.append("\\end{minipage}}")
+    L.append("\\vspace{3pt}")
+    # Follow up
+    L.append(
+        "\\fbox{\\begin{minipage}"
+        "{\\dimexpr\\textwidth-2\\fboxsep-2\\fboxrule}"
+        "{\\scriptsize\\textbf{Follow up}}\\par\\vspace{2pt}"
     )
-    note_lines = (end_hour - start_hour + 1) * 2
-    for _ in range(note_lines):
-        lines.append(
-            "\\noindent\\rule{\\textwidth}{0.3pt}"
-            "\\par\\vspace{5.2pt}"
+    for _ in range(3):
+        L.append(
+            "\\noindent$\\bullet$\\hspace{4pt}"
+            "\\rule{0.86\\textwidth}{0.2pt}"
+            "\\par\\vspace{2pt}"
         )
-    lines.append("\\end{minipage}")
+    L.append("\\end{minipage}}")
+    L.append("\\end{minipage}")
 
-    lines.append("\\vspace{6pt}")
-
-    return "\n".join(lines)
-
-
-def _daily_bottom_boxes(is_first_page: bool) -> str:
-    """Build the bottom boxes for a daily planner page."""
-    lines: list[str] = []
-
-    if is_first_page:
-        # Top priorities box — full width
-        lines.append(
-            "\\noindent\\fbox{\\begin{minipage}"
-            "{\\dimexpr\\textwidth-2\\fboxsep-2\\fboxrule}"
-            "{\\textbf{Top priorities}}\\par\\vspace{4pt}"
-        )
-        for _ in range(7):
-            lines.append(
-                "\\noindent$\\square$\\hspace{6pt}"
-                "\\rule{0.88\\textwidth}{0.3pt}"
-                "\\par\\vspace{3pt}"
-            )
-        lines.append("\\end{minipage}}")
-    else:
-        # Low priorities + Follow up — side by side
-        lines.append(
-            "\\noindent"
-            "\\fbox{\\begin{minipage}[t]"
-            "{\\dimexpr0.47\\textwidth-2\\fboxsep-2\\fboxrule}"
-            "{\\textbf{Low priorities}}\\par\\vspace{4pt}"
-        )
-        for _ in range(4):
-            lines.append(
-                "\\noindent$\\square$\\hspace{6pt}"
-                "\\rule{0.82\\textwidth}{0.3pt}"
-                "\\par\\vspace{3pt}"
-            )
-        lines.append("\\end{minipage}}")
-
-        lines.append("\\hfill")
-
-        lines.append(
-            "\\fbox{\\begin{minipage}[t]"
-            "{\\dimexpr0.47\\textwidth-2\\fboxsep-2\\fboxrule}"
-            "{\\textbf{Follow up}}\\par\\vspace{4pt}"
-        )
-        for _ in range(4):
-            lines.append(
-                "\\noindent$\\bullet$\\hspace{6pt}"
-                "\\rule{0.82\\textwidth}{0.3pt}"
-                "\\par\\vspace{3pt}"
-            )
-        lines.append("\\end{minipage}}")
-
-    return "\n".join(lines)
+    return "\n".join(L)
 
 
 def daily_journal() -> Document:
-    """Daily planner — two-page spread per day with hourly schedule
-    grid (8:00–23:30), notes/memo lines, top priorities with
-    checkboxes, low priorities, and follow-up section. Generates
-    today's date dynamically."""
+    """Daily planner — single A4 page with hourly schedule grid
+    (8:00–20:30), notes/memo lines, top priorities with checkboxes,
+    low priorities, and follow-up. Generates today's date."""
     from datetime import date as _date
     today = _date.today()
-    y, m, d = today.year, today.month, today.day
-
-    page1 = (_daily_page_latex(y, m, d, 8, 15)
-             + "\n" + _daily_bottom_boxes(True))
-    page2 = (_daily_page_latex(y, m, d, 16, 23)
-             + "\n" + _daily_bottom_boxes(False))
 
     return Document(
         meta=_meta(
-            title="Daily planner",
-            author="",
+            title="", author="",
             body_font_pt=10,
-            margin_left_cm=1.5, margin_right_cm=1.5,
-            margin_top_cm=1.5, margin_bottom_cm=1.5,
+            margin_left_cm=0.5, margin_right_cm=0.5,
+            margin_top_cm=0.5, margin_bottom_cm=0.5,
             paragraph_indent=False,
             page_size="A4",
+            packages=DEFAULT_PACKAGES + ["xcolor"],
         ),
         children=[
-            RawLatex(text=page1),
-            RawLatex(text="\\newpage"),
-            RawLatex(text=page2),
+            RawLatex(text=_daily_planner_latex(
+                today.year, today.month, today.day)),
         ],
     )
 
