@@ -184,6 +184,15 @@ def _render_math_image(latex: str, font_size: int = 14,
         return None
 
 
+_COMPLEX_MATH_RE = _re.compile(
+    r"\\(frac|left|right|sum|prod|int|begin|sqrt|matrix|cases)")
+
+
+def _is_complex_math(latex: str) -> bool:
+    """True when inline math is too complex for readable raw-text display."""
+    return "\n" in latex or bool(_COMPLEX_MATH_RE.search(latex))
+
+
 # ---- per-block user state encoding ----
 _STATE_PARAGRAPH = 0
 _STATE_TITLE = 7        # Word-style "Title" paragraph; emits \maketitle
@@ -1499,6 +1508,11 @@ class DocumentEditor(QWidget):
                 fmt.setVerticalAlignment(QTextCharFormat.AlignSuperScript)
             cursor.insertText(node.text, fmt)
         elif isinstance(node, MathInline):
+            # Complex inline math (fractions, multi-line, etc.) gets a
+            # rendered image like MathBlock; simple expressions stay as
+            # styled text so they flow naturally with the paragraph.
+            if _is_complex_math(node.latex):
+                self._insert_math_image(cursor, node.latex)
             cursor.insertText(node.latex, _math_inline_format(node.latex))
         elif isinstance(node, Link):
             text = "".join(c.text for c in node.children if isinstance(c, Text)) or node.url
