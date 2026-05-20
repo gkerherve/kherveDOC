@@ -1000,6 +1000,7 @@ class MainWindow(QMainWindow):
         self.act_import_docx = QAction("Import .&docx...", self, triggered=self._import_docx)
         self.act_import_md = QAction("Import .&md...", self, triggered=self._import_md)
         self.act_export_tex = QAction("Export .&tex...", self, triggered=self._export_tex)
+        self.act_export_docx = QAction("Export .&docx...", self, triggered=self._export_docx)
         self.act_export_pdf = QAction(icons.export_pdf(), "Export .&pdf...", self,
                                       triggered=self._export_pdf)
         self.act_show_in_explorer = QAction(
@@ -1352,6 +1353,7 @@ class MainWindow(QMainWindow):
         m_import.addAction(self.act_import_md)
         m_export = m_file.addMenu("&Export")
         m_export.addAction(self.act_export_tex)
+        m_export.addAction(self.act_export_docx)
         m_export.addAction(self.act_export_pdf)
         m_file.addSeparator()
         m_file.addAction(self.act_show_in_explorer)
@@ -2212,6 +2214,14 @@ class MainWindow(QMainWindow):
             if path_s:
                 Path(path_s).write_text(
                     serialize_document(self._editor.get_document()), encoding="utf-8")
+
+    def _export_docx(self) -> None:
+        path_s, _ = QFileDialog.getSaveFileName(
+            self, "Export Word", "document.docx", "Word (*.docx)")
+        if path_s:
+            from .docx_exporter import export_docx
+            export_docx(self._editor.get_document(), Path(path_s))
+            self._status.showMessage(f"Exported {path_s}", 4000)
 
     def _export_pdf(self) -> None:
         doc = self._editor.get_document()
