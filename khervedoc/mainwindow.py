@@ -2562,18 +2562,42 @@ class MainWindow(QMainWindow):
 
     def _compile_project(self) -> None:
         """Compile the entire project via the master .tex."""
+        import shutil as _shutil
         if self._project is None or self._project_path is None:
             return
-        self._save_project()
+        self._flush_current_chapter()
         proj_dir = self._project_path.parent
+        # Write chapter .tex files from their .kdoc.json sources
+        from .serializer import _chapter_stem
+        for ch in self._project.chapters:
+            ch_json_path = proj_dir / ch.path
+            if ch_json_path.exists():
+                try:
+                    doc = from_json(ch_json_path.read_text(encoding="utf-8"))
+                    stem = _chapter_stem(ch)
+                    tex_path = proj_dir / f"{stem}.tex"
+                    tex_path.write_text(
+                        serialize_chapter_body(doc), encoding="utf-8")
+                except Exception:
+                    pass
+        # Write the master .tex
+        master_tex = serialize_project_master(self._project)
         master_stem = self._project_path.stem
         if master_stem.endswith(".kdocproj"):
             master_stem = master_stem[:-len(".kdocproj")]
         master_path = proj_dir / f"{master_stem}.tex"
-        if not master_path.exists():
-            self._status.showMessage("Master .tex not found", 3000)
-            return
-        source = master_path.read_text(encoding="utf-8")
+        master_path.write_text(master_tex, encoding="utf-8")
+        # Save the manifest too
+        self._project_path.write_text(
+            project_to_json(self._project), encoding="utf-8")
+        # Copy chapter .tex files into the build dir so \include can find them
+        self._build_dir.mkdir(parents=True, exist_ok=True)
+        for ch in self._project.chapters:
+            stem = _chapter_stem(ch)
+            src = proj_dir / f"{stem}.tex"
+            if src.exists():
+                _shutil.copy2(src, self._build_dir / f"{stem}.tex")
+        source = master_tex
         if self._compiler == "typst":
             self._status.showMessage(
                 "Project compilation only supports LaTeX", 3000)
@@ -4167,6 +4191,10 @@ class MainWindow(QMainWindow):
             self._kick_compile()
 
     def _kick_compile(self) -> None:
+        # When a project is open, always compile the full project
+        if self._project is not None:
+            self._compile_project()
+            return
         if self._compiler == "typst":
             if not typst_available():
                 self._preview.show_message(
@@ -4194,7 +4222,7 @@ class MainWindow(QMainWindow):
             compiler=self._compiler)
         self._compile_worker.finished_with.connect(self._on_compile_done)
         self._compile_worker.start()
-        self._compile_label.setText("Compiling…")
+        self._compile_label.setText("Compiling\u2026")
         self._compile_label.show()
         self._compile_progress.show()
 
