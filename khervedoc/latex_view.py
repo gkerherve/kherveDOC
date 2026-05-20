@@ -104,6 +104,8 @@ _BEGIN_LIST_RE = _env_re(_LIST_ENVS, begin=True)
 _END_LIST_RE = _env_re(_LIST_ENVS, begin=False)
 _BEGIN_ABSTRACT_RE = _env_re(_ABSTRACT_ENVS, begin=True)
 _END_ABSTRACT_RE = _env_re(_ABSTRACT_ENVS, begin=False)
+# Wiley-style \abstract[...]{...} command (not environment).
+_ABSTRACT_CMD_RE = QRegularExpression(r"^\s*\\abstract\b")
 _BEGIN_CITE_RE = _env_re(_CITE_ENVS, begin=True)
 _END_CITE_RE = _env_re(_CITE_ENVS, begin=False)
 _BEGIN_CODE_RE = _env_re(_CODE_ENVS, begin=True)
@@ -225,6 +227,8 @@ class LatexHighlighter(QSyntaxHighlighter):
             block_fmt = getattr(self, attr)
             if end_re.match(text).hasMatch():
                 state = _STATE_NORMAL
+        elif _ABSTRACT_CMD_RE.match(text).hasMatch():
+            block_fmt = self._abstract_fmt
         elif _SECTION_RE.match(text).hasMatch():
             block_fmt = self._section_fmt
             is_section = True

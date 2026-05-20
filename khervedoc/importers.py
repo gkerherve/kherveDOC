@@ -49,7 +49,9 @@ def _strip_balanced_command(src: str, command: str) -> str:
             return "".join(out)
         out.append(src[pos:m.start()])
         p = m.end()
-        # Skip optional brackets.
+        # Skip whitespace + optional brackets, tolerating spaces.
+        while p < len(src) and src[p] in " \t\n":
+            p += 1
         while p < len(src) and src[p] == "[":
             depth = 1; j = p + 1
             while j < len(src) and depth > 0:
@@ -57,6 +59,8 @@ def _strip_balanced_command(src: str, command: str) -> str:
                 elif src[j] == "]": depth -= 1
                 j += 1
             p = j
+            while p < len(src) and src[p] in " \t\n":
+                p += 1
         # Skip balanced { ... } argument if present.
         if p < len(src) and src[p] == "{":
             _, p = _consume_braced(src, p)
@@ -111,6 +115,7 @@ def _extract_preamble_extras(src: str, *, strip_author: bool = True) -> str:
 _BODY_FRONTMATTER_CMDS = (
     "author", "address", "authormark", "titlemark", "cortext",
     "fntext", "ead", "journal", "abstract", "keywords",
+    "corres", "presentaddress", "email",
 )
 
 
@@ -141,9 +146,12 @@ def _extract_body_frontmatter(body: str) -> tuple[str, str]:
             m = pat.search(cleaned)
             if not m:
                 break
-            # Walk past optional [...] and required {...} arguments.
+            # Walk past optional [...] and required {...} arguments,
+            # tolerating whitespace between ] and { (common in .tex).
             start = m.start()
             p = m.end()
+            while p < len(cleaned) and cleaned[p] in " \t\n":
+                p += 1
             while p < len(cleaned) and cleaned[p] == "[":
                 depth = 1; j = p + 1
                 while j < len(cleaned) and depth > 0:
@@ -151,6 +159,8 @@ def _extract_body_frontmatter(body: str) -> tuple[str, str]:
                     elif cleaned[j] == "]": depth -= 1
                     j += 1
                 p = j
+                while p < len(cleaned) and cleaned[p] in " \t\n":
+                    p += 1
             if p < len(cleaned) and cleaned[p] == "{":
                 _, p = _consume_braced(cleaned, p)
             fragment = cleaned[start:p]
@@ -214,7 +224,9 @@ def _extract_braced(src: str, command: str) -> str | None:
     if not m:
         return None
     pos = m.end()
-    # Skip optional bracket arguments.
+    # Skip whitespace + optional bracket arguments.
+    while pos < len(src) and src[pos] in " \t\n":
+        pos += 1
     while pos < len(src) and src[pos] == '[':
         depth = 1; j = pos + 1
         while j < len(src) and depth > 0:
@@ -222,6 +234,8 @@ def _extract_braced(src: str, command: str) -> str | None:
             elif src[j] == ']': depth -= 1
             j += 1
         pos = j
+        while pos < len(src) and src[pos] in " \t\n":
+            pos += 1
     if pos >= len(src) or src[pos] != '{':
         return None
     content, _ = _consume_braced(src, pos)
@@ -316,7 +330,8 @@ def _unescape_text(s: str) -> str:
             .replace(r"\{", "{").replace(r"\}", "}")
             .replace(r"\&", "&").replace(r"\%", "%")
             .replace(r"\$", "$").replace(r"\#", "#")
-            .replace(r"\_", "_"))
+            .replace(r"\_", "_")
+            .replace("~", "\u00a0"))
 
 
 def _parse_inlines(s: str) -> list:
@@ -920,10 +935,29 @@ def import_tex(tex_source: str) -> Document:
     # Non-elsarticle journal classes (Wiley, etc.) place author/address
     # commands in the body rather than the preamble or a frontmatter env.
     # Extract them before parsing blocks so they don't become InlineRaw.
+    body_abstract_text = ""
+    body_keywords_text = ""
     if not is_standard and not is_elsarticle:
         body_fm, body = _extract_body_frontmatter(body)
         if body_fm:
-            frontmatter_extras = body_fm
+            # Pull abstract and keywords out of body_fm so they become
+            # proper model nodes (highlighted in the editor) instead of
+            # opaque raw LaTeX in frontmatter_extras.
+            abs_content = _extract_braced(body_fm, "abstract")
+            if abs_content is not None:
+                body_abstract_text = abs_content
+                body_fm = re.sub(
+                    r"\\abstract\b\s*(?:\[[^\]]*\])?\s*\{",
+                    lambda m: "",
+                    body_fm, count=1)
+                # Remove the matching closing brace — it's the last }
+                # of the extracted command. Use balanced stripping.
+                body_fm = _strip_balanced_command(body_fm, "abstract")
+            kw_content = _extract_braced(body_fm, "keywords")
+            if kw_content is not None:
+                body_keywords_text = kw_content
+                body_fm = _strip_balanced_command(body_fm, "keywords")
+            frontmatter_extras = body_fm.strip()
             meta.frontmatter_extras = frontmatter_extras
 
     children = _parse_blocks(body)
@@ -942,6 +976,24 @@ def import_tex(tex_source: str) -> Document:
                 c.marks = [m for m in c.marks if m != "bold"]
         children.insert(0, Title(children=title_inlines))
         meta.title = ""
+
+    # Insert Abstract / Keywords from body frontmatter (Wiley-style) as
+    # proper model nodes so the editor highlights them.
+    if body_abstract_text and not any(isinstance(b, Abstract) for b in children):
+        abs_inlines = _parse_inlines(body_abstract_text) or [Text(text=body_abstract_text)]
+        # Insert after Title + Author if present.
+        insert_pos = 0
+        for idx, b in enumerate(children):
+            if isinstance(b, (Title, Author)):
+                insert_pos = idx + 1
+        children.insert(insert_pos, Abstract(children=abs_inlines))
+    if body_keywords_text and not any(isinstance(b, Keywords) for b in children):
+        kw_inlines = _parse_inlines(body_keywords_text) or [Text(text=body_keywords_text)]
+        insert_pos = 0
+        for idx, b in enumerate(children):
+            if isinstance(b, (Title, Author, Abstract)):
+                insert_pos = idx + 1
+        children.insert(insert_pos, Keywords(children=kw_inlines))
 
     return Document(meta=meta, children=children)
 

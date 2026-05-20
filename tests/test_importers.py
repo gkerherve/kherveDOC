@@ -761,7 +761,7 @@ def test_wiley_body_frontmatter_extraction():
 Hello world.
 \end{document}"""
     doc = _round_trip(src)
-    # Body-level author/address/abstract commands captured in frontmatter_extras.
+    # Body-level author/address commands captured in frontmatter_extras.
     fm = doc.meta.frontmatter_extras
     assert r"\author[1]{Alice}" in fm
     assert r"\author[2]{Bob}" in fm
@@ -769,8 +769,14 @@ Hello world.
     assert r"\address[2]" in fm
     assert r"\authormark{" in fm
     assert r"\titlemark{" in fm
-    assert r"\abstract[Abstract]{This is the abstract text.}" in fm
-    assert r"\keywords[Keywords]{XPS, fitting}" in fm
+    # Abstract and keywords are extracted as proper model nodes.
+    abs_blocks = [b for b in doc.children if isinstance(b, Abstract)]
+    assert len(abs_blocks) == 1
+    abs_text = "".join(
+        c.text for c in abs_blocks[0].children if hasattr(c, "text"))
+    assert "This is the abstract text." in abs_text
+    kw_blocks = [b for b in doc.children if isinstance(b, Keywords)]
+    assert len(kw_blocks) == 1
     # The body should NOT contain those commands as InlineRaw.
     for block in doc.children:
         if isinstance(block, Paragraph):
@@ -782,11 +788,11 @@ Hello world.
     body = out.split("\\begin{document}")[1]
     assert r"\author[1]{Alice}" in body
     assert r"\author[2]{Bob}" in body
-    assert r"\abstract[Abstract]{This is the abstract text.}" in body
+    assert r"\abstract{" in body
     assert r"\maketitle" in body
     # \maketitle appears after the author/abstract block.
     author_pos = body.index(r"\author[1]{Alice}")
-    abstract_pos = body.index(r"\abstract[Abstract]")
+    abstract_pos = body.index(r"\abstract{")
     maketitle_pos = body.index(r"\maketitle")
     assert author_pos < abstract_pos < maketitle_pos
 
@@ -854,3 +860,29 @@ Powell & Derivative-free \\
     assert len(t.rows) == 3      # header + 2 data rows
     assert t.rows[0][0].strip() == r"\textbf{Method}"
     assert t.caption == "Optimization methods"
+
+
+def test_tilde_cite_round_trip():
+    r"""~\cite{...} must round-trip as ~\cite, not \textasciitilde{}\cite."""
+    src = r"""\documentclass{article}
+\begin{document}
+Some text~\cite{Kwok2000} and more~\cite{Foo2021,Bar2022}.
+\end{document}"""
+    doc = _round_trip(src)
+    out = serialize_document(doc)
+    assert r"~\cite{Kwok2000}" in out
+    assert r"\textasciitilde{}" not in out
+
+
+def test_whitespace_between_bracket_and_brace():
+    r"""\author[1] {Name} with whitespace between ] and { must parse."""
+    src = r"""\documentclass[VANCOUVER]{WileyNJDv5}
+\title{Paper}
+\begin{document}
+\author[1] {William S. J. Skinner}
+\maketitle
+Hello.
+\end{document}"""
+    doc = _round_trip(src)
+    fm = doc.meta.frontmatter_extras
+    assert "William" in fm

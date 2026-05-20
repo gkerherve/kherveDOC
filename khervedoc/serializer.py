@@ -25,6 +25,7 @@ _LATEX_ESCAPES = {
     "_": r"\_",
     "~": r"\textasciitilde{}",
     "^": r"\textasciicircum{}",
+    "\u00a0": "~",
 }
 
 
@@ -528,6 +529,14 @@ def serialize_document(doc: Document) -> str:
     # by \maketitle.
     if fm_extras and not is_elsarticle:
         parts.append(fm_extras + "\n")
+        # Emit abstract/keywords (now model nodes) back before \maketitle.
+        for blk in doc.children:
+            if isinstance(blk, Abstract):
+                parts.append(f"\\abstract{{{serialize_inlines(blk.children)}}}\n")
+            elif isinstance(blk, Keywords):
+                kw_group = [blk]
+                kw_terms = _split_keyword_inlines(kw_group)
+                parts.append(f"\\keywords{{{', '.join(kw_terms)}}}\n")
         parts.append("\\maketitle\n")
         emitted_maketitle = True
     children = doc.children
@@ -587,9 +596,9 @@ def serialize_document(doc: Document) -> str:
                 if i < n: parts.append("\n")
                 continue
 
-            # Skip Title/Author blocks when body frontmatter already
-            # carries the full metadata + \maketitle.
-            if fm_extras and isinstance(block, (Title, Author)):
+            # Skip Title/Author/Abstract/Keywords blocks when body
+            # frontmatter already carries the full metadata + \maketitle.
+            if fm_extras and isinstance(block, (Title, Author, Abstract, Keywords)):
                 i += 1
                 continue
             rendered = serialize_block(block, has_chapters=has_chapters,
