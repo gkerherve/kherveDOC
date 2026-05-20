@@ -475,6 +475,13 @@ def serialize_document(doc: Document) -> str:
     inline_author = " \\\\\n".join(author_parts) if author_parts else None
     author_text = inline_author if inline_author is not None else (
         escape_text((doc.meta.author or "").strip()))
+    # LaTeX's \maketitle puts \@author inside a non-wrapping tabular{c}.
+    # Long author lists overflow the margins. Wrap in a \parbox so the
+    # text reflows naturally.
+    if author_text and len(author_text) > 80:
+        author_text = (
+            f"\\parbox{{\\textwidth}}{{\\centering {author_text}}}"
+        )
 
     has_metadata = bool(title_text or author_text)
 
