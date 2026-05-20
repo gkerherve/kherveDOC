@@ -906,6 +906,19 @@ class MainWindow(QMainWindow):
         self._io_progress.hide()
         self._status.addPermanentWidget(self._io_progress)
 
+        self._compile_label = QLabel("", self)
+        self._compile_label.setStyleSheet(
+            f"padding: 0 4px; color: {self._theme['status_text']};")
+        self._compile_label.hide()
+        self._status.addPermanentWidget(self._compile_label)
+
+        self._compile_progress = QProgressBar(self)
+        self._compile_progress.setRange(0, 0)  # indeterminate
+        self._compile_progress.setMaximumWidth(120)
+        self._compile_progress.setMaximumHeight(14)
+        self._compile_progress.hide()
+        self._status.addPermanentWidget(self._compile_progress)
+
         # Initially on Formatted tab — hide PDF zoom, show editor zoom.
         self._pdf_zoom_sep.hide()
         self._pdf_zoom_out_btn.hide()
@@ -3669,10 +3682,14 @@ class MainWindow(QMainWindow):
             compiler=self._compiler)
         self._compile_worker.finished_with.connect(self._on_compile_done)
         self._compile_worker.start()
-        self._status.showMessage("Compiling...", 0)
+        self._compile_label.setText("Compiling…")
+        self._compile_label.show()
+        self._compile_progress.show()
 
     def _on_compile_done(self, result: CompileResult) -> None:
-        self._status.clearMessage()
+        self._compile_label.hide()
+        self._compile_label.setText("")
+        self._compile_progress.hide()
         # Always feed the full log to the console widgets.
         self._update_console(result)
         if result.ok and result.pdf_path is not None:
