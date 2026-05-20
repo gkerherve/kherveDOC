@@ -1861,6 +1861,1758 @@ def beamer_slides() -> Document:
     )
 
 
+# ------------------------------------------------------- curriculum vitae
+
+def cv() -> Document:
+    """Academic CV / résumé — sections for education, experience,
+    publications and skills."""
+    return Document(
+        meta=_meta(
+            title="Curriculum Vitae",
+            author="J. Researcher",
+            body_font_pt=11,
+            margin_left_cm=2.0, margin_right_cm=2.0,
+            margin_top_cm=2.0, margin_bottom_cm=2.0,
+            paragraph_indent=False,
+        ),
+        children=[
+            Title(children=[Text(text="Dr Jane A. Researcher")]),
+            Author(children=[Text(text="Curriculum Vitae")]),
+
+            Paragraph(children=[
+                Text(text="Department of Physics, University of Somewhere · "),
+                Link(url="mailto:jane.researcher@example.org",
+                     children=[Text(text="jane.researcher@example.org")]),
+                Text(text=" · "),
+                Link(url="https://orcid.org/0000-0000-0000-0001",
+                     children=[Text(text="ORCID 0000-0000-0000-0001")]),
+            ], alignment="center"),
+
+            Section(level=1, children=[Text(text="Education")]),
+            _p(("PhD in Condensed Matter Physics", ["bold"]),
+               ", University of Somewhere, 2019–2023"),
+            _p("Thesis: ", ("Topological phases in two-dimensional "
+               "electron gases under periodic driving", ["italic"])),
+            _p("Supervisor: Prof. M. Topologist"),
+            Paragraph(children=[Text(text="")]),
+            _p(("MSci Physics (First Class)", ["bold"]),
+               ", Imperial College London, 2015–2019"),
+            _p("Final-year project: ", ("Raman spectroscopy of "
+               "graphene heterostructures", ["italic"])),
+
+            Section(level=1, children=[Text(text="Research experience")]),
+            _p(("Postdoctoral Research Associate", ["bold"]),
+               " — University of Somewhere, Oct 2023–present"),
+            _items(
+                "Developing theoretical models for Floquet topological "
+                "insulators under dissipation",
+                "Supervising two PhD students on related projects",
+                "Maintaining group computing cluster (48 nodes, SLURM)",
+            ),
+            Paragraph(children=[Text(text="")]),
+            _p(("Graduate Research Assistant", ["bold"]),
+               " — University of Somewhere, Sep 2019–Sep 2023"),
+            _items(
+                "Derived analytic expressions for edge-state "
+                "transport in periodically driven honeycomb lattices",
+                "Implemented tight-binding simulations in Julia, "
+                "achieving 10× speedup over legacy Fortran code",
+                "Presented at 5 international conferences (2 invited talks)",
+            ),
+
+            Section(level=1, children=[Text(text="Selected publications")]),
+            _ord_items(
+                "J. A. Researcher, M. Topologist, \"Floquet edge modes "
+                "in dissipative honeycomb lattices,\" Phys. Rev. Lett. "
+                "132, 076401 (2024).",
+                "J. A. Researcher, K. Collaborator, \"Raman signatures "
+                "of twist-angle disorder in graphene moiré "
+                "superlattices,\" Nano Lett. 21, 4532–4539 (2021).",
+                "J. A. Researcher, \"Topological invariants of "
+                "periodically driven systems: a pedagogical review,\" "
+                "J. Phys. A: Math. Theor. 55, 123001 (2022).",
+            ),
+
+            Section(level=1, children=[Text(text="Teaching")]),
+            _items(
+                "Demonstrator, Quantum Mechanics II (3rd year), "
+                "2020–2023",
+                "Tutorial leader, Mathematical Methods (2nd year), "
+                "2021–2022",
+                "Lecturer, Summer school on topological matter, "
+                "University of Elsewhere, Jul 2024",
+            ),
+
+            Section(level=1, children=[Text(text="Skills")]),
+            Table(
+                rows=[
+                    ["Category",      "Details"],
+                    ["Programming",   "Python, Julia, Fortran, C, Bash"],
+                    ["Scientific",    "NumPy, SciPy, QuTiP, Kwant, "
+                                      "Matplotlib, LaTeX"],
+                    ["HPC",           "SLURM, MPI, OpenMP, GPU (CUDA)"],
+                    ["Languages",     "English (native), French (fluent), "
+                                      "German (intermediate)"],
+                ],
+                caption="",
+                alignment="ll",
+            ),
+
+            Section(level=1, children=[Text(text="Awards and grants")]),
+            _items(
+                "EPSRC Postdoctoral Fellowship, 2024–2027 (£350 k)",
+                "Best Poster Prize, Condensed Matter Physics "
+                "conference, 2022",
+                "Imperial College President's PhD Scholarship, 2019",
+                "Dean's List, Department of Physics, 2016–2019",
+            ),
+
+            Section(level=1, children=[Text(text="Professional service")]),
+            _items(
+                "Referee: Phys. Rev. Lett., Phys. Rev. B, "
+                "New J. Phys.",
+                "Organiser: weekly condensed-matter seminar series, "
+                "University of Somewhere, 2024–present",
+                "Outreach: annual public lecture on quantum materials, "
+                "Science Festival 2023 and 2024",
+            ),
+        ],
+    )
+
+
+# ------------------------------------------------------------ lab report
+
+def lab_report() -> Document:
+    """Undergraduate / graduate lab report with objective, theory,
+    apparatus, procedure, data, analysis and conclusion."""
+    return Document(
+        meta=_meta(
+            title="Lab report",
+            author="A. Student",
+            body_font_pt=12,
+            line_spacing=1.15,
+        ),
+        children=[
+            Title(children=[Text(text="Determination of the speed of "
+                                      "sound in air by resonance-tube "
+                                      "method")]),
+            Author(children=[Text(text="A. Student — PHYS 2010 Lab, "
+                                       "Group 4B")]),
+
+            Section(level=1, children=[Text(text="Objective")]),
+            _p(
+                "To determine the speed of sound in air at room "
+                "temperature by measuring the resonance lengths of a "
+                "closed tube driven by tuning forks of known frequency, "
+                "and to compare the result with the accepted value.",
+            ),
+
+            Section(level=1, children=[Text(text="Theory")]),
+            _p(
+                "A closed cylindrical tube supports standing waves "
+                "when the air column length satisfies the resonance "
+                "condition for odd multiples of a quarter wavelength. "
+                "For the ", MathInline(latex="n"),
+                "-th resonance (", MathInline(latex="n = 1, 3, 5, \\ldots"),
+                ") the effective length is",
+            ),
+            MathBlock(
+                latex=r"L_n + \epsilon = \frac{n \lambda}{4},"
+                      r"\qquad n = 1, 3, 5, \ldots",
+                numbered=True, label="eq:resonance",
+            ),
+            _p(
+                "where ", MathInline(latex="L_n"),
+                " is the measured length from the open end to the "
+                "water surface, ", MathInline(latex="\\epsilon"),
+                " is the end correction (approximately ",
+                MathInline(latex="0.6 r"), " for a tube of radius ",
+                MathInline(latex="r"), "), and ",
+                MathInline(latex="\\lambda = v / f"),
+                " is the wavelength corresponding to frequency ",
+                MathInline(latex="f"), " and speed ",
+                MathInline(latex="v"), ".",
+            ),
+            _p(
+                "Eliminating the end correction between two "
+                "successive resonances gives",
+            ),
+            MathBlock(
+                latex=r"v = 2 f (L_3 - L_1).",
+                numbered=True, label="eq:speed",
+            ),
+
+            Section(level=1, children=[Text(text="Apparatus")]),
+            _items(
+                "Glass resonance tube (length 100 cm, inner diameter "
+                "3.4 cm) with adjustable water reservoir",
+                "Tuning forks: 256 Hz, 440 Hz, 512 Hz (calibrated "
+                "±0.5 Hz)",
+                "Metre ruler (±0.5 mm) and vernier caliper (±0.02 mm)",
+                "Digital thermometer (±0.1 °C)",
+                "Rubber mallet for striking the tuning forks",
+            ),
+
+            Section(level=1, children=[Text(text="Procedure")]),
+            _ord_items(
+                "Record ambient temperature and atmospheric pressure.",
+                "Strike the 256 Hz tuning fork and hold it at the "
+                "open end of the tube.",
+                "Slowly lower the water level until the first loud "
+                "resonance is heard; record L₁.",
+                "Continue lowering until the second resonance is "
+                "heard; record L₃.",
+                "Repeat three times and average.",
+                "Repeat for the 440 Hz and 512 Hz forks.",
+            ),
+
+            Section(level=1, children=[Text(text="Data")]),
+            _p("Room temperature: ",
+               MathInline(latex="T = 21.3 \\pm 0.1"),
+               " °C. Atmospheric pressure: 1013 hPa."),
+            Table(
+                rows=[
+                    ["Fork (Hz)", "Trial", "L₁ (cm)", "L₃ (cm)"],
+                    ["256",       "1",     "31.8",    "98.2"],
+                    ["256",       "2",     "31.6",    "98.0"],
+                    ["256",       "3",     "31.9",    "98.4"],
+                    ["440",       "1",     "18.2",    "57.3"],
+                    ["440",       "2",     "18.4",    "57.1"],
+                    ["440",       "3",     "18.3",    "57.4"],
+                    ["512",       "1",     "15.6",    "49.0"],
+                    ["512",       "2",     "15.5",    "48.8"],
+                    ["512",       "3",     "15.7",    "49.1"],
+                ],
+                caption="Measured resonance lengths for three tuning forks.",
+                label="tab:data",
+                alignment="llrr",
+            ),
+
+            Section(level=1, children=[Text(text="Analysis")]),
+            _p(
+                "Applying Equation ",
+                CrossRef(label="eq:speed", kind="eqref"),
+                " to the averaged lengths for the 256 Hz fork:",
+            ),
+            MathBlock(
+                latex=(r"v = 2 \times 256 \times (0.982 - 0.318)"
+                       r" = 340.2\;\text{m/s}."),
+                numbered=False,
+            ),
+            _p("Repeating for all three forks:"),
+            Table(
+                rows=[
+                    ["Fork (Hz)", "v (m/s)"],
+                    ["256",       "340.2 ± 1.8"],
+                    ["440",       "343.1 ± 2.1"],
+                    ["512",       "342.0 ± 1.6"],
+                ],
+                caption="Speed of sound derived from each tuning fork.",
+                label="tab:results",
+                alignment="lr",
+            ),
+            _p(
+                "The weighted mean is ",
+                MathInline(latex="v = 341.6 \\pm 1.0"),
+                " m/s. The accepted value at 21.3 °C is",
+            ),
+            MathBlock(
+                latex=r"v_{\text{ref}} = 331.3 + 0.606 \times 21.3 "
+                      r"= 344.2\;\text{m/s},",
+                numbered=False,
+            ),
+            _p(
+                "giving a percentage discrepancy of 0.8%, which is "
+                "within the combined uncertainty.",
+            ),
+
+            Section(level=1, children=[Text(text="Discussion")]),
+            _p(
+                "The systematic under-estimate may be partly explained "
+                "by the end correction: the simple formula ",
+                MathInline(latex="\\epsilon \\approx 0.6 r"),
+                " assumes an infinite baffle, whereas our open tube "
+                "end radiates into free space. Additionally, the "
+                "tuning forks may have drifted slightly from their "
+                "nominal frequencies with age. A future experiment "
+                "could use a frequency counter to verify the fork "
+                "output directly.",
+            ),
+
+            Section(level=1, children=[Text(text="Conclusion")]),
+            _p(
+                "The speed of sound in air was measured as ",
+                MathInline(latex="341.6 \\pm 1.0"),
+                " m/s at 21.3 °C, consistent with the expected value "
+                "of 344.2 m/s within experimental uncertainty. The "
+                "resonance-tube method provides a straightforward and "
+                "reliable measurement of the speed of sound.",
+            ),
+        ],
+    )
+
+
+# --------------------------------------------------------- homework / problem set
+
+def homework() -> Document:
+    """Homework or problem-set template — numbered problems with
+    solutions containing display math."""
+    return Document(
+        meta=_meta(
+            title="Problem set",
+            author="A. Student",
+            body_font_pt=11,
+            line_spacing=1.15,
+            paragraph_indent=False,
+        ),
+        children=[
+            Title(children=[Text(text="MATH 3120 — Problem Set 7")]),
+            Author(children=[Text(text="A. Student — Due: 30 May 2026")]),
+
+            # Problem 1
+            Section(level=1, children=[Text(text="Problem 1")]),
+            _p(("Statement.", ["bold"]),
+               " Let ", MathInline(latex="V"),
+               " be a finite-dimensional inner-product space over ",
+               MathInline(latex="\\mathbb{R}"),
+               " and let ", MathInline(latex="T: V \\to V"),
+               " be a self-adjoint linear operator. Prove that all "
+               "eigenvalues of ", MathInline(latex="T"),
+               " are real."),
+
+            Section(level=2, children=[Text(text="Solution")]),
+            _p(
+                "Let ", MathInline(latex="\\lambda"),
+                " be an eigenvalue of ", MathInline(latex="T"),
+                " with eigenvector ",
+                MathInline(latex="v \\neq 0"), ". Then",
+            ),
+            MathBlock(
+                latex=(
+                    "\\begin{align}\n"
+                    "  \\lambda \\langle v, v \\rangle "
+                    "&= \\langle \\lambda v, v \\rangle "
+                    "= \\langle Tv, v \\rangle \\\\\n"
+                    "  &= \\langle v, Tv \\rangle "
+                    "= \\langle v, \\lambda v \\rangle "
+                    "= \\bar{\\lambda} \\langle v, v \\rangle.\n"
+                    "\\end{align}"
+                ),
+                numbered=True, label="eq:selfadj",
+            ),
+            _p(
+                "Since ", MathInline(latex="v \\neq 0"),
+                " we have ",
+                MathInline(latex="\\langle v, v \\rangle > 0"),
+                ", so dividing both sides gives ",
+                MathInline(latex="\\lambda = \\bar{\\lambda}"),
+                ", i.e. ", MathInline(latex="\\lambda \\in \\mathbb{R}"),
+                ". ", MathInline(latex="\\square"),
+            ),
+
+            # Problem 2
+            Section(level=1, children=[Text(text="Problem 2")]),
+            _p(("Statement.", ["bold"]),
+               " Evaluate the integral"),
+            MathBlock(
+                latex=r"I = \int_0^{\infty} \frac{\sin x}{x} \, dx.",
+                numbered=True, label="eq:sinc",
+            ),
+
+            Section(level=2, children=[Text(text="Solution")]),
+            _p(
+                "Consider the Laplace-transform trick. Define",
+            ),
+            MathBlock(
+                latex=r"F(s) = \int_0^{\infty} \frac{e^{-sx} \sin x}{x}"
+                      r"\, dx, \qquad s > 0.",
+                numbered=True, label="eq:laplace",
+            ),
+            _p("Differentiating under the integral sign:"),
+            MathBlock(
+                latex=(
+                    "\\begin{align}\n"
+                    "  F'(s) &= -\\int_0^{\\infty} e^{-sx} \\sin x \\, dx "
+                    "= -\\frac{1}{s^2 + 1}.\n"
+                    "\\end{align}"
+                ),
+                numbered=True,
+            ),
+            _p(
+                "Integrating: ",
+                MathInline(latex="F(s) = C - \\arctan s"),
+                ". As ", MathInline(latex="s \\to \\infty"),
+                ", ", MathInline(latex="F(s) \\to 0"),
+                ", so ", MathInline(latex="C = \\pi/2"), ". Therefore",
+            ),
+            MathBlock(
+                latex=r"I = \lim_{s \to 0^+} F(s) = \frac{\pi}{2} - 0 "
+                      r"= \frac{\pi}{2}.",
+                numbered=True, label="eq:sinc-result",
+            ),
+
+            # Problem 3
+            Section(level=1, children=[Text(text="Problem 3")]),
+            _p(("Statement.", ["bold"]),
+               " Find all groups of order 6, up to isomorphism."),
+
+            Section(level=2, children=[Text(text="Solution")]),
+            _p(
+                "Let ", MathInline(latex="G"),
+                " be a group with ", MathInline(latex="|G| = 6 = 2 \\cdot 3"),
+                ". By Cauchy's theorem, ", MathInline(latex="G"),
+                " contains elements of order 2 and 3.",
+            ),
+            _p(
+                ("Case 1: ", ["bold"]), MathInline(latex="G"),
+                (" is abelian.", ["italic"]),
+                " Then by the fundamental theorem of finitely generated "
+                "abelian groups, ",
+                MathInline(latex="G \\cong \\mathbb{Z}/6\\mathbb{Z}"),
+                ", which is cyclic.",
+            ),
+            _p(
+                ("Case 2: ", ["bold"]), MathInline(latex="G"),
+                (" is non-abelian.", ["italic"]),
+                " By Sylow's theorem, the number of Sylow 3-subgroups "
+                "divides 2 and is ", MathInline(latex="\\equiv 1 \\pmod{3}"),
+                ", so there is exactly one Sylow 3-subgroup ",
+                MathInline(latex="N \\cong \\mathbb{Z}/3\\mathbb{Z}"),
+                ", which is therefore normal. Let ",
+                MathInline(latex="t"), " have order 2. Then ",
+                MathInline(latex="G = N \\rtimes \\langle t \\rangle"),
+                " where ", MathInline(latex="t"),
+                " acts on ", MathInline(latex="N"),
+                " by inversion. This is precisely ",
+                MathInline(latex="S_3"), ", the symmetric group on "
+                "three letters.",
+            ),
+            _p(
+                "Therefore the only groups of order 6 are ",
+                MathInline(latex="\\mathbb{Z}/6\\mathbb{Z}"),
+                " and ", MathInline(latex="S_3"),
+                ". ", MathInline(latex="\\square"),
+            ),
+
+            # Problem 4
+            Section(level=1, children=[Text(text="Problem 4")]),
+            _p(("Statement.", ["bold"]),
+               " Let ", MathInline(latex="f: [0,1] \\to \\mathbb{R}"),
+               " be continuous and suppose ",
+               MathInline(latex="\\int_0^1 f(x) x^n \\, dx = 0"),
+               " for all ", MathInline(latex="n \\geq 0"),
+               ". Show that ", MathInline(latex="f \\equiv 0"), "."),
+
+            Section(level=2, children=[Text(text="Solution")]),
+            _p(
+                "By the Weierstrass approximation theorem, for every ",
+                MathInline(latex="\\epsilon > 0"),
+                " there exists a polynomial ",
+                MathInline(latex="p"), " such that ",
+                MathInline(latex="\\|f - p\\|_\\infty < \\epsilon"),
+                ". By linearity of the integral and the hypothesis, ",
+                MathInline(latex="\\int_0^1 f(x) p(x) \\, dx = 0"),
+                ". Therefore",
+            ),
+            MathBlock(
+                latex=(
+                    "\\begin{align}\n"
+                    "  \\int_0^1 f(x)^2 \\, dx "
+                    "&= \\int_0^1 f(x)(f(x) - p(x)) \\, dx \\\\\n"
+                    "  &\\leq \\|f\\|_\\infty \\cdot \\epsilon.\n"
+                    "\\end{align}"
+                ),
+                numbered=True,
+            ),
+            _p(
+                "Since ", MathInline(latex="\\epsilon"),
+                " is arbitrary, ",
+                MathInline(latex="\\int_0^1 f(x)^2 \\, dx = 0"),
+                ". Because ", MathInline(latex="f"),
+                " is continuous and non-negative under the square, "
+                "this forces ",
+                MathInline(latex="f \\equiv 0"),
+                ". ", MathInline(latex="\\square"),
+            ),
+        ],
+    )
+
+
+# --------------------------------------------------------- technical memo
+
+def memo() -> Document:
+    """Short technical memo — one-page internal document with wide
+    margins and no abstract."""
+    return Document(
+        meta=_meta(
+            title="", author="",
+            body_font_pt=11,
+            margin_left_cm=3.0, margin_right_cm=3.0,
+            margin_top_cm=2.5, margin_bottom_cm=2.5,
+            paragraph_indent=False,
+        ),
+        children=[
+            # Header block
+            Paragraph(children=[
+                Text(text="TECHNICAL MEMO", marks=["bold"]),
+            ], alignment="center"),
+            Paragraph(children=[Text(text="")]),
+            Table(
+                rows=[
+                    ["To:",      "Engineering team"],
+                    ["From:",    "J. Author, Systems lead"],
+                    ["Date:",    "20 May 2026"],
+                    ["Subject:", "Migration from PostgreSQL 14 to 16"],
+                ],
+                alignment="ll",
+            ),
+
+            RawLatex(text="\\noindent\\rule{\\textwidth}{0.4pt}"),
+            Paragraph(children=[Text(text="")]),
+
+            Section(level=1, children=[Text(text="Summary")]),
+            _p(
+                "We propose migrating the production database from "
+                "PostgreSQL 14 to PostgreSQL 16 during the next "
+                "maintenance window (7–8 June 2026). The upgrade "
+                "brings logical-replication improvements that unblock "
+                "the event-sourcing work planned for Q3, and addresses "
+                "three CVEs in the current version.",
+            ),
+
+            Section(level=1, children=[Text(text="Background")]),
+            _p(
+                "PostgreSQL 14 reached community end-of-life in "
+                "November 2025. While our managed-service provider "
+                "still ships security patches, several extensions we "
+                "depend on (pg_partman, pgvector) have dropped CI "
+                "testing against version 14. Staying on it increases "
+                "our surface area for compatibility regressions.",
+            ),
+
+            Section(level=1, children=[Text(text="Proposal")]),
+            _ord_items(
+                "Spin up a PG 16 replica using pg_upgrade on the "
+                "staging cluster this week.",
+                "Run the full regression-test suite against staging "
+                "for two weeks (24 May – 6 June).",
+                "Execute the cutover on the production primary during "
+                "the 7 June maintenance window using pg_basebackup.",
+                "Keep the PG 14 standby alive for 48 hours as a "
+                "rollback target.",
+                "Decommission the old cluster once sign-off is "
+                "received from the on-call rotation.",
+            ),
+
+            Section(level=1, children=[Text(text="Risks")]),
+            Table(
+                rows=[
+                    ["Risk",                        "Likelihood", "Mitigation"],
+                    ["Extension incompatibility",   "Low",
+                     "Pre-tested in staging"],
+                    ["Replication lag during cutover", "Medium",
+                     "Schedule during low-traffic window"],
+                    ["Rollback needed after 48 h",  "Very low",
+                     "WAL archiving to S3"],
+                ],
+                caption="Risk assessment for the migration.",
+                label="tab:risks",
+                alignment="llp{6cm}",
+            ),
+
+            Section(level=1, children=[Text(text="Decision requested")]),
+            _p(
+                "Please confirm by 28 May whether the 7 June window "
+                "is acceptable, or suggest an alternative date. If "
+                "there are no objections by that date we will proceed "
+                "as described above.",
+            ),
+        ],
+    )
+
+
+# ---------------------------------------------------- literature review
+
+def literature_review() -> Document:
+    """Citation-heavy literature review — demonstrates extensive use of
+    citations, thematic sections, and critical synthesis."""
+    return Document(
+        meta=_meta(
+            title="Literature review",
+            author="A. Researcher",
+            body_font_pt=12,
+            line_spacing=1.5,
+            packages=DEFAULT_PACKAGES + ["natbib", "hyperref"],
+        ),
+        children=[
+            Title(children=[Text(text="Machine learning for materials "
+                                      "discovery: a literature review")]),
+            Author(children=[Text(text="A. Researcher — Department of "
+                                       "Materials Science")]),
+            Abstract(children=[Text(text=
+                "This review surveys the application of machine-learning "
+                "techniques to the discovery and design of novel "
+                "materials, covering work published between 2018 and "
+                "2026. We organise the literature into three themes: "
+                "property prediction, generative design, and active "
+                "learning for experimental guidance. For each theme "
+                "we identify the dominant methods, the benchmark "
+                "datasets, and the principal open challenges.")]),
+            Keywords(children=[Text(text="machine learning · materials "
+                "science · property prediction · generative models · "
+                "active learning")]),
+
+            Section(level=1, children=[Text(text="Introduction")]),
+            _p(
+                "The intersection of machine learning and materials "
+                "science has grown rapidly over the past decade. Early "
+                "work focused on supervised learning for property "
+                "prediction ",
+                Citation(keys=["ward2016", "xie2018"], style="citep"),
+                ", but the field has since broadened to encompass "
+                "generative models that propose new compositions ",
+                Citation(keys=["noh2019", "dan2020"], style="citep"),
+                " and active-learning frameworks that guide expensive "
+                "experiments toward the most informative measurements ",
+                Citation(keys=["lookman2019"], style="citep"),
+                ".",
+            ),
+            _p(
+                "The goal of this review is to provide a structured "
+                "overview of these three threads and to identify gaps "
+                "where future research is most needed. We restrict "
+                "ourselves to inorganic crystalline materials; organic "
+                "and polymer systems are covered elsewhere ",
+                Citation(keys=["butler2018"], style="citep"), ".",
+            ),
+
+            Section(level=1, children=[Text(text="Property prediction")]),
+            _p(
+                "The most mature sub-field uses supervised learning "
+                "to map material descriptors to target properties. "
+                "Early models relied on hand-crafted feature vectors ",
+                Citation(keys=["ward2016"], style="citep"),
+                ", whereas more recent approaches learn "
+                "representations directly from crystal graphs ",
+                Citation(keys=["xie2018", "chen2019"], style="citep"),
+                ".",
+            ),
+            _p(
+                "Graph neural networks (GNNs) have emerged as the "
+                "dominant architecture. ",
+                Citation(keys=["xie2018"], style="citet"),
+                " introduced the Crystal Graph Convolutional Neural "
+                "Network (CGCNN), achieving mean absolute errors below "
+                "0.05 eV/atom for formation energy on the Materials "
+                "Project dataset. Subsequent work by ",
+                Citation(keys=["chen2019"], style="citet"),
+                " extended this with multi-edge interactions, reaching "
+                "state-of-the-art accuracy on 7 of 10 benchmark tasks.",
+            ),
+            _p(
+                "Despite these advances, two limitations persist. "
+                "First, most models are trained on DFT-computed "
+                "properties, which themselves carry systematic errors "
+                "relative to experiment. Second, extrapolation to "
+                "chemistries outside the training distribution remains "
+                "unreliable ",
+                Citation(keys=["bartel2020"], style="citep"), ".",
+            ),
+
+            Section(level=1, children=[Text(text="Generative design")]),
+            _p(
+                "Generative models aim to propose novel materials "
+                "that optimise one or more target properties. "
+                "Variational autoencoders (VAEs) were among the first "
+                "architectures applied ",
+                Citation(keys=["noh2019"], style="citep"),
+                ", followed by generative adversarial networks ",
+                Citation(keys=["dan2020"], style="citep"),
+                " and, more recently, diffusion models ",
+                Citation(keys=["xie2022"], style="citep"), ".",
+            ),
+            _p(
+                "A central challenge is ensuring that generated "
+                "structures are synthesisable. ",
+                Citation(keys=["dan2020"], style="citet"),
+                " addressed this by conditioning the generator on "
+                "stability criteria from the convex hull. ",
+                Citation(keys=["xie2022"], style="citet"),
+                " took a different approach, training a denoising "
+                "diffusion model on relaxed DFT structures so that "
+                "the generated samples are already near local energy "
+                "minima.",
+            ),
+
+            Section(level=1, children=[Text(text="Active learning")]),
+            _p(
+                "Active learning closes the loop between prediction "
+                "and experiment by selecting the next measurement to "
+                "maximise information gain. ",
+                Citation(keys=["lookman2019"], style="citet"),
+                " demonstrated this for shape-memory alloys, reducing "
+                "the number of experiments needed to find a target "
+                "composition by a factor of three compared to grid "
+                "search.",
+            ),
+            _p(
+                "Bayesian optimisation is the dominant framework, "
+                "typically using a Gaussian process surrogate ",
+                Citation(keys=["frazier2018"], style="citep"),
+                ". Recent work has explored multi-fidelity "
+                "acquisition functions that mix cheap DFT evaluations "
+                "with expensive experimental measurements, further "
+                "reducing the total cost of exploration ",
+                Citation(keys=["palizhati2022"], style="citep"),
+                ".",
+            ),
+
+            Section(level=1, children=[Text(text="Open challenges")]),
+            _items(
+                "Data scarcity for experimental (as opposed to "
+                "computed) properties remains a bottleneck.",
+                "Uncertainty quantification in deep-learning models "
+                "is still rudimentary compared to Gaussian processes.",
+                "Multi-objective optimisation — balancing stability, "
+                "cost, toxicity and performance — is under-explored.",
+                "Reproducibility: few papers release both code and "
+                "data sufficient to replicate results end-to-end.",
+            ),
+
+            Section(level=1, children=[Text(text="Conclusion")]),
+            _p(
+                "Machine learning has already accelerated several "
+                "stages of the materials-discovery pipeline, from "
+                "screening candidates to guiding synthesis. The most "
+                "impactful next step is likely the integration of "
+                "these tools into closed-loop autonomous laboratories "
+                "where data generation, model updating and decision-"
+                "making happen without human intervention.",
+            ),
+        ],
+    )
+
+
+# ------------------------------------------------------- research proposal
+
+def research_proposal() -> Document:
+    """Research / grant proposal — objectives, background, methodology,
+    timeline, budget overview."""
+    return Document(
+        meta=_meta(
+            title="Research proposal",
+            author="A. Researcher",
+            body_font_pt=12,
+            line_spacing=1.15,
+            packages=DEFAULT_PACKAGES + ["natbib", "hyperref"],
+        ),
+        children=[
+            Title(children=[Text(text="Proposal: Quantum error correction "
+                                      "in superconducting circuits")]),
+            Author(children=[Text(text="Dr A. Researcher — Department "
+                                       "of Quantum Engineering")]),
+
+            Section(level=1, children=[Text(text="Project summary")]),
+            _p(
+                "This proposal requests funding for a three-year "
+                "programme to develop and experimentally validate a "
+                "new family of quantum error-correcting codes tailored "
+                "to the noise characteristics of transmon-based "
+                "superconducting circuits. The expected outcomes are "
+                "(i) a code family with provably lower overhead than "
+                "the surface code for biased noise, (ii) a prototype "
+                "implementation on a 20-qubit device, and (iii) "
+                "open-source software for simulating and benchmarking "
+                "the codes.",
+            ),
+
+            Section(level=1, children=[Text(text="Background and motivation")]),
+            _p(
+                "Quantum error correction (QEC) is widely regarded as "
+                "essential for practical quantum computing ",
+                Citation(keys=["terhal2015", "campbell2017"], style="citep"),
+                ". The surface code ",
+                Citation(keys=["fowler2012"], style="citep"),
+                " is the current front-runner because of its high "
+                "threshold and local stabiliser checks. However, its "
+                "overhead — roughly ",
+                MathInline(latex="O(d^2)"),
+                " physical qubits per logical qubit for code distance ",
+                MathInline(latex="d"),
+                " — remains prohibitive for near-term hardware.",
+            ),
+            _p(
+                "Recent theoretical work has shown that when the "
+                "physical noise is biased (i.e. phase-flip errors "
+                "dominate bit-flip errors, as is typical for transmons "
+                "at long coherence times), tailored codes can achieve "
+                "the same logical error rate with significantly fewer "
+                "qubits ",
+                Citation(keys=["tuckett2020", "dua2024"], style="citep"),
+                ". This project aims to move those theoretical gains "
+                "into the laboratory.",
+            ),
+
+            Section(level=1, children=[Text(text="Objectives")]),
+            _ord_items(
+                "Design a family of bias-tailored stabiliser codes "
+                "optimised for the noise profile of state-of-the-art "
+                "transmon qubits.",
+                "Develop an open-source decoder that runs within the "
+                "real-time feedback latency budget of current "
+                "cryogenic electronics (< 1 μs per syndrome round).",
+                "Implement the best candidate code on a 20-qubit "
+                "superconducting device and measure the logical error "
+                "rate at distances 3, 5 and 7.",
+                "Benchmark the code against the surface code under "
+                "identical hardware conditions.",
+            ),
+
+            Section(level=1, children=[Text(text="Methodology")]),
+            Section(level=2, children=[Text(text="Code construction")]),
+            _p(
+                "We will use a computer search over the space of CSS "
+                "codes with biased distance, parameterised by the "
+                "physical noise bias ratio ",
+                MathInline(latex="\\eta = p_Z / p_X"),
+                ". The search objective is to minimise the number of "
+                "physical qubits ",
+                MathInline(latex="n"),
+                " subject to a target logical error rate:",
+            ),
+            MathBlock(
+                latex=r"p_L \leq p_{\text{phys}}^{\lfloor d/2 \rfloor}"
+                      r"\binom{d}{\lfloor d/2 \rfloor}",
+                numbered=True, label="eq:threshold",
+            ),
+
+            Section(level=2, children=[Text(text="Decoder design")]),
+            _p(
+                "We will adapt the Union-Find decoder ",
+                Citation(keys=["delfosse2021"], style="citep"),
+                " to exploit the noise bias. The key modification is "
+                "a weighted growth rule that expands clusters "
+                "anisotropically in the Tanner graph, reducing the "
+                "average number of growth steps and thus the wall-clock "
+                "decoding time.",
+            ),
+
+            Section(level=2, children=[Text(text="Experimental validation")]),
+            _p(
+                "The experimental work will be carried out on the "
+                "20-qubit device in our laboratory. Each code instance "
+                "will be run for ", MathInline(latex="10^6"),
+                " syndrome rounds, and the logical error rate will be "
+                "extracted by majority-vote decoding of repeated "
+                "stabiliser measurements.",
+            ),
+
+            Section(level=1, children=[Text(text="Timeline")]),
+            Table(
+                rows=[
+                    ["Period",       "Milestone"],
+                    ["Months 1–6",   "Code family enumeration and "
+                                     "simulation"],
+                    ["Months 7–12",  "Decoder implementation and "
+                                     "benchmarking (simulation)"],
+                    ["Months 13–18", "Device calibration and preliminary "
+                                     "experiments at distance 3"],
+                    ["Months 19–30", "Full experimental campaign at "
+                                     "distances 3, 5 and 7"],
+                    ["Months 31–36", "Analysis, publication and software "
+                                     "release"],
+                ],
+                caption="Proposed timeline.",
+                label="tab:timeline",
+                alignment="lp{10cm}",
+            ),
+
+            Section(level=1, children=[Text(text="Budget overview")]),
+            Table(
+                rows=[
+                    ["Item",                     "Cost (£k)"],
+                    ["Postdoc (36 months)",       "180"],
+                    ["PhD student (36 months)",   "90"],
+                    ["Cryostat maintenance",      "40"],
+                    ["Consumables and travel",    "25"],
+                    ["Total",                     "335"],
+                ],
+                caption="Budget summary.",
+                label="tab:budget",
+                alignment="lr",
+            ),
+
+            Section(level=1, children=[Text(text="Expected impact")]),
+            _p(
+                "If successful, this project will demonstrate that "
+                "bias-tailored codes offer a practical route to "
+                "lower-overhead quantum error correction on real "
+                "hardware. The open-source decoder and simulation "
+                "tools will be of immediate use to other experimental "
+                "groups, and the experimental data will provide a "
+                "benchmark for future code designs.",
+            ),
+        ],
+    )
+
+
+# ------------------------------------------------------- book chapter
+
+def book_chapter() -> Document:
+    """Book chapter using the report class — longer-form prose with
+    sub-sections, figures, and footnotes."""
+    return Document(
+        meta=_meta(
+            documentclass="report",
+            title="Book chapter",
+            author="A. Author",
+            body_font_pt=12,
+            line_spacing=1.5,
+            margin_left_cm=3.0, margin_right_cm=3.0,
+            packages=DEFAULT_PACKAGES + ["hyperref"],
+        ),
+        children=[
+            Title(children=[Text(text="The discovery of the neutron")]),
+            Author(children=[Text(text="A. Author — in ",
+                                       marks=["italic"]),
+                             Text(text="Milestones in Nuclear Physics",
+                                  marks=["italic"]),
+                             Text(text=", ed. B. Editor")]),
+
+            Section(level=1, children=[Text(text="The discovery of the "
+                                                  "neutron")]),
+
+            Section(level=2, children=[Text(text="The puzzle of the "
+                                                  "nucleus")]),
+            _p(
+                "By 1930, the atomic nucleus was known to be much "
+                "heavier than its charge alone could explain. The "
+                "prevailing model posited a nucleus of protons and "
+                "electrons, but this created immediate difficulties. "
+                "The spin-statistics problem — nitrogen-14, with 14 "
+                "protons and 7 electrons, should obey Fermi–Dirac "
+                "statistics yet was observed to obey Bose–Einstein "
+                "statistics — was especially troubling",
+                Footnote(children=[Text(text=
+                    "Ehrenfest and Oppenheimer raised this objection "
+                    "as early as 1931; see their paper in Phys. Rev. "
+                    "37, 333.")]),
+                ".",
+            ),
+            _p(
+                "The nuclear-electron model also struggled to explain "
+                "the binding energy. Electrons confined to a region "
+                "the size of a nucleus (", MathInline(latex="\\sim 10^{-15}"),
+                " m) would have kinetic energies of order ",
+                MathInline(latex="\\sim 100"), " MeV by the "
+                "uncertainty principle, far exceeding the observed "
+                "binding energies of a few MeV per nucleon.",
+            ),
+
+            Section(level=2, children=[Text(text="Bothe and Becker's "
+                                                  "radiation")]),
+            _p(
+                "In 1930, Walther Bothe and Herbert Becker bombarded "
+                "beryllium with alpha particles from a polonium "
+                "source and observed a penetrating radiation that they "
+                "interpreted as high-energy gamma rays. The radiation "
+                "was unusually penetrating — far more so than any "
+                "gamma ray known at the time — but without a charge "
+                "measurement there was no way to identify the "
+                "particles directly.",
+            ),
+
+            Section(level=2, children=[Text(text="The Joliot-Curie "
+                                                  "experiment")]),
+            _p(
+                "In January 1932, Irène Joliot-Curie and Frédéric "
+                "Joliot repeated the experiment and placed a paraffin "
+                "target in the path of the radiation. They observed "
+                "that the paraffin emitted protons with energies up "
+                "to about 5.7 MeV. They explained the observation as "
+                "Compton scattering of gamma rays off hydrogen nuclei, "
+                "but the kinematics required a gamma-ray energy of "
+                "roughly 55 MeV — far higher than any known nuclear "
+                "transition.",
+            ),
+
+            Section(level=2, children=[Text(text="Chadwick's "
+                                                  "identification")]),
+            _p(
+                "James Chadwick, working at the Cavendish Laboratory "
+                "in Cambridge, realised within days that the "
+                "Joliot-Curie explanation was untenable. He repeated "
+                "the experiment with several target materials "
+                "(hydrogen, helium, nitrogen) and measured the recoil "
+                "energies. The data were consistent with a neutral "
+                "particle of mass close to that of the proton.",
+            ),
+            _p(
+                "Chadwick published his results on 27 February 1932 "
+                "in a short letter to ", ("Nature", ["italic"]),
+                Footnote(children=[Text(text=
+                    "J. Chadwick, \"Possible existence of a neutron,\""
+                    " Nature 129, 312 (1932).")]),
+                ". A more detailed paper followed in June in the "
+                "Proceedings of the Royal Society. The neutral "
+                "particle, which Chadwick named the neutron, resolved "
+                "both the spin-statistics problem and the binding-"
+                "energy puzzle in one stroke.",
+            ),
+
+            Section(level=2, children=[Text(text="The kinematics")]),
+            _p(
+                "Consider the beryllium reaction:",
+            ),
+            MathBlock(
+                latex=r"{}^9\text{Be} + {}^4\text{He} \to "
+                      r"{}^{12}\text{C} + n.",
+                numbered=True, label="eq:reaction",
+            ),
+            _p(
+                "Conservation of energy and momentum, combined with "
+                "the measured recoil energies, allowed Chadwick to "
+                "determine the neutron mass. His original estimate was",
+            ),
+            MathBlock(
+                latex=r"m_n = 1.0067 \pm 0.0005 \;\text{u},",
+                numbered=False,
+            ),
+            _p(
+                "remarkably close to the modern value of ",
+                MathInline(latex="1.008665"), " u.",
+            ),
+
+            Section(level=2, children=[Text(text="Aftermath")]),
+            _p(
+                "The discovery of the neutron opened the door to "
+                "nuclear fission (realised within seven years), to "
+                "the proton–neutron model of the nucleus proposed "
+                "independently by Heisenberg and Ivanenko, and "
+                "ultimately to the nuclear shell model of Mayer and "
+                "Jensen. Chadwick was awarded the Nobel Prize in "
+                "Physics in 1935 — just three years after his "
+                "discovery, an unusually short interval that reflects "
+                "the immediate impact of the work.",
+            ),
+            _p(
+                "It is worth noting how close others came. Bothe and "
+                "Becker had the radiation; the Joliot-Curies had the "
+                "proton recoils. What Chadwick brought was the "
+                "willingness to abandon the gamma-ray interpretation "
+                "and follow the kinematics wherever they led — a "
+                "textbook example of how theoretical prejudice can "
+                "delay experimental discovery.",
+            ),
+        ],
+    )
+
+
+# ------------------------------------------------------ meeting minutes
+
+def meeting_minutes() -> Document:
+    """Meeting minutes template — attendees, agenda, action items."""
+    return Document(
+        meta=_meta(
+            title="", author="",
+            body_font_pt=11,
+            margin_left_cm=2.5, margin_right_cm=2.5,
+            paragraph_indent=False,
+        ),
+        children=[
+            Title(children=[Text(text="Project Phoenix — Sprint review "
+                                      "meeting")]),
+            Author(children=[Text(text="20 May 2026, 14:00–15:00 (Teams)")]),
+
+            Section(level=1, children=[Text(text="Attendees")]),
+            _items(
+                "J. Manager (chair)",
+                "A. Developer",
+                "B. Developer",
+                "C. Designer",
+                "D. QA Engineer",
+                "E. Product Owner (remote)",
+            ),
+            _p(("Apologies:", ["bold"]), " F. DevOps (on leave)."),
+
+            Section(level=1, children=[Text(text="Agenda")]),
+            _ord_items(
+                "Sprint 14 demo and retrospective",
+                "Sprint 15 planning",
+                "Infrastructure update",
+                "Any other business",
+            ),
+
+            Section(level=1, children=[Text(text="Sprint 14 demo")]),
+            _p(
+                "A. Developer demonstrated the new bulk-import "
+                "endpoint. The endpoint processes CSV uploads "
+                "asynchronously and returns a job ID for polling. "
+                "E. Product Owner confirmed the feature matches the "
+                "acceptance criteria in ticket PX-312.",
+            ),
+            _p(
+                "C. Designer walked through the updated settings "
+                "page. Two minor spacing issues were noted and logged "
+                "as PX-345 and PX-346.",
+            ),
+
+            Section(level=1, children=[Text(text="Retrospective")]),
+            _p(("What went well:", ["bold"])),
+            _items(
+                "Pair programming on the import endpoint caught two "
+                "edge cases before they reached QA.",
+                "Daily stand-ups stayed under 10 minutes every day.",
+                "The new staging environment was stable for the full "
+                "sprint.",
+            ),
+            _p(("What could improve:", ["bold"])),
+            _items(
+                "Flaky integration tests blocked the pipeline three "
+                "times — needs investigation.",
+                "Late requirement change on PX-330 caused scope creep.",
+            ),
+
+            Section(level=1, children=[Text(text="Sprint 15 planning")]),
+            _p("The following stories were committed for Sprint 15:"),
+            Table(
+                rows=[
+                    ["Ticket",  "Title",                    "Owner",
+                     "Points"],
+                    ["PX-350",  "Role-based access control", "A. Dev",
+                     "8"],
+                    ["PX-351",  "Password reset flow",       "B. Dev",
+                     "5"],
+                    ["PX-345",  "Settings page spacing fix", "C. Des",
+                     "2"],
+                    ["PX-346",  "Settings page icon alignment", "C. Des",
+                     "1"],
+                    ["PX-352",  "Flaky test investigation",  "D. QA",
+                     "3"],
+                ],
+                caption="Sprint 15 backlog.",
+                label="tab:sprint15",
+                alignment="llllr",
+            ),
+
+            Section(level=1, children=[Text(text="Infrastructure update")]),
+            _p(
+                "In F. DevOps' absence, J. Manager relayed the "
+                "update: the Kubernetes cluster will be upgraded to "
+                "v1.30 on 1 June. No application changes are "
+                "expected, but all teams should verify their Helm "
+                "charts against the new API deprecations.",
+            ),
+
+            Section(level=1, children=[Text(text="Action items")]),
+            Table(
+                rows=[
+                    ["#", "Action",                           "Owner",
+                     "Due"],
+                    ["1", "Investigate flaky tests",          "D. QA",
+                     "23 May"],
+                    ["2", "Review Helm charts for k8s 1.30",  "F. DevOps",
+                     "28 May"],
+                    ["3", "Send password-reset wireframes",   "C. Des",
+                     "22 May"],
+                    ["4", "Schedule PX-330 scope review",     "E. PO",
+                     "21 May"],
+                ],
+                caption="Action items from this meeting.",
+                label="tab:actions",
+                alignment="rlll",
+            ),
+
+            Section(level=1, children=[Text(text="Next meeting")]),
+            _p("Sprint 15 review: 3 June 2026, 14:00, same Teams link."),
+        ],
+    )
+
+
+# ---------------------------------------------------- lecture notes
+
+def lecture_notes() -> Document:
+    """Lecture notes / course notes — definitions, theorems, proofs,
+    and examples in a structured format."""
+    return Document(
+        meta=_meta(
+            title="Lecture notes",
+            author="Prof. A. Lecturer",
+            body_font_pt=11,
+            line_spacing=1.15,
+            packages=DEFAULT_PACKAGES + ["hyperref"],
+            preamble_extras=(
+                "\\newtheorem{theorem}{Theorem}[section]\n"
+                "\\newtheorem{definition}[theorem]{Definition}\n"
+                "\\newtheorem{lemma}[theorem]{Lemma}\n"
+                "\\newtheorem{corollary}[theorem]{Corollary}\n"
+                "\\newtheorem{example}[theorem]{Example}\n"
+                "\\newtheorem{remark}[theorem]{Remark}"
+            ),
+        ),
+        children=[
+            Title(children=[Text(text="MATH 4200 — Metric Spaces")]),
+            Author(children=[Text(text="Prof. A. Lecturer — Lecture 12: "
+                                       "Compactness")]),
+
+            Section(level=1, children=[Text(text="Compactness")]),
+            _p(
+                "Compactness is one of the central concepts in "
+                "analysis and topology. Informally, a compact set "
+                "behaves like a finite set in many important respects: "
+                "continuous functions attain their extrema on compact "
+                "sets, sequences have convergent subsequences, and "
+                "open covers can always be reduced to finite "
+                "sub-covers.",
+            ),
+
+            Section(level=2, children=[Text(text="Definitions")]),
+            RawLatex(text=(
+                "\\begin{definition}[Open cover]\n"
+                "Let $(X, d)$ be a metric space and $K \\subseteq X$. "
+                "An \\emph{open cover} of $K$ is a collection "
+                "$\\{U_\\alpha\\}_{\\alpha \\in A}$ of open sets such that "
+                "$K \\subseteq \\bigcup_{\\alpha \\in A} U_\\alpha$.\n"
+                "\\end{definition}"
+            )),
+            RawLatex(text=(
+                "\\begin{definition}[Compact set]\n"
+                "A subset $K$ of a metric space $(X, d)$ is "
+                "\\emph{compact} if every open cover of $K$ has a "
+                "finite sub-cover.\n"
+                "\\end{definition}"
+            )),
+            _p(
+                "Note that compactness is an intrinsic property: it "
+                "does not depend on the ambient space ",
+                MathInline(latex="X"),
+                ", only on the induced metric on ",
+                MathInline(latex="K"), ".",
+            ),
+
+            Section(level=2, children=[Text(text="First properties")]),
+            RawLatex(text=(
+                "\\begin{theorem}\n"
+                "Every compact subset of a metric space is closed and "
+                "bounded.\n"
+                "\\end{theorem}"
+            )),
+            RawLatex(text=(
+                "\\begin{proof}\n"
+                "Let $K$ be compact in $(X, d)$. Fix $p \\in X$ and "
+                "consider the open cover $\\{B(p, n)\\}_{n=1}^\\infty$ "
+                "of $K$. By compactness there is a finite sub-cover, "
+                "so $K \\subseteq B(p, N)$ for some $N$; hence $K$ is "
+                "bounded.\n\n"
+                "To show $K$ is closed, let $q \\notin K$. For each "
+                "$x \\in K$, let $r_x = d(x, q)/2$ and consider the "
+                "open cover $\\{B(x, r_x)\\}_{x \\in K}$. Extract a "
+                "finite sub-cover $B(x_1, r_1), \\ldots, B(x_n, r_n)$. "
+                "Then $B(q, \\min_i r_i) \\cap K = \\emptyset$, so $q$ "
+                "is an interior point of $X \\setminus K$. Since $q$ "
+                "was arbitrary, $X \\setminus K$ is open, so $K$ is "
+                "closed.\n"
+                "\\end{proof}"
+            )),
+            _p(
+                ("Remark.", ["bold"]),
+                " The converse is false in general metric spaces. "
+                "The closed unit ball in an infinite-dimensional "
+                "Banach space is closed and bounded but not compact.",
+            ),
+
+            Section(level=2, children=[Text(text="The Heine–Borel theorem")]),
+            RawLatex(text=(
+                "\\begin{theorem}[Heine--Borel]\n"
+                "\\label{thm:heine-borel}\n"
+                "A subset of $\\mathbb{R}^n$ is compact if and only if "
+                "it is closed and bounded.\n"
+                "\\end{theorem}"
+            )),
+            _p(
+                "We will not prove the full theorem here (see the "
+                "textbook, Chapter 4, §3). Instead we prove the key "
+                "lemma from which the result follows.",
+            ),
+            RawLatex(text=(
+                "\\begin{lemma}[Bolzano--Weierstrass]\n"
+                "Every bounded sequence in $\\mathbb{R}^n$ has a "
+                "convergent subsequence.\n"
+                "\\end{lemma}"
+            )),
+            RawLatex(text=(
+                "\\begin{proof}\n"
+                "We argue by repeated bisection. Given a bounded "
+                "sequence $(x_k)$ in $\\mathbb{R}$, it lies in some "
+                "interval $[a, b]$. At least one of $[a, (a+b)/2]$ "
+                "or $[(a+b)/2, b]$ contains infinitely many terms; "
+                "pick that half-interval and a term from it. Repeat. "
+                "This produces a nested sequence of closed intervals "
+                "whose lengths tend to zero, and by the nested-"
+                "intervals theorem their intersection is a single "
+                "point $\\ell$. The subsequence of terms chosen at "
+                "each step converges to $\\ell$.\n\n"
+                "For $\\mathbb{R}^n$, apply the one-dimensional "
+                "argument to each coordinate in turn (a diagonal "
+                "argument).\n"
+                "\\end{proof}"
+            )),
+
+            Section(level=2, children=[Text(text="Compactness and "
+                                                  "continuity")]),
+            RawLatex(text=(
+                "\\begin{theorem}[Extreme value theorem]\n"
+                "\\label{thm:evt}\n"
+                "Let $K$ be a non-empty compact subset of a metric "
+                "space and let $f: K \\to \\mathbb{R}$ be continuous. "
+                "Then $f$ attains its maximum and minimum on $K$.\n"
+                "\\end{theorem}"
+            )),
+            RawLatex(text=(
+                "\\begin{proof}\n"
+                "Since $f$ is continuous and $K$ is compact, $f(K)$ "
+                "is a compact subset of $\\mathbb{R}$ (continuous "
+                "images of compact sets are compact). By Heine--Borel "
+                "(Theorem~\\ref{thm:heine-borel}), $f(K)$ is closed "
+                "and bounded. In particular $\\sup f(K)$ exists and "
+                "belongs to $f(K)$ (because $f(K)$ is closed), so "
+                "the supremum is attained. The argument for the "
+                "infimum is identical.\n"
+                "\\end{proof}"
+            )),
+
+            Section(level=2, children=[Text(text="Worked example")]),
+            RawLatex(text=(
+                "\\begin{example}\n"
+                "Show that the set $K = \\{(x, y) \\in \\mathbb{R}^2 "
+                ": x^2 + y^2 \\leq 1\\}$ is compact.\n"
+                "\\end{example}"
+            )),
+            _p(
+                ("Solution.", ["bold"]),
+                " The set ", MathInline(latex="K"),
+                " is bounded (it lies inside the ball of radius 1) "
+                "and closed (it is the pre-image of ",
+                MathInline(latex="(-\\infty, 1]"),
+                " under the continuous function ",
+                MathInline(latex="f(x,y) = x^2 + y^2"),
+                "). By the Heine–Borel theorem (Theorem ",
+                CrossRef(label="thm:heine-borel", kind="ref"),
+                "), ", MathInline(latex="K"), " is compact.",
+            ),
+
+            Section(level=2, children=[Text(text="Exercises")]),
+            _ord_items(
+                "Prove that a finite union of compact sets is compact.",
+                "Give an example of a closed and bounded subset of a "
+                "metric space that is not compact.",
+                "Let f: K → ℝ be continuous on a compact set K. "
+                "Prove that f is uniformly continuous on K.",
+                "Show that the intersection of a compact set and a "
+                "closed set is compact.",
+            ),
+        ],
+    )
+
+
+# --------------------------------------------------- conference poster
+
+def poster() -> Document:
+    """Conference poster layout using a0poster class — large-format
+    multi-column poster with sections, figures and equations."""
+    return Document(
+        meta=_meta(
+            documentclass="article",
+            title="Conference poster",
+            author="A. Researcher",
+            body_font_pt=12,
+            column_count=2,
+            margin_left_cm=2.0, margin_right_cm=2.0,
+            margin_top_cm=2.0, margin_bottom_cm=2.0,
+            paragraph_indent=False,
+            packages=DEFAULT_PACKAGES + ["natbib", "hyperref"],
+        ),
+        children=[
+            Title(children=[Text(text="Efficient Monte Carlo sampling "
+                                      "of Bayesian posteriors in "
+                                      "high dimensions")]),
+            Author(children=[Text(text="A. Researcher¹, B. Supervisor¹, "
+                                       "C. Collaborator²"),
+                             Footnote(children=[Text(text=
+                                 "¹ Department of Statistics, University "
+                                 "of Somewhere; ² Institute of Applied "
+                                 "Mathematics, ETH Zürich")])]),
+
+            Section(level=1, children=[Text(text="Motivation")]),
+            _p(
+                "Bayesian inference in high-dimensional parameter "
+                "spaces is computationally challenging. Standard "
+                "Markov chain Monte Carlo (MCMC) methods suffer from "
+                "slow mixing when the posterior has strong "
+                "correlations or multiple modes. We propose a "
+                "preconditioned Hamiltonian Monte Carlo (HMC) sampler "
+                "that adapts its mass matrix online, achieving "
+                "effective sample sizes 5–20× larger than the "
+                "No-U-Turn Sampler (NUTS) for the same wall-clock "
+                "time.",
+            ),
+
+            Section(level=1, children=[Text(text="Method")]),
+            _p(
+                "We augment the target density ",
+                MathInline(latex="\\pi(\\theta)"),
+                " with momentum variables ",
+                MathInline(latex="p \\sim \\mathcal{N}(0, M)"),
+                " and simulate the Hamiltonian",
+            ),
+            MathBlock(
+                latex=r"H(\theta, p) = -\log \pi(\theta) + "
+                      r"\tfrac{1}{2} p^\top M^{-1} p.",
+                numbered=True, label="eq:hamiltonian",
+            ),
+            _p(
+                "The mass matrix ", MathInline(latex="M"),
+                " is updated every ", MathInline(latex="K"),
+                " leapfrog steps using a rank-one update from the "
+                "sample covariance of the last ",
+                MathInline(latex="W"), " accepted states. The update "
+                "converges to the posterior covariance and the sampler "
+                "becomes asymptotically optimal in the Gaussian limit.",
+            ),
+
+            Section(level=1, children=[Text(text="Key results")]),
+            Table(
+                rows=[
+                    ["Problem (d)",           "NUTS ESS/s", "Ours ESS/s",
+                     "Speedup"],
+                    ["Logistic regression (50)",  "420",    "2 100",
+                     "5.0×"],
+                    ["Gaussian process (200)",    "38",     "540",
+                     "14.2×"],
+                    ["Hierarchical model (500)",  "12",     "240",
+                     "20.0×"],
+                ],
+                caption="Effective sample size per second on three "
+                        "benchmarks.",
+                label="tab:poster-results",
+                alignment="lrrr",
+            ),
+            _p(
+                "The gains are most pronounced when the posterior "
+                "has strong off-diagonal correlations, because the "
+                "adapted mass matrix de-correlates the geometry for "
+                "the leapfrog integrator.",
+            ),
+
+            Section(level=1, children=[Text(text="Convergence guarantee")]),
+            _p(
+                "Under mild regularity conditions on ",
+                MathInline(latex="\\pi"), ", the adaptive chain "
+                "satisfies a diminishing-adaptation criterion ",
+                Citation(keys=["roberts2007"], style="citep"),
+                " and therefore preserves ergodicity. Specifically, "
+                "if the update schedule satisfies",
+            ),
+            MathBlock(
+                latex=r"\sum_{k=1}^{\infty} \|M_{k+1} - M_k\|_F < \infty,",
+                numbered=True, label="eq:diminishing",
+            ),
+            _p(
+                "then the chain has the correct stationary "
+                "distribution. Our rank-one schedule satisfies this "
+                "by construction, since the covariance estimate "
+                "converges almost surely.",
+            ),
+
+            Section(level=1, children=[Text(text="Conclusion")]),
+            _items(
+                "Online mass-matrix adaptation dramatically improves "
+                "HMC efficiency in high dimensions.",
+                "The method is a drop-in replacement for NUTS in "
+                "probabilistic programming frameworks.",
+                "Code available at github.com/aresearcher/adaptive-hmc.",
+            ),
+        ],
+    )
+
+
+# ------------------------------------------------ report / white paper
+
+def white_paper() -> Document:
+    """Short white paper / technical report — executive summary, problem
+    statement, proposed solution, and recommendations."""
+    return Document(
+        meta=_meta(
+            title="White paper",
+            author="A. Author",
+            body_font_pt=11,
+            line_spacing=1.15,
+            paragraph_indent=False,
+            packages=DEFAULT_PACKAGES + ["hyperref"],
+        ),
+        children=[
+            Title(children=[Text(text="Reducing build times in "
+                                      "large-scale monorepos")]),
+            Author(children=[Text(text="A. Author — Developer "
+                                       "Productivity Team")]),
+            Abstract(children=[Text(text=
+                "Build times in our monorepo have grown from 8 minutes "
+                "to 35 minutes over the past 18 months, driven by a "
+                "3× increase in module count and inadequate caching. "
+                "This white paper analyses the root causes, evaluates "
+                "three mitigation strategies, and recommends a phased "
+                "rollout of remote caching combined with dependency-"
+                "graph pruning. We project a reduction to under "
+                "12 minutes for 90% of incremental builds.")]),
+
+            Section(level=1, children=[Text(text="Problem statement")]),
+            _p(
+                "The CI pipeline for the main monorepo currently "
+                "averages 35 minutes per push, with P95 at 52 minutes. "
+                "Developer surveys consistently rank build latency as "
+                "the top friction point. The problem compounds: slow "
+                "builds encourage batching changes into larger PRs, "
+                "which are harder to review, more likely to cause "
+                "merge conflicts, and slower to build — a vicious "
+                "cycle.",
+            ),
+            _p(
+                "Three factors contribute roughly equally to the "
+                "regression:",
+            ),
+            _ord_items(
+                "Module count grew from 120 to 380 without revisiting "
+                "the dependency graph. Many modules pull in transitive "
+                "dependencies they do not actually use.",
+                "The local cache is invalidated by environment drift "
+                "(different JDK patch versions, locale settings, "
+                "timezone). Cache hit rates on CI are below 40%.",
+                "Test execution is not parallelised effectively: the "
+                "slowest test suite (integration tests for the "
+                "payments module) takes 14 minutes and runs on a "
+                "single executor.",
+            ),
+
+            Section(level=1, children=[Text(text="Evaluation of "
+                                                  "strategies")]),
+            Section(level=2, children=[Text(text="Strategy A: Remote "
+                                                  "build cache")]),
+            _p(
+                "A shared, content-addressed cache (e.g. Gradle "
+                "remote cache or Bazel remote execution) eliminates "
+                "the environment-drift problem by keying on input "
+                "hashes rather than machine state. Internal pilots "
+                "on two smaller repos raised cache hit rates from "
+                "38% to 87%, cutting median build time by 60%.",
+            ),
+
+            Section(level=2, children=[Text(text="Strategy B: Dependency "
+                                                  "pruning")]),
+            _p(
+                "Static analysis of the dependency graph identified "
+                "94 unused transitive edges. Removing them reduces "
+                "the rebuild set for a typical one-module change from "
+                "~70 modules to ~25. The pruning is low-risk: each "
+                "edge removal is verified by a clean build before "
+                "merging.",
+            ),
+
+            Section(level=2, children=[Text(text="Strategy C: Test "
+                                                  "sharding")]),
+            _p(
+                "Splitting the payments integration suite across four "
+                "parallel executors reduces its wall-clock time from "
+                "14 minutes to 4.5 minutes. The implementation "
+                "requires tagging tests with shard indices, which "
+                "is straightforward but touches 340 test files.",
+            ),
+
+            Section(level=1, children=[Text(text="Recommendation")]),
+            _p(
+                "We recommend a phased approach:",
+            ),
+            Table(
+                rows=[
+                    ["Phase", "Strategy",          "Timeline",
+                     "Expected impact"],
+                    ["1",     "Remote cache",       "Jun 2026",
+                     "−60% median build time"],
+                    ["2",     "Dependency pruning",  "Jul–Aug 2026",
+                     "−30% rebuild set size"],
+                    ["3",     "Test sharding",       "Sep 2026",
+                     "−10 min on P95"],
+                ],
+                caption="Phased rollout plan.",
+                label="tab:phases",
+                alignment="clll",
+            ),
+            _p(
+                "Phases 1 and 2 are independent and can proceed in "
+                "parallel if staffing allows. Phase 3 depends on "
+                "Phase 2 (the shard assignment assumes the pruned "
+                "graph). Total estimated effort: 1.5 engineer-months.",
+            ),
+
+            Section(level=1, children=[Text(text="Risks and mitigations")]),
+            _items(
+                "Cache poisoning: mitigated by content-addressable "
+                "keys and a nightly cache-integrity check.",
+                "False-positive pruning: each edge removal is gated "
+                "on a green CI run; any breakage is caught before "
+                "merge.",
+                "Shard imbalance: monitored via a dashboard; "
+                "re-balance quarterly.",
+            ),
+
+            Section(level=1, children=[Text(text="Conclusion")]),
+            _p(
+                "Build latency is a solvable problem. The three "
+                "strategies described here are complementary and, "
+                "taken together, should bring the median incremental "
+                "build time back below 12 minutes. We request "
+                "approval to begin Phase 1 in the June maintenance "
+                "window.",
+            ),
+        ],
+    )
+
+
+# ------------------------------------------------- recipe / how-to guide
+
+def recipe() -> Document:
+    """Step-by-step how-to guide / recipe — numbered steps with tips
+    and a summary table. Demonstrates ordered lists, tips in italic,
+    and a compact single-page layout."""
+    return Document(
+        meta=_meta(
+            title="How-to guide",
+            author="",
+            body_font_pt=11,
+            margin_left_cm=2.5, margin_right_cm=2.5,
+            paragraph_indent=False,
+        ),
+        children=[
+            Title(children=[Text(text="Setting up a reproducible Python "
+                                      "project from scratch")]),
+            Author(children=[Text(text="A practical step-by-step guide")]),
+
+            Section(level=1, children=[Text(text="Prerequisites")]),
+            _items(
+                "Python 3.12 or newer installed and on your PATH",
+                "Git installed and configured (git config user.name / "
+                "user.email)",
+                "A terminal (bash, zsh, PowerShell, or Windows Terminal)",
+                "A text editor or IDE of your choice",
+            ),
+
+            Section(level=1, children=[Text(text="Steps")]),
+
+            Section(level=2, children=[Text(text="1. Create the project "
+                                                  "directory")]),
+            _p("Open a terminal and run:"),
+            RawLatex(text=(
+                "\\begin{verbatim}\n"
+                "mkdir my-project && cd my-project\n"
+                "git init\n"
+                "\\end{verbatim}"
+            )),
+            _p(("Tip:", ["italic"]),
+               " Choose a short, lowercase, hyphen-separated name. "
+               "Avoid spaces and special characters."),
+
+            Section(level=2, children=[Text(text="2. Set up a virtual "
+                                                  "environment")]),
+            _p("Create and activate a virtual environment:"),
+            RawLatex(text=(
+                "\\begin{verbatim}\n"
+                "python -m venv .venv\n"
+                "source .venv/bin/activate   # Linux / macOS\n"
+                ".venv\\Scripts\\activate      # Windows\n"
+                "\\end{verbatim}"
+            )),
+            _p(("Tip:", ["italic"]),
+               " Add ", ("/.venv/", ["code"]),
+               " to your ", (".gitignore", ["code"]),
+               " so the environment is never committed."),
+
+            Section(level=2, children=[Text(text="3. Pin your "
+                                                  "dependencies")]),
+            _p(
+                "Create a ", ("pyproject.toml", ["code"]),
+                " with your project metadata and dependencies. Then "
+                "generate a lock file:",
+            ),
+            RawLatex(text=(
+                "\\begin{verbatim}\n"
+                "pip install pip-tools\n"
+                "pip-compile -o requirements.lock pyproject.toml\n"
+                "pip install -r requirements.lock\n"
+                "\\end{verbatim}"
+            )),
+
+            Section(level=2, children=[Text(text="4. Add a test "
+                                                  "framework")]),
+            _p("Install pytest and create a minimal test:"),
+            RawLatex(text=(
+                "\\begin{verbatim}\n"
+                "pip install pytest\n"
+                "mkdir tests\n"
+                "echo 'def test_smoke(): assert True' > tests/test_smoke.py\n"
+                "pytest -q\n"
+                "\\end{verbatim}"
+            )),
+
+            Section(level=2, children=[Text(text="5. Configure linting "
+                                                  "and formatting")]),
+            _p("Install ruff for both linting and formatting:"),
+            RawLatex(text=(
+                "\\begin{verbatim}\n"
+                "pip install ruff\n"
+                "ruff check .\n"
+                "ruff format .\n"
+                "\\end{verbatim}"
+            )),
+
+            Section(level=2, children=[Text(text="6. Make your first "
+                                                  "commit")]),
+            RawLatex(text=(
+                "\\begin{verbatim}\n"
+                "git add pyproject.toml requirements.lock .gitignore\n"
+                "git add src/ tests/\n"
+                "git commit -m \"Initial project skeleton\"\n"
+                "\\end{verbatim}"
+            )),
+
+            Section(level=1, children=[Text(text="Summary")]),
+            Table(
+                rows=[
+                    ["Step", "Tool",         "Purpose"],
+                    ["1",    "git init",      "Version control"],
+                    ["2",    "python -m venv", "Isolation"],
+                    ["3",    "pip-tools",     "Reproducible deps"],
+                    ["4",    "pytest",        "Testing"],
+                    ["5",    "ruff",          "Linting + formatting"],
+                    ["6",    "git commit",    "Checkpoint"],
+                ],
+                caption="Quick reference for each step.",
+                label="tab:steps",
+                alignment="cll",
+            ),
+
+            Section(level=1, children=[Text(text="Next steps")]),
+            _items(
+                "Add a CI pipeline (GitHub Actions, GitLab CI) that "
+                "runs pytest and ruff on every push.",
+                "Set up pre-commit hooks to catch issues before they "
+                "reach CI.",
+                "Add a README.md with setup instructions for "
+                "collaborators.",
+                "Consider adding type checking with mypy or pyright.",
+            ),
+        ],
+    )
+
+
 # Order = display order in the Examples menu. The labels here are what
 # the user sees; the factories above produce the actual documents.
 EXAMPLES: list[tuple[str, callable]] = [
@@ -1871,6 +3623,18 @@ EXAMPLES: list[tuple[str, callable]] = [
     ("Three-&column document", three_column_document),
     ("&Math-heavy document",  math_heavy),
     ("&Letter",               letter),
+    ("&CV / résumé",          cv),
+    ("La&b report",           lab_report),
+    ("&Homework / problem set", homework),
+    ("Technical &memo",       memo),
+    ("L&iterature review",    literature_review),
+    ("&Research proposal",    research_proposal),
+    ("Boo&k chapter",         book_chapter),
+    ("Meeti&ng minutes",      meeting_minutes),
+    ("Lec&ture notes",        lecture_notes),
+    ("&Poster / two-column",  poster),
+    ("&White paper",          white_paper),
+    ("How-to &guide",         recipe),
 ]
 
 # Journal and publisher templates — grouped by publisher so the Examples
