@@ -38,10 +38,10 @@ def test_basic_paragraph():
 def test_heading_detected_by_size():
     def build(doc):
         page = doc.new_page(width=595, height=842)
-        # Large bold text should be detected as a heading.
-        page.insert_text((72, 60), "Big Title", fontsize=24,
+        # Large text should be detected as a heading.
+        page.insert_text((72, 120), "Big Title", fontsize=24,
                          fontname="helv")
-        page.insert_text((72, 100), "Body text here.", fontsize=12)
+        page.insert_text((72, 200), "Body text here.", fontsize=12)
 
     path = _make_pdf(build)
     image_dir = Path(tempfile.mkdtemp())

@@ -1030,14 +1030,94 @@ _PDF_FLAG_ITALIC = 2
 _PDF_FLAG_MONOSPACE = 8
 _PDF_FLAG_BOLD = 16
 
+# Margin zones (fraction of page height) used to strip headers / footers.
+_PDF_HEADER_ZONE = 0.06   # top 6 %
+_PDF_FOOTER_ZONE = 0.06   # bottom 6 %
+
+# Minimum image dimension (points) — skip tiny decorative images / icons.
+_PDF_MIN_IMAGE_DIM = 50
+
+# Journal boilerplate patterns to drop entirely.
+_PDF_BOILERPLATE_RE = re.compile(
+    r"(?i)"
+    r"(Contents\s+lists\s+available\s+at"
+    r"|journal\s+homepage\s*:"
+    r"|View\s+Article\s+Online"
+    r"|View\s+Journal"
+    r"|Open\s+Access\s+Article"
+    r"|This\s+article\s+is\s+licensed\s+under"
+    r"|This\s+journal\s+is\s+.{0,5}The\s+Royal\s+Society"
+    r"|Cite\s+this\s*:"
+    r"|Published\s+on\s+\d"
+    r"|Received\s+\d.*Accepted\s+\d"
+    r"|Available\s+online\s+\d"
+    r"|DOI\s*:\s*10\.\d"
+    r"|https?://doi\.org/"
+    r"|rsc\.li/"
+    r"|www\.elsevier\.com"
+    r"|Elsevier\s+[A-Z]\.?[A-Z]?\.?\s+All\s+rights"
+    r"|All\s+rights\s+reserved"
+    r"|CrossMark"
+    r"|ScienceDirect"
+    r"|Electronic\s+supplementary\s+information"
+    r"|E-mail\s+address(es)?\s*:"
+    r"|Corresponding\s+author"
+    r"|^\s*PAPER\s*$"
+    r"|^\s*COMMUNICATION\s*$"
+    r"|^\s*REVIEW\s*$"
+    r"|^\s*ARTICLE\s*$"
+    r"|^\s*LETTER\s*$"
+    r")"
+)
+
+# Spaced-out label patterns (e.g. "A B S T R A C T", "A R T I C L E").
+_PDF_SPACED_ABSTRACT_RE = re.compile(
+    r"A\s+B\s+S\s+T\s+R\s+A\s+C\s+T", re.I)
+_PDF_SPACED_ARTICLE_RE = re.compile(
+    r"A\s+R\s+T\s+I\s+C\s+L\s+E", re.I)
+
+# Figure / table caption patterns.
+_PDF_CAPTION_RE = re.compile(
+    r"^(Fig\.|Figure|Table)\s*\d", re.I)
+
+# Numbered section heading patterns (e.g. "1. Introduction", "3.2. Setup").
+_PDF_NUMBERED_SECTION_RE = re.compile(
+    r"^(\d+)\.(\d+\.)?\s*[A-Z]")
+
+# Keywords label.
+_PDF_KEYWORDS_RE = re.compile(r"^Keywords?\s*:", re.I)
+
+
+def _pdf_is_sidebar(blk_bbox, page_height: float) -> bool:
+    """Return True if the block looks like rotated sidebar text — it spans
+    most of the page vertically but occupies very little horizontal space."""
+    y0, y1 = blk_bbox[1], blk_bbox[3]
+    x0, x1 = blk_bbox[0], blk_bbox[2]
+    height = y1 - y0
+    width = x1 - x0
+    return height > page_height * 0.4 and width < 30
+
+
+def _pdf_title_overlap(a: str, b: str) -> float:
+    """Return fraction of words in *a* that also appear in *b* (case-insensitive)."""
+    wa = set(a.lower().split())
+    wb = set(b.lower().split())
+    if not wa:
+        return 0.0
+    return len(wa & wb) / len(wa)
+
 
 def import_pdf(pdf_path: Path, image_dir: Path,
                progress=None) -> Document:
     """Import a .pdf file into the document model.
 
-    Uses PyMuPDF to extract structured text (with font metrics for heading /
-    bold / italic detection) and embedded images.  *progress*, if given, is
-    called as ``progress(page, total_pages)`` after each page.
+    Uses PyMuPDF to extract structured text with font metrics for heading /
+    bold / italic detection, and embedded images.  Strips journal headers,
+    footers, boilerplate, sidebar text, and affiliation blocks.  Detects
+    abstract, keywords, figure/table captions, and numbered section headings.
+
+    *progress*, if given, is called as ``progress(page, total_pages)``
+    after each page.
     """
     import pymupdf
 
@@ -1045,12 +1125,24 @@ def import_pdf(pdf_path: Path, image_dir: Path,
     src = pymupdf.open(str(pdf_path))
     total_pages = len(src)
 
+    # Read metadata early so we can use the title to de-duplicate.
+    meta_info = src.metadata if hasattr(src, "metadata") else {}
+    meta_title = (meta_info.get("title", "") or "").strip()
+    meta_author = (meta_info.get("author", "") or "").strip()
+    meta_keywords = (meta_info.get("keywords", "") or "").strip()
+
     # --- First pass: determine the dominant (body) font size ---------------
     size_counts: dict[float, int] = {}
     for page in src:
+        page_h = page.rect.height
         td = page.get_text("dict", flags=pymupdf.TEXT_PRESERVE_WHITESPACE)
         for blk in td.get("blocks", []):
             if blk.get("type") != 0:
+                continue
+            bbox = blk["bbox"]
+            if bbox[1] < page_h * _PDF_HEADER_ZONE:
+                continue
+            if bbox[3] > page_h * (1 - _PDF_FOOTER_ZONE):
                 continue
             for line in blk.get("lines", []):
                 for span in line.get("spans", []):
@@ -1060,27 +1152,47 @@ def import_pdf(pdf_path: Path, image_dir: Path,
                         size_counts[sz] = size_counts.get(sz, 0) + len(text)
     body_size = max(size_counts, key=size_counts.get) if size_counts else 12.0
 
-    # Heading thresholds: text significantly larger than body is a heading.
-    # level 1 ≥ 1.6×, level 2 ≥ 1.3×, level 3 ≥ 1.1× body size.
+    # Heading thresholds relative to body font size.
     _H1 = body_size * 1.6
     _H2 = body_size * 1.3
-    _H3 = body_size * 1.1
+    _H3 = body_size * 1.05
+
+    # Font sizes below this are treated as fine-print (affiliations, dates,
+    # footnotes) and skipped.
+    _FINE_PRINT = body_size * 0.85
 
     children: list = []
     image_counter = 0
+    seen_xrefs: set[int] = set()
+    # State: blocks between "A B S T R A C T" label and first section /
+    # keywords are captured as Abstract nodes.
+    in_abstract_zone = False
+    # True once we've seen the title-sized block on page 1 — anything
+    # large-font before it is likely the journal masthead.
+    seen_title_block = False
+    # Track whether we've hit the first numbered section heading. Body
+    # text between title/author and first section is likely abstract.
+    seen_first_section = False
 
     # --- Second pass: build model blocks -----------------------------------
     for page_idx, page in enumerate(src):
+        page_h = page.rect.height
         td = page.get_text("dict", flags=pymupdf.TEXT_PRESERVE_WHITESPACE)
 
         for blk in td.get("blocks", []):
-            # --- Image blocks ---
-            if blk.get("type") == 1:
-                xref = blk.get("image", b"")
-                # For image blocks in dict mode, extract via xref list.
-                continue  # handled below via get_images
-
             if blk.get("type") != 0:
+                continue
+
+            bbox = blk["bbox"]
+
+            # Skip header / footer zones.
+            if bbox[1] < page_h * _PDF_HEADER_ZONE:
+                continue
+            if bbox[3] > page_h * (1 - _PDF_FOOTER_ZONE):
+                continue
+
+            # Skip sidebar text (rotated CC license, etc.).
+            if _pdf_is_sidebar(bbox, page_h):
                 continue
 
             # Collect all spans in the block into inline nodes.
@@ -1111,20 +1223,18 @@ def import_pdf(pdf_path: Path, image_dir: Path,
 
                     block_inlines.append(Text(text=text, marks=marks))
 
-                # Add a space between lines within the same block, unless
-                # the last character is already whitespace or a hyphen (for
-                # hyphenated line breaks, join directly).
+                # Join lines within the same block: remove trailing hyphens
+                # (word split across lines) or add a space.
                 if block_inlines:
                     last_text = block_inlines[-1].text
                     if last_text and last_text[-1] == "-":
-                        # Remove trailing hyphen (word was split across lines).
                         block_inlines[-1] = Text(
                             text=last_text[:-1],
                             marks=block_inlines[-1].marks)
                     elif last_text and not last_text[-1].isspace():
                         block_inlines.append(Text(text=" "))
 
-            # Remove any trailing whitespace-only node.
+            # Remove trailing whitespace-only nodes.
             while (block_inlines
                    and isinstance(block_inlines[-1], Text)
                    and not block_inlines[-1].text.strip()):
@@ -1138,36 +1248,131 @@ def import_pdf(pdf_path: Path, image_dir: Path,
             if not plain:
                 continue
 
-            # Classify: heading vs paragraph based on the dominant span size.
+            # Skip very short stray text (drop caps, lone symbols).
+            if len(plain) <= 2 and not plain.isdigit():
+                continue
+
             avg_size = (sum(block_sizes) / len(block_sizes)
                         if block_sizes else body_size)
 
+            # Skip fine-print blocks (affiliations, footnotes, dates).
+            if avg_size < _FINE_PRINT:
+                continue
+
+            # --- Drop journal boilerplate ---
+            if _PDF_BOILERPLATE_RE.search(plain):
+                continue
+
+            # --- Drop blocks that duplicate the metadata title or author ---
+            if meta_title and _pdf_title_overlap(plain, meta_title) > 0.7:
+                if avg_size > body_size * 1.1:
+                    seen_title_block = True
+                    continue
+            if meta_author and _pdf_title_overlap(plain, meta_author) > 0.7:
+                continue
+
+            # On page 1, large-font blocks that appear *before* the title
+            # are likely journal mastheads (e.g. "Surface Science",
+            # "Journal of Materials Chemistry A"). Only filter when we
+            # have a metadata title so we can tell the title apart.
+            if page_idx == 0 and meta_title and not seen_title_block:
+                if avg_size >= _H2:
+                    continue
+
+            # --- Drop spaced-out label lines ("A B S T R A C T" etc.) ---
+            if _PDF_SPACED_ABSTRACT_RE.match(plain):
+                in_abstract_zone = True
+                continue
+            if _PDF_SPACED_ARTICLE_RE.match(plain):
+                continue
+
+            # --- Detect abstract ---
+            plain_lower = plain.lower()
+            if plain_lower.startswith("abstract"):
+                body = plain[len("abstract"):].strip().lstrip(".")
+                if body:
+                    children.append(Abstract(
+                        children=[Text(text=body)]))
+                else:
+                    in_abstract_zone = True
+                continue
+
+            # --- Detect keywords ---
+            kw_m = _PDF_KEYWORDS_RE.match(plain)
+            if kw_m:
+                in_abstract_zone = False
+                kw_text = plain[kw_m.end():].strip()
+                if kw_text:
+                    children.append(Keywords(
+                        children=[Text(text=kw_text)]))
+                continue
+
+            # --- Detect figure / table captions ---
+            if _PDF_CAPTION_RE.match(plain):
+                in_abstract_zone = False
+                for inl in block_inlines:
+                    if isinstance(inl, Text) and "italic" not in inl.marks:
+                        inl.marks.append("italic")
+                children.append(Paragraph(
+                    children=block_inlines, alignment="center"))
+                continue
+
+            # --- Numbered section heading (e.g. "1. Introduction") ---
+            # Detected even without bold — Elsevier uses body-weight font.
+            sec_m = _PDF_NUMBERED_SECTION_RE.match(plain)
+            if sec_m:
+                in_abstract_zone = False
+                seen_first_section = True
+                level = 1 if sec_m.group(2) is None else 2
+                for inl in block_inlines:
+                    if isinstance(inl, Text) and "bold" in inl.marks:
+                        inl.marks = [m for m in inl.marks if m != "bold"]
+                children.append(Section(level=level, children=block_inlines))
+                continue
+
+            # --- Classify heading vs body paragraph by font size ---
             if avg_size >= _H1:
-                # Strip bold marks from heading inlines (it's implicit).
+                in_abstract_zone = False
+                seen_first_section = True
                 for inl in block_inlines:
                     if isinstance(inl, Text) and "bold" in inl.marks:
                         inl.marks = [m for m in inl.marks if m != "bold"]
                 children.append(Section(level=1, children=block_inlines))
             elif avg_size >= _H2:
+                in_abstract_zone = False
+                seen_first_section = True
                 for inl in block_inlines:
                     if isinstance(inl, Text) and "bold" in inl.marks:
                         inl.marks = [m for m in inl.marks if m != "bold"]
                 children.append(Section(level=2, children=block_inlines))
             elif avg_size >= _H3 and is_all_bold:
-                # Level 3: only slightly larger, so require bold too to
-                # avoid false positives on body text with minor size diffs.
+                in_abstract_zone = False
+                seen_first_section = True
                 for inl in block_inlines:
                     if isinstance(inl, Text) and "bold" in inl.marks:
                         inl.marks = [m for m in inl.marks if m != "bold"]
                 children.append(Section(level=3, children=block_inlines))
+            elif in_abstract_zone:
+                children.append(Abstract(children=block_inlines))
+            elif (not seen_first_section and page_idx == 0
+                  and seen_title_block and meta_title):
+                # Body text on page 1 between title/author and first section
+                # is almost certainly the abstract (only when we have metadata
+                # to confirm the title block identity).
+                children.append(Abstract(children=block_inlines))
             else:
                 children.append(Paragraph(children=block_inlines))
 
         # --- Extract images from this page ---------------------------------
         for img_info in page.get_images(full=True):
             xref = img_info[0]
+            if xref in seen_xrefs:
+                continue
+            seen_xrefs.add(xref)
             try:
                 pix = pymupdf.Pixmap(src, xref)
+                if pix.width < _PDF_MIN_IMAGE_DIM or pix.height < _PDF_MIN_IMAGE_DIM:
+                    continue
                 if pix.alpha:
                     pix = pymupdf.Pixmap(pymupdf.csRGB, pix)
                 ext = ".png"
@@ -1183,19 +1388,26 @@ def import_pdf(pdf_path: Path, image_dir: Path,
         if progress is not None:
             progress(page_idx + 1, total_pages)
 
-    # --- Build metadata from PDF info dict ---------------------------------
-    meta_info = src.metadata if hasattr(src, "metadata") else {}
     src.close()
-    title = meta_info.get("title", "") or ""
-    author = meta_info.get("author", "") or ""
 
-    if title:
-        children.insert(0, Title(children=[Text(text=title)]))
-    if author:
-        idx = 1 if title else 0
-        children.insert(idx, Author(children=[Text(text=author)]))
+    # --- Add metadata-derived blocks at the top ----------------------------
+    if meta_title:
+        children.insert(0, Title(children=[Text(text=meta_title)]))
+    if meta_author:
+        idx = 1 if meta_title else 0
+        children.insert(idx, Author(children=[Text(text=meta_author)]))
 
-    meta = DocMeta(title=title, author=author)
+    if meta_keywords and not any(isinstance(c, Keywords) for c in children):
+        # Insert after Author / Abstract, before first Section.
+        insert_at = len(children)
+        for j, ch in enumerate(children):
+            if isinstance(ch, Section):
+                insert_at = j
+                break
+        children.insert(insert_at, Keywords(
+            children=[Text(text=meta_keywords.strip("; "))]))
+
+    meta = DocMeta(title=meta_title, author=meta_author)
     return Document(meta=meta, children=children)
 
 
