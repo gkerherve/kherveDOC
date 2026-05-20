@@ -37,12 +37,22 @@ TEMPLATE_CHOICES = [
     # Standard
     "article", "report", "book", "letter", "beamer", "memoir",
     # KOMA-Script
-    "scrartcl", "scrreprt", "scrbook",
+    "scrartcl", "scrreprt", "scrbook", "scrlttr2",
     # Journal / conference
     "elsarticle", "IEEEtran", "revtex4-2", "achemso", "amsart",
-    "llncs", "acmart", "svjour3",
+    "llncs", "acmart", "svjour3", "sn-jnl", "mnras", "aa",
     # Thesis / long-form
-    "tufte-handout", "tufte-book",
+    "tufte-handout", "tufte-book", "mimosis",
+    # Social-science / humanities
+    "apa7",
+    # CV / résumé
+    "moderncv", "europasscv",
+    # Poster
+    "tikzposter", "a0poster",
+    # Exam / problem sets
+    "exam",
+    # Standalone (TikZ figures, snippets)
+    "standalone",
 ]
 
 from .model import (
@@ -229,7 +239,7 @@ _STATE_RAW = 102
 # Document classes that natively support \chapter. The heading-style
 # combo greys out the Chapter entry for any other class (article,
 # letter, beamer — those classes don't define \chapter at all).
-CHAPTER_CLASSES = ("report", "book", "memoir")
+CHAPTER_CLASSES = ("report", "book", "memoir", "scrreprt", "scrbook", "mimosis")
 
 
 def class_supports_chapter(class_name: str) -> bool:
