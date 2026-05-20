@@ -251,6 +251,7 @@ _P_CROSSREF = QTextCharFormat.UserProperty + 5  # value = "label|kind"
 _P_RAW = QTextCharFormat.UserProperty + 6       # value = raw LaTeX source
 _P_HIGHLIGHT = QTextCharFormat.UserProperty + 7  # value = color name
 _P_COMMENT = QTextCharFormat.UserProperty + 8    # value = "note|author|timestamp|resolved"
+_P_RAW_BLOCK = QTextCharFormat.UserProperty + 9  # original RawLatex source on block format
 
 
 # ---- block payload storage (figures/tables/raw) ----
@@ -1148,18 +1149,25 @@ class DocumentEditor(QWidget):
                     # Legacy stub-based tables (from older documents).
                     blocks.append(self._table_from_stub(text))
                 elif state == _STATE_RAW:
-                    # Strip whichever prefix is present; supports
-                    # documents saved before the typed prefixes existed.
-                    raw = text
-                    for prefix in _RAW_PREFIXES:
-                        if raw.startswith(prefix):
-                            raw = raw[len(prefix):]
-                            break
-                    # Restore the real newlines we substituted on render
-                    # so the LaTeX serializer emits a well-formed verbatim
-                    # / lstlisting / etc. environment.
-                    raw = raw.replace(_LINE_SEP, "\n")
-                    blocks.append(RawLatex(text=raw))
+                    # figure*/table* blocks store the original LaTeX in
+                    # a block-format property because the visible text is
+                    # a compact summary, not the real source.
+                    stored = block.blockFormat().property(_P_RAW_BLOCK)
+                    if stored:
+                        blocks.append(RawLatex(text=stored))
+                    else:
+                        # Strip whichever prefix is present; supports
+                        # documents saved before the typed prefixes existed.
+                        raw = text
+                        for prefix in _RAW_PREFIXES:
+                            if raw.startswith(prefix):
+                                raw = raw[len(prefix):]
+                                break
+                        # Restore the real newlines we substituted on render
+                        # so the LaTeX serializer emits a well-formed verbatim
+                        # / lstlisting / etc. environment.
+                        raw = raw.replace(_LINE_SEP, "\n")
+                        blocks.append(RawLatex(text=raw))
                 else:
                     # Text blocks: determine the paragraph style from how
                     # the block CURRENTLY looks, not the stored state.
@@ -1273,6 +1281,12 @@ class DocumentEditor(QWidget):
             # For figure*/table* blocks that contain an image, show a
             # preview thumbnail above the raw LaTeX source.
             if ("\\begin{figure*}" in text or "\\begin{table*}" in text):
+                # Store the full original LaTeX on the block format so
+                # reconstruction recovers the real source, not the
+                # compact display summary.
+                bfmt = cursor.blockFormat()
+                bfmt.setProperty(_P_RAW_BLOCK, text)
+                cursor.setBlockFormat(bfmt)
                 inc = _re.search(
                     r"\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}", text)
                 if inc:
