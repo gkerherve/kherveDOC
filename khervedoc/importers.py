@@ -1221,6 +1221,9 @@ def import_pdf(pdf_path: Path, image_dir: Path,
     # True once we've seen the title-sized block on page 1 — anything
     # large-font before it is likely the journal masthead.
     seen_title_block = False
+    # True once we've seen an author-sized block after the title, then
+    # switched to body-sized text (i.e. the abstract has started).
+    seen_author_block = False
     # Track whether we've hit the first numbered section heading. Body
     # text between title/author and first section is likely abstract.
     seen_first_section = False
@@ -1361,9 +1364,6 @@ def import_pdf(pdf_path: Path, image_dir: Path,
             # --- Detect figure / table captions ---
             if _PDF_CAPTION_RE.match(plain):
                 in_abstract_zone = False
-                for inl in block_inlines:
-                    if isinstance(inl, Text) and "italic" not in inl.marks:
-                        inl.marks.append("italic")
                 children.append(Paragraph(
                     children=block_inlines, alignment="center"))
                 continue
@@ -1407,10 +1407,17 @@ def import_pdf(pdf_path: Path, image_dir: Path,
                 children.append(Abstract(children=block_inlines))
             elif (not seen_first_section and page_idx == 0
                   and seen_title_block and meta_title):
-                # Body text on page 1 between title/author and first section
-                # is almost certainly the abstract (only when we have metadata
-                # to confirm the title block identity).
-                children.append(Abstract(children=block_inlines))
+                # On page 1, between title and first section: blocks with
+                # font size above body are author lines; body-sized text
+                # is the abstract.
+                if avg_size > body_size * 1.05 and not seen_author_block:
+                    children.append(Author(children=block_inlines))
+                elif avg_size > body_size * 1.05 and seen_author_block:
+                    # Still author-sized — another author line.
+                    children.append(Author(children=block_inlines))
+                else:
+                    seen_author_block = True
+                    children.append(Abstract(children=block_inlines))
             else:
                 children.append(Paragraph(children=block_inlines))
 
@@ -1441,10 +1448,32 @@ def import_pdf(pdf_path: Path, image_dir: Path,
 
     src.close()
 
+    # --- Merge consecutive Abstract blocks into one paragraph --------------
+    merged: list = []
+    for block in children:
+        if isinstance(block, Abstract) and merged and isinstance(merged[-1], Abstract):
+            # Append a space then the new inlines to the previous Abstract.
+            merged[-1].children.append(Text(text=" "))
+            merged[-1].children.extend(block.children)
+        else:
+            merged.append(block)
+    children = merged
+
+    # --- Merge consecutive Author blocks into one --------------------------
+    merged2: list = []
+    for block in children:
+        if isinstance(block, Author) and merged2 and isinstance(merged2[-1], Author):
+            merged2[-1].children.append(Text(text=", "))
+            merged2[-1].children.extend(block.children)
+        else:
+            merged2.append(block)
+    children = merged2
+
     # --- Add metadata-derived blocks at the top ----------------------------
+    has_body_author = any(isinstance(c, Author) for c in children)
     if meta_title:
         children.insert(0, Title(children=[Text(text=meta_title)]))
-    if meta_author:
+    if meta_author and not has_body_author:
         idx = 1 if meta_title else 0
         children.insert(idx, Author(children=[Text(text=meta_author)]))
 
