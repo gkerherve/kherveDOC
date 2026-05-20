@@ -173,11 +173,7 @@ class DocSettingsDialog(QDialog):
         self._title = QLineEdit(meta.title)
         self._author = QLineEdit(meta.author)
         self._docclass = QComboBox(); self._docclass.setEditable(True)
-        self._docclass.addItems([
-            "article", "report", "book", "letter", "beamer", "memoir",
-            "elsarticle", "IEEEtran", "revtex4-2", "achemso",
-            "amsart", "llncs", "acmart",
-        ])
+        self._docclass.addItems(TEMPLATE_CHOICES)
         self._docclass.setCurrentText(meta.documentclass)
 
         w = QWidget()
@@ -1662,8 +1658,8 @@ class MainWindow(QMainWindow):
         self._template_combo = QComboBox(self)
         for cls in TEMPLATE_CHOICES:
             self._template_combo.addItem(cls, cls)
-        self._template_combo.setMinimumWidth(90)
-        self._template_combo.setMaximumWidth(110)
+        self._template_combo.setMinimumWidth(100)
+        self._template_combo.setMaximumWidth(130)
         self._template_combo.setToolTip("LaTeX document class")
         self._template_combo.currentIndexChanged.connect(self._on_template_changed)
         tb.addWidget(self._template_combo)

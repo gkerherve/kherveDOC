@@ -33,7 +33,17 @@ from .paged_edit import PagedTextEdit
 
 
 # LaTeX document classes shown in the toolbar combo. Order = display order.
-TEMPLATE_CHOICES = ["article", "report", "book", "letter", "beamer", "memoir"]
+TEMPLATE_CHOICES = [
+    # Standard
+    "article", "report", "book", "letter", "beamer", "memoir",
+    # KOMA-Script
+    "scrartcl", "scrreprt", "scrbook",
+    # Journal / conference
+    "elsarticle", "IEEEtran", "revtex4-2", "achemso", "amsart",
+    "llncs", "acmart", "svjour3",
+    # Thesis / long-form
+    "tufte-handout", "tufte-book",
+]
 
 from .model import (
     Abstract, Author, Citation, Comment, CrossRef, Document, DocMeta, Figure,
