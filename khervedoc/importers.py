@@ -1115,7 +1115,24 @@ def import_docx(docx_path: Path, image_dir: Path) -> Document:
     import docx as _docx
     image_dir.mkdir(parents=True, exist_ok=True)
 
-    src = _docx.Document(str(docx_path))
+    try:
+        src = _docx.Document(str(docx_path))
+    except PermissionError:
+        raise OSError(
+            f"Cannot read '{docx_path.name}' — the file may be open in "
+            f"another application (e.g. Word) or not yet synced from the "
+            f"cloud. Close any other program using it, or right-click the "
+            f"file in Explorer and choose 'Always keep on this device'."
+        ) from None
+    except Exception as exc:
+        if "not found" in str(exc).lower() or "no such file" in str(exc).lower():
+            raise OSError(
+                f"Cannot open '{docx_path.name}' — the file may not be "
+                f"downloaded locally (OneDrive/cloud placeholder). "
+                f"Right-click it in Explorer → 'Always keep on this device', "
+                f"then try again."
+            ) from None
+        raise
     children: list = []
     title: str = ""
     author: str = src.core_properties.author or ""
