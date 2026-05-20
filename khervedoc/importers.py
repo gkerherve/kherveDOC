@@ -946,12 +946,6 @@ def import_tex(tex_source: str) -> Document:
             abs_content = _extract_braced(body_fm, "abstract")
             if abs_content is not None:
                 body_abstract_text = abs_content
-                body_fm = re.sub(
-                    r"\\abstract\b\s*(?:\[[^\]]*\])?\s*\{",
-                    lambda m: "",
-                    body_fm, count=1)
-                # Remove the matching closing brace — it's the last }
-                # of the extracted command. Use balanced stripping.
                 body_fm = _strip_balanced_command(body_fm, "abstract")
             kw_content = _extract_braced(body_fm, "keywords")
             if kw_content is not None:

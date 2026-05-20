@@ -576,6 +576,11 @@ def serialize_document(doc: Document) -> str:
     else:
         while i < n:
             block = children[i]
+            # Skip Title/Author/Abstract/Keywords blocks when body
+            # frontmatter already carries the full metadata + \maketitle.
+            if fm_extras and isinstance(block, (Title, Author, Abstract, Keywords)):
+                i += 1
+                continue
             if isinstance(block, Abstract):
                 paras: list[str] = []
                 while i < n and isinstance(children[i], Abstract):
@@ -594,12 +599,6 @@ def serialize_document(doc: Document) -> str:
                 joined = " \\sep ".join(terms)
                 parts.append(f"\\begin{{keyword}}\n{joined}\n\\end{{keyword}}\n")
                 if i < n: parts.append("\n")
-                continue
-
-            # Skip Title/Author/Abstract/Keywords blocks when body
-            # frontmatter already carries the full metadata + \maketitle.
-            if fm_extras and isinstance(block, (Title, Author, Abstract, Keywords)):
-                i += 1
                 continue
             rendered = serialize_block(block, has_chapters=has_chapters,
                                        float_h=not is_journal)
