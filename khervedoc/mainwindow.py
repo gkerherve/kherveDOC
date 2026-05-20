@@ -12,9 +12,10 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog,
-    QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFontComboBox,
-    QFormLayout, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QInputDialog,
-    QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox, QPlainTextEdit,
+    QDialogButtonBox, QDockWidget, QDoubleSpinBox, QFileDialog,
+    QFontComboBox, QFormLayout, QFrame, QGridLayout, QGroupBox,
+    QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
+    QListWidgetItem, QMainWindow, QMenu, QMessageBox, QPlainTextEdit,
     QProgressBar, QProgressDialog, QPushButton, QScrollArea, QSlider,
     QSpinBox, QSplitter,
     QStackedWidget, QStatusBar, QTabWidget, QToolBar, QToolButton,
@@ -33,11 +34,185 @@ from .editor import DocumentEditor, TEMPLATE_CHOICES
 from . import examples, importers
 from .latex_view import LatexView
 from .model import (
-    Author, Document, DocMeta, Paragraph, Section, Text, Title,
-    from_json, to_json,
+    Author, ChapterEntry, Document, DocMeta, Paragraph, Project, Section,
+    Text, Title, from_json, project_from_json, project_to_json, to_json,
 )
 from .preview import PdfPreview
-from .serializer import serialize_document
+from .serializer import (
+    serialize_chapter_body, serialize_document, serialize_project_master,
+)
+
+
+# ---------- project chapter sidebar ----------
+
+class _ProjectSidebar(QWidget):
+    """Sidebar showing chapters with checkboxes, page ranges, and controls."""
+    chapterDoubleClicked = Signal(int)
+    chapterToggled = Signal(int, bool)
+    addChapterRequested = Signal()
+    compileRequested = Signal()
+
+    def __init__(self, parent=None, *, theme=None):
+        super().__init__(parent)
+        self._theme = theme or {}
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(4)
+
+        self._title_label = QLabel("<b>PROJECT</b>")
+        self._title_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self._title_label)
+
+        self._summary_label = QLabel("")
+        self._summary_label.setAlignment(Qt.AlignCenter)
+        self._summary_label.setStyleSheet("color: #888; font-size: 11px;")
+        layout.addWidget(self._summary_label)
+
+        self._list = QListWidget()
+        self._list.setDragDropMode(QListWidget.InternalMove)
+        self._list.setDefaultDropAction(Qt.MoveAction)
+        self._list.itemDoubleClicked.connect(self._on_double_click)
+        self._list.model().rowsMoved.connect(self._on_rows_moved)
+        self._list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._list.customContextMenuRequested.connect(self._on_context_menu)
+        layout.addWidget(self._list, 1)
+
+        btn_row = QHBoxLayout()
+        self._add_btn = QPushButton("+ Add Chapter")
+        self._add_btn.clicked.connect(self.addChapterRequested)
+        btn_row.addWidget(self._add_btn)
+        self._compile_btn = QPushButton("\u25b6 Compile")
+        self._compile_btn.clicked.connect(self.compileRequested)
+        btn_row.addWidget(self._compile_btn)
+        layout.addLayout(btn_row)
+
+        self._chapters: list[ChapterEntry] = []
+        self._active_index: int = -1
+
+    def set_project(self, proj: Project) -> None:
+        self._chapters = proj.chapters
+        title = proj.meta.title or "Untitled Project"
+        self._title_label.setText(f"<b>{title}</b>")
+        self._rebuild_list()
+
+    def set_active_index(self, idx: int) -> None:
+        self._active_index = idx
+        for i in range(self._list.count()):
+            item = self._list.item(i)
+            font = item.font()
+            font.setBold(i == idx)
+            item.setFont(font)
+
+    def _rebuild_list(self) -> None:
+        self._list.blockSignals(True)
+        try:
+            self._list.itemChanged.disconnect(self._on_item_changed)
+        except RuntimeError:
+            pass
+        self._list.clear()
+        total_pages = 0
+        compiling_pages = 0
+        running_page = 0
+        for i, ch in enumerate(self._chapters):
+            page_range = ""
+            if ch.last_known_pages > 0:
+                start = running_page + 1
+                end = running_page + ch.last_known_pages
+                page_range = f"  {start}\u2013{end}  ({ch.last_known_pages}p)"
+                running_page = end
+            total_pages += ch.last_known_pages
+            if ch.enabled:
+                compiling_pages += ch.last_known_pages
+
+            label = ch.label or Path(ch.path).stem
+            text = f"{label}{page_range}"
+            item = QListWidgetItem(text)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable | Qt.ItemIsDragEnabled)
+            item.setCheckState(Qt.Checked if ch.enabled else Qt.Unchecked)
+            if not ch.enabled:
+                item.setForeground(QColor("#999"))
+            font = item.font()
+            font.setBold(i == self._active_index)
+            item.setFont(font)
+            self._list.addItem(item)
+        self._list.blockSignals(False)
+        self._list.itemChanged.connect(self._on_item_changed)
+        summary = f"Total: ~{total_pages}p"
+        if compiling_pages != total_pages:
+            summary += f"  \u00b7  Compiling: ~{compiling_pages}p"
+        self._summary_label.setText(summary)
+
+    def _on_item_changed(self, item: QListWidgetItem) -> None:
+        idx = self._list.row(item)
+        enabled = item.checkState() == Qt.Checked
+        if idx < len(self._chapters):
+            self._chapters[idx].enabled = enabled
+            self.chapterToggled.emit(idx, enabled)
+            self._rebuild_list()
+
+    def _on_double_click(self, item: QListWidgetItem) -> None:
+        self.chapterDoubleClicked.emit(self._list.row(item))
+
+    def _on_rows_moved(self, *_args) -> None:
+        new_order: list[ChapterEntry] = []
+        for i in range(self._list.count()):
+            text = self._list.item(i).text()
+            for ch in self._chapters:
+                label = ch.label or Path(ch.path).stem
+                if text.startswith(label) and ch not in new_order:
+                    new_order.append(ch)
+                    break
+        if len(new_order) == len(self._chapters):
+            self._chapters[:] = new_order
+            self._rebuild_list()
+
+    def _on_context_menu(self, pos) -> None:
+        item = self._list.itemAt(pos)
+        if item is None:
+            return
+        idx = self._list.row(item)
+        ch = self._chapters[idx]
+        menu = QMenu(self)
+        act_rename = menu.addAction("Rename label\u2026")
+        act_set_page = menu.addAction("Set start page\u2026")
+        act_numbering = menu.addMenu("Page numbering")
+        act_arabic = act_numbering.addAction("Arabic (1, 2, 3\u2026)")
+        act_arabic.setCheckable(True)
+        act_arabic.setChecked(ch.numbering == "arabic")
+        act_roman = act_numbering.addAction("Roman (i, ii, iii\u2026)")
+        act_roman.setCheckable(True)
+        act_roman.setChecked(ch.numbering == "roman")
+        menu.addSeparator()
+        act_remove = menu.addAction("Remove from project")
+
+        chosen = menu.exec(self._list.mapToGlobal(pos))
+        if chosen == act_rename:
+            new_label, ok = QInputDialog.getText(
+                self, "Rename chapter", "Label:", text=ch.label)
+            if ok and new_label.strip():
+                ch.label = new_label.strip()
+                self._rebuild_list()
+        elif chosen == act_set_page:
+            val, ok = QInputDialog.getInt(
+                self, "Set start page",
+                "Page number (0 = continue from previous):",
+                value=ch.start_page or 0, min=0, max=9999)
+            if ok:
+                ch.start_page = val if val > 0 else None
+                self._rebuild_list()
+        elif chosen == act_arabic:
+            ch.numbering = "arabic"
+            self._rebuild_list()
+        elif chosen == act_roman:
+            ch.numbering = "roman"
+            self._rebuild_list()
+        elif chosen == act_remove:
+            self._chapters.pop(idx)
+            if self._active_index == idx:
+                self._active_index = -1
+            elif self._active_index > idx:
+                self._active_index -= 1
+            self._rebuild_list()
 
 
 # ---------- background compile ----------
@@ -729,6 +904,11 @@ class MainWindow(QMainWindow):
         # imported .tex) resolve when compiling the preview.
         self._import_source_dir: Path | None = None
         self._kdocz_extract_dir: Path | None = None   # set when opening a .kdocz
+        # Multi-chapter project state
+        self._project: Project | None = None
+        self._project_path: Path | None = None
+        self._project_chapter_idx: int = -1  # which chapter is in the editor
+        self._project_chapter_docs: dict[int, Document] = {}  # cached docs
         self._build_dir = Path(tempfile.mkdtemp(prefix="khervedoc-"))
         self._compiler = "latex"
         self._compile_worker: _CompileWorker | None = None
@@ -891,6 +1071,15 @@ class MainWindow(QMainWindow):
         self._pdf_zoom_label.setStyleSheet(f"padding-right: 6px; color: {self._theme['status_text']};")
         self._status.addPermanentWidget(self._pdf_zoom_label)
 
+        self._pdf_fit_width_btn = QToolButton(self)
+        self._pdf_fit_width_btn.setIcon(icons.fit_width())
+        self._pdf_fit_width_btn.setToolTip("Fit page width (Ctrl+0)")
+        self._pdf_fit_width_btn.setAutoRaise(True)
+        self._pdf_fit_width_btn.setCheckable(True)
+        self._pdf_fit_width_btn.setChecked(True)
+        self._pdf_fit_width_btn.toggled.connect(self._on_pdf_fit_width_toggled)
+        self._status.addPermanentWidget(self._pdf_fit_width_btn)
+
         self._compiler_label = QLabel(self._compiler_status_text(), self)
         self._status.addPermanentWidget(self._compiler_label)
 
@@ -925,6 +1114,7 @@ class MainWindow(QMainWindow):
         self._pdf_zoom_slider.hide()
         self._pdf_zoom_in_btn.hide()
         self._pdf_zoom_label.hide()
+        self._pdf_fit_width_btn.hide()
 
         # Set icon colors before building actions so they render correctly.
         self._is_dark = themes.is_dark(self._theme_name)
@@ -2488,6 +2678,7 @@ class MainWindow(QMainWindow):
         self._pdf_zoom_slider.setVisible(show_pdf_zoom)
         self._pdf_zoom_in_btn.setVisible(show_pdf_zoom)
         self._pdf_zoom_label.setVisible(show_pdf_zoom)
+        self._pdf_fit_width_btn.setVisible(show_pdf_zoom)
 
     # ----- find bar -----
 
@@ -2638,6 +2829,13 @@ class MainWindow(QMainWindow):
         self._editor.set_fit_to_width(checked)
         self._preview.set_fit_to_width(checked)
         self._pdf_side_panel.set_fit_to_width(checked)
+        self._pdf_fit_width_btn.blockSignals(True)
+        self._pdf_fit_width_btn.setChecked(checked)
+        self._pdf_fit_width_btn.blockSignals(False)
+
+    def _on_pdf_fit_width_toggled(self, checked: bool) -> None:
+        self.act_fit_page_width.setChecked(checked)
+        self._toggle_fit_page_width(checked)
 
     def _on_fit_zoom_changed(self, pct: int) -> None:
         """Editor computed a new zoom via fit-to-width; sync the slider."""
@@ -2704,6 +2902,7 @@ class MainWindow(QMainWindow):
         self._zoom_in_btn.setIcon(icons.zoom_in())
         self._pdf_zoom_out_btn.setIcon(icons.zoom_out())
         self._pdf_zoom_in_btn.setIcon(icons.zoom_in())
+        self._pdf_fit_width_btn.setIcon(icons.fit_width())
 
     def _toggle_spell_check(self, enabled: bool) -> None:
         self._editor.set_spell_check_enabled(enabled)

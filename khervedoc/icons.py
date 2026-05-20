@@ -561,6 +561,26 @@ def zoom_out() -> QIcon:
     return QIcon(px)
 
 
+def fit_width() -> QIcon:
+    """Double-headed horizontal arrow between two vertical bars."""
+    px, p = _new_canvas()
+    p.setRenderHint(QPainter.Antialiasing, True)
+    pen = QPen(_fg(), 1.6, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+    p.setPen(pen)
+    # Left bar
+    p.drawLine(4, 5, 4, 19)
+    # Right bar
+    p.drawLine(20, 5, 20, 19)
+    # Horizontal arrow shaft
+    p.drawLine(6, 12, 18, 12)
+    # Left arrowhead
+    p.drawLine(6, 12, 9, 9); p.drawLine(6, 12, 9, 15)
+    # Right arrowhead
+    p.drawLine(18, 12, 15, 9); p.drawLine(18, 12, 15, 15)
+    p.end()
+    return QIcon(px)
+
+
 # ---- equation builder category icons ----
 
 def eq_fractions() -> QIcon:
