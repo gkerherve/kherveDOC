@@ -243,10 +243,11 @@ class _ProjectSidebar(QWidget):
                 ch.label = new_label.strip()
                 self._rebuild_list()
         elif chosen == act_set_page:
+            # PySide6 getInt signature: parent, title, label, value, min, max
             val, ok = QInputDialog.getInt(
                 self, "Set start page",
                 "Page number (0 = continue from previous):",
-                value=ch.start_page or 0, min=0, max=9999)
+                ch.start_page or 0, 0, 9999)
             if ok:
                 ch.start_page = val if val > 0 else None
                 self._rebuild_list()
