@@ -15,7 +15,8 @@ from PySide6.QtWidgets import (
     QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFontComboBox,
     QFormLayout, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QInputDialog,
     QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox, QPlainTextEdit,
-    QProgressBar, QPushButton, QScrollArea, QSlider, QSpinBox, QSplitter,
+    QProgressBar, QProgressDialog, QPushButton, QScrollArea, QSlider,
+    QSpinBox, QSplitter,
     QStackedWidget, QStatusBar, QTabWidget, QToolBar, QToolButton,
     QVBoxLayout, QWidget,
 )
@@ -2218,10 +2219,22 @@ class MainWindow(QMainWindow):
     def _export_docx(self) -> None:
         path_s, _ = QFileDialog.getSaveFileName(
             self, "Export Word", "document.docx", "Word (*.docx)")
-        if path_s:
-            from .docx_exporter import export_docx
-            export_docx(self._editor.get_document(), Path(path_s))
-            self._status.showMessage(f"Exported {path_s}", 4000)
+        if not path_s:
+            return
+        doc = self._editor.get_document()
+        dlg = QProgressDialog("Exporting\u2026", None, 0, max(len(doc.children), 1), self)
+        dlg.setWindowTitle("Export .docx")
+        dlg.setMinimumDuration(0)
+        dlg.setWindowModality(Qt.WindowModal)
+
+        def _on_progress(current: int, total: int) -> None:
+            dlg.setValue(current)
+            QApplication.processEvents()
+
+        from .docx_exporter import export_docx
+        export_docx(doc, Path(path_s), progress=_on_progress)
+        dlg.setValue(dlg.maximum())
+        self._status.showMessage(f"Exported {path_s}", 4000)
 
     def _export_pdf(self) -> None:
         doc = self._editor.get_document()

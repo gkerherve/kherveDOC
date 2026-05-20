@@ -7,12 +7,16 @@ originally came from.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Callable
 
 from docx import Document as DocxDocument
 from docx.shared import Pt, Cm, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 from . import model as M
+
+# Type for the optional progress callback: (current_block, total_blocks).
+ProgressCallback = Callable[[int, int], None] | None
 
 # ---- alignment mapping ---------------------------------------------------
 
@@ -143,8 +147,13 @@ def _add_hyperlink(para, url: str, children: list[M.Inline]) -> None:
 
 # ---- block rendering -----------------------------------------------------
 
-def export_docx(doc: M.Document, path: Path) -> None:
-    """Serialize a kherveDOC Document to a .docx file at *path*."""
+def export_docx(doc: M.Document, path: Path,
+                 progress: ProgressCallback = None) -> None:
+    """Serialize a kherveDOC Document to a .docx file at *path*.
+
+    *progress*, if given, is called as ``progress(i, total)`` after each
+    block is written so the UI can update a progress bar.
+    """
     out = DocxDocument()
 
     meta = doc.meta
@@ -165,10 +174,9 @@ def export_docx(doc: M.Document, path: Path) -> None:
         p = out.paragraphs[0]._element
         p.getparent().remove(p)
 
-    # Track whether we've emitted any Abstract blocks so we can group them.
-    abstract_paras: list[M.Abstract] = []
+    total = len(doc.children)
 
-    for block in doc.children:
+    for i, block in enumerate(doc.children):
         if isinstance(block, M.Title):
             para = out.add_paragraph(style="Title")
             _add_inlines(para, block.children)
@@ -258,5 +266,8 @@ def export_docx(doc: M.Document, path: Path) -> None:
         elif isinstance(block, M.Frame):
             para = out.add_paragraph(style="Heading 1")
             _add_inlines(para, block.children)
+
+        if progress is not None:
+            progress(i + 1, total)
 
     out.save(str(path))
