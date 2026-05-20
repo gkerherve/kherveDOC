@@ -239,23 +239,8 @@ _STATE_TABLE = 101
 _STATE_RAW = 102
 
 
-# Document classes that natively support \chapter. The heading-style
-# combo greys out the Chapter entry for any other class (article,
-# letter, beamer — those classes don't define \chapter at all).
-CHAPTER_CLASSES = (
-    "report", "book", "memoir", "scrreprt", "scrbook", "mimosis",
-    "hepthesis", "suftesi", "toptesi", "disser", "amsbook", "elegantbook",
-)
-
-
-def class_supports_chapter(class_name: str) -> bool:
-    """True for report / book / memoir (and their variants). article /
-    letter / beamer return False, so the heading combo greys out
-    Chapter for those."""
-    if not class_name:
-        return False
-    head = class_name.lower().split(",")[0].strip()
-    return any(head.startswith(c) for c in CHAPTER_CLASSES)
+# Re-export from model so existing imports (tests, etc.) keep working.
+from .model import CHAPTER_CLASSES, class_supports_chapter  # noqa: F401
 
 
 # ---- char-format custom property ids ----

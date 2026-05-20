@@ -125,7 +125,7 @@ def _maybe_label(label: str | None) -> str:
 _ALIGN_ENVS = {"left": "flushleft", "center": "center", "right": "flushright"}
 
 
-_CHAPTER_CLASSES = {"report", "book", "memoir"}
+from .model import class_supports_chapter as _class_supports_chapter
 
 
 def serialize_block(node: Block, *, has_chapters: bool = False,
@@ -398,7 +398,7 @@ def serialize_document(doc: Document) -> str:
     m = doc.meta
     is_elsarticle = (m.documentclass or "").lower().startswith("elsarticle")
     is_beamer = (m.documentclass or "").lower() == "beamer"
-    has_chapters = (m.documentclass or "").lower() in _CHAPTER_CLASSES
+    has_chapters = _class_supports_chapter(m.documentclass or "")
     # Non-standard classes carry their own layout — don't inject geometry,
     # setspace, or font packages that may conflict.
     is_journal = (m.documentclass or "").lower() not in _STANDARD_SERIALIZER_CLASSES
@@ -687,7 +687,7 @@ def serialize_chapter_body(doc: Document) -> str:
     """Serialize a chapter document as body-only LaTeX (no preamble, no
     \\begin{document}).  Used for \\include'd chapter files."""
     m = doc.meta
-    has_chapters = (m.documentclass or "").lower() in _CHAPTER_CLASSES
+    has_chapters = _class_supports_chapter(m.documentclass or "")
     is_journal = (m.documentclass or "").lower() not in _STANDARD_SERIALIZER_CLASSES
     parts: list[str] = []
     children = doc.children

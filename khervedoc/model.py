@@ -502,3 +502,19 @@ def project_from_json(s: str) -> Project:
         bibliography=d.get("bibliography", ""),
         bib_style=d.get("bib_style", ""),
     )
+
+
+# ---- chapter-capable document classes ----
+
+CHAPTER_CLASSES = (
+    "report", "book", "memoir", "scrreprt", "scrbook", "mimosis",
+    "hepthesis", "suftesi", "toptesi", "disser", "amsbook", "elegantbook",
+)
+
+
+def class_supports_chapter(class_name: str) -> bool:
+    """True when *class_name* defines ``\\chapter``."""
+    if not class_name:
+        return False
+    head = class_name.lower().split(",")[0].strip()
+    return any(head.startswith(c) for c in CHAPTER_CLASSES)
