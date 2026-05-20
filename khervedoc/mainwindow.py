@@ -704,7 +704,7 @@ class MainWindow(QMainWindow):
     _windows: list["MainWindow"] = []
 
     _OPENABLE_SUFFIXES = {".ktexz", ".ktex.json", ".kdocz", ".kdoc.json",
-                          ".tex", ".md", ".markdown", ".docx", ".json"}
+                          ".tex", ".md", ".markdown", ".docx", ".pdf", ".json"}
     _IMAGE_SUFFIXES = {
         ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff",
         ".webp", ".svg",
