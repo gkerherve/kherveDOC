@@ -139,13 +139,16 @@ class _PageBreakOverlay(QWidget):
         scroll_y = self._edit.verticalScrollBar().value()
         h = self.height()
         w = self.width()
-        for page_no, y_doc in anchors:
+        for seq, (_page_no, y_doc) in enumerate(anchors, start=1):
             y_vp = int(y_doc - scroll_y)
             if y_vp < -20 or y_vp > h + 20:
                 continue
             painter.drawLine(6, y_vp, w - 6, y_vp)
+            # Use sequential numbering based on Y-sorted position so
+            # the labels always read 1/2, 2/3, 3/4 ... regardless of
+            # which PDF page numbers the anchors originally came from.
             painter.drawText(8, y_vp - 4,
-                             f"— page {page_no - 1} / {page_no} —")
+                             f"— page {seq} / {seq + 1} —")
         painter.end()
 
 
