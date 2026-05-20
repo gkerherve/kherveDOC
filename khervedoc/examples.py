@@ -4071,8 +4071,8 @@ def _calendar_latex(year: int, month: int) -> str:
     Matches the classic wall-calendar / desk-planner style:
     - centred month + year heading in large caps
     - seven day-of-week column headers in small caps
-    - tall cells with the day number right-aligned at the top
-    - fills the full landscape A4 page
+    - tall cells with the day number at the top-right
+    - fills the full landscape A4 page (0.5 cm margins)
     """
     import calendar as _cal
 
@@ -4081,73 +4081,66 @@ def _calendar_latex(year: int, month: int) -> str:
     weeks = cal.monthdayscalendar(year, month)
     n_weeks = len(weeks)
 
-    # A4 landscape usable area with 1.2 cm margins each side:
-    #   width  = 29.7 - 2×1.2 = 27.3 cm
-    #   height = 21.0 - 2×1.2 = 18.6 cm
-    # Reserve ~1.4 cm for heading + header row → ~17.2 cm for week rows.
-    # Divide evenly among weeks, with a small deduction for hlines.
-    available_h = 17.2 - n_weeks * 0.05
+    # A4 landscape usable: 29.7 − 2×0.5 = 28.7 cm wide,
+    # 21.0 − 2×0.5 = 20.0 cm tall.
+    # Reserve ~1.2 cm for heading + header row → ~18.8 cm for weeks.
+    available_h = 18.8
     cell_h_cm = round(available_h / n_weeks, 2)
+
+    # Column width: 28.7 cm / 7 ≈ 4.1 cm each, minus tabcolsep+rules.
+    col_spec = (
+        "p{\\dimexpr\\textwidth/7-2\\tabcolsep-\\arrayrulewidth\\relax}"
+    )
 
     day_names = ["Monday", "Tuesday", "Wednesday",
                  "Thursday", "Friday", "Saturday", "Sunday"]
 
-    lines: list[str] = []
-    lines.append("\\begin{center}")
-    lines.append(
-        f"{{\\LARGE\\bfseries {month_name}}}\\\\[2pt]"
+    L: list[str] = []
+    L.append("\\begin{center}")
+    L.append(
+        f"{{\\LARGE\\bfseries {month_name}}}\\\\[1pt]"
         f"{{\\large {year}}}"
     )
-    lines.append("\\end{center}")
-    lines.append("\\vspace{2pt}")
+    L.append("\\end{center}")
+    L.append("\\vspace{-2pt}")
 
-    # Use the full text width: 7 equal columns stretching edge to edge.
-    # tabular* with @{\extracolsep{\fill}} or tabularx would work, but
-    # the simplest portable approach is explicit p{} columns computed
-    # from the text width minus rules.
-    lines.append("\\noindent\\makebox[\\textwidth]{%")
-    lines.append(
-        "\\begin{tabular}"
-        "{|p{\\dimexpr\\textwidth/7-2\\tabcolsep-"
-        "\\arrayrulewidth\\relax}"
-        * 1  # first column
-    )
-    for _ in range(6):
-        lines.append(
-            "|p{\\dimexpr\\textwidth/7-2\\tabcolsep-"
-            "\\arrayrulewidth\\relax}"
-        )
-    lines.append("|}")
-    lines.append("\\hline")
+    L.append("\\noindent\\makebox[\\textwidth]{%")
+    L.append("\\begin{tabular}{|" + "|".join([col_spec] * 7) + "|}")
+    L.append("\\hline")
 
     # Day-of-week header
-    header_cells = []
+    hdr = []
     for i, dn in enumerate(day_names):
-        if i == len(day_names) - 1:
-            header_cells.append(
-                f"\\centering\\arraybackslash\\textsc{{{dn}}}")
-        else:
-            header_cells.append(f"\\centering\\textsc{{{dn}}}")
-    lines.append(" & ".join(header_cells) + " \\\\")
-    lines.append("\\hline")
+        prefix = "\\centering\\arraybackslash" if i == 6 else "\\centering"
+        hdr.append(f"{prefix}\\textsc{{{dn}}}")
+    L.append(" & ".join(hdr) + " \\\\")
+    L.append("\\hline")
 
-    # Week rows — each cell has a fixed height and the day number
-    # right-aligned at the top.
+    # Week rows — use a \parbox so the day number sits at the top-right
+    # and the rest of the cell is empty writing space below.
     for w in weeks:
         cells: list[str] = []
         for d in w:
+            inner_w = (
+                "\\dimexpr\\textwidth/7-2\\tabcolsep"
+                "-\\arrayrulewidth-2\\fboxsep\\relax"
+            )
             if d == 0:
-                cells.append(f"\\rule{{0pt}}{{{cell_h_cm}cm}}")
+                cells.append(
+                    f"\\parbox[t][{cell_h_cm}cm][t]{{{inner_w}}}"
+                    "{\\mbox{}}"
+                )
             else:
                 cells.append(
-                    f"\\raggedleft\\rule{{0pt}}{{{cell_h_cm}cm}}"
-                    f"\\footnotesize\\textbf{{{d}}}\\newline "
+                    f"\\parbox[t][{cell_h_cm}cm][t]{{{inner_w}}}"
+                    "{\\raggedleft\\footnotesize\\textbf{"
+                    + str(d) + "}\\par}"
                 )
-        lines.append(" & ".join(cells) + " \\\\")
-        lines.append("\\hline")
+        L.append(" & ".join(cells) + " \\\\")
+        L.append("\\hline")
 
-    lines.append("\\end{tabular}}")  # close makebox
-    return "\n".join(lines)
+    L.append("\\end{tabular}}")
+    return "\n".join(L)
 
 
 def calendar() -> Document:
@@ -4161,8 +4154,8 @@ def calendar() -> Document:
         meta=_meta(
             title="", author="",
             body_font_pt=10,
-            margin_left_cm=1.2, margin_right_cm=1.2,
-            margin_top_cm=1.2, margin_bottom_cm=1.2,
+            margin_left_cm=0.5, margin_right_cm=0.5,
+            margin_top_cm=0.5, margin_bottom_cm=0.5,
             paragraph_indent=False,
             page_size="A4",
             class_options="landscape",
