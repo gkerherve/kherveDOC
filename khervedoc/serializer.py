@@ -460,15 +460,19 @@ def serialize_document(doc: Document) -> str:
     # Pull title / author content out of the body (or fall back to meta).
     inline_title: str | None = None
     has_title_block = False
-    inline_author: str | None = None
+    author_parts: list[str] = []
     for block in doc.children:
         if isinstance(block, Title) and inline_title is None:
             inline_title = serialize_inlines(block.children)
             has_title_block = True
-        elif isinstance(block, Author) and inline_author is None:
-            inline_author = serialize_inlines(block.children)
+        elif isinstance(block, Author):
+            part = serialize_inlines(block.children)
+            if part:
+                author_parts.append(part)
     title_text = inline_title if inline_title is not None else (
         escape_text((doc.meta.title or "").strip()))
+    # Join multiple Author blocks with \\ so they wrap in the PDF.
+    inline_author = " \\\\\n".join(author_parts) if author_parts else None
     author_text = inline_author if inline_author is not None else (
         escape_text((doc.meta.author or "").strip()))
 
