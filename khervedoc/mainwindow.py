@@ -1958,7 +1958,7 @@ class MainWindow(QMainWindow):
 
     def eventFilter(self, obj, event) -> bool:
         """Show a link cursor (not "copy") when dragging openable files
-        over any child widget — Code tab, PDF tab, etc."""
+        over any child widget, and handle the drop itself."""
         etype = event.type()
         if etype in (QEvent.DragEnter, QEvent.DragMove):
             mime = event.mimeData()
@@ -1969,6 +1969,21 @@ class MainWindow(QMainWindow):
                         if suffix in self._OPENABLE_SUFFIXES | self._IMAGE_SUFFIXES:
                             event.setDropAction(Qt.LinkAction)
                             event.accept()
+                            return True
+        if etype == QEvent.Drop:
+            mime = event.mimeData()
+            if mime.hasUrls():
+                for url in mime.urls():
+                    if url.isLocalFile():
+                        path = Path(url.toLocalFile())
+                        suffix = path.suffix.lower()
+                        if suffix in self._OPENABLE_SUFFIXES:
+                            event.accept()
+                            self._open_path(path)
+                            return True
+                        if suffix in self._IMAGE_SUFFIXES:
+                            event.accept()
+                            self._editor.drop_image_file(path)
                             return True
         return super().eventFilter(obj, event)
 
