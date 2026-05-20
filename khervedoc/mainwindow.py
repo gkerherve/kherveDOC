@@ -879,6 +879,7 @@ class MainWindow(QMainWindow):
     _windows: list["MainWindow"] = []
 
     _OPENABLE_SUFFIXES = {".ktexz", ".ktex.json", ".kdocz", ".kdoc.json",
+                          ".kdocproj.json",
                           ".tex", ".md", ".markdown", ".docx", ".pdf", ".json"}
     _IMAGE_SUFFIXES = {
         ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff",
@@ -988,6 +989,18 @@ class MainWindow(QMainWindow):
         cl.addWidget(self._find_bar)
         self.setCentralWidget(central)
         self._side_by_side = False
+
+        # Project sidebar (hidden until a project is opened).
+        self._project_sidebar = _ProjectSidebar(self, theme=self._theme)
+        self._project_dock = QDockWidget("Project", self)
+        self._project_dock.setWidget(self._project_sidebar)
+        self._project_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self._project_dock)
+        self._project_dock.hide()
+        self._project_sidebar.chapterDoubleClicked.connect(self._switch_chapter)
+        self._project_sidebar.chapterToggled.connect(self._on_chapter_toggled)
+        self._project_sidebar.addChapterRequested.connect(self._add_chapter_to_project)
+        self._project_sidebar.compileRequested.connect(self._compile_project)
 
         self._status = QStatusBar(self)
         self.setStatusBar(self._status)
@@ -1200,6 +1213,15 @@ class MainWindow(QMainWindow):
         self.act_save_as = QAction("Save &As...", self,
                                    shortcut=QKeySequence.SaveAs, triggered=self._save_as)
         self.act_close_doc = QAction("&Close document", self, triggered=self._new)
+        # Project
+        self.act_new_project = QAction("New &project...", self,
+                                       triggered=self._new_project)
+        self.act_open_project = QAction("Open pro&ject...", self,
+                                        triggered=self._open_project)
+        self.act_save_project = QAction("Save projec&t", self,
+                                        triggered=self._save_project)
+        self.act_close_project = QAction("Close project", self,
+                                         triggered=self._close_project)
         self.act_import_tex = QAction("Import .&tex...", self, triggered=self._import_tex)
         self.act_import_docx = QAction("Import .&docx...", self, triggered=self._import_docx)
         self.act_import_pdf = QAction("Import .&pdf...", self, triggered=self._import_pdf)
@@ -1551,6 +1573,12 @@ class MainWindow(QMainWindow):
         m_file.addAction(self.act_save)
         m_file.addAction(self.act_save_as)
         m_file.addAction(self.act_close_doc)
+        m_file.addSeparator()
+        m_project = m_file.addMenu("Pro&ject")
+        m_project.addAction(self.act_new_project)
+        m_project.addAction(self.act_open_project)
+        m_project.addAction(self.act_save_project)
+        m_project.addAction(self.act_close_project)
         m_file.addSeparator()
         m_import = m_file.addMenu("&Import")
         m_import.addAction(self.act_import_tex)
@@ -1973,6 +2001,19 @@ class MainWindow(QMainWindow):
     # ----- title -----
 
     def _update_title(self) -> None:
+        if self._project is not None and self._project_path is not None:
+            proj_title = self._project.meta.title or self._project_path.stem
+            ch_label = ""
+            if (0 <= self._project_chapter_idx < len(self._project.chapters)):
+                ch = self._project.chapters[self._project_chapter_idx]
+                ch_label = f" \u2014 {ch.label or Path(ch.path).stem}"
+            self.setWindowTitle(
+                f"KherveTeX {version_string()} \u2014 {proj_title}{ch_label}")
+            self._path_label.setText(
+                f"<b>{proj_title}</b>{ch_label}  \u2014  "
+                f"<span style='color:#666'>{self._project_path.parent}</span>")
+            self._path_label.setToolTip(str(self._project_path))
+            return
         name = self._current_path.name if self._current_path else "Untitled"
         branch_suffix = ""
         if self._current_path and git_backend.is_available():
@@ -1980,7 +2021,7 @@ class MainWindow(QMainWindow):
             if _br:
                 branch_suffix = f" [{_br}]"
         self.setWindowTitle(
-            f"KherveTeX {version_string()} — {name}{branch_suffix}")
+            f"KherveTeX {version_string()} \u2014 {name}{branch_suffix}")
         # Status bar shows "filename  —  full/parent/directory/" so the user
         # can identify the document at a glance and still see where it lives.
         if self._current_path is not None:
@@ -2086,7 +2127,8 @@ class MainWindow(QMainWindow):
     def _open(self) -> None:
         path_s, _ = QFileDialog.getOpenFileName(
             self, "Open document", "",
-            "All supported (*.ktexz *.ktex.json *.kdocz *.kdoc.json *.tex *.md *.markdown *.docx *.pdf);;"
+            "All supported (*.ktexz *.ktex.json *.kdocz *.kdoc.json *.kdocproj.json *.tex *.md *.markdown *.docx *.pdf);;"
+            "Project (*.kdocproj.json);;"
             "Bundled (*.ktexz *.kdocz);;JSON (*.ktex.json *.kdoc.json);;LaTeX (*.tex);;"
             "Markdown (*.md *.markdown);;Word (*.docx);;PDF (*.pdf);;All files (*)")
         if path_s:
@@ -2103,6 +2145,10 @@ class MainWindow(QMainWindow):
         self._io_progress.hide()
 
     def _open_path(self, path: Path) -> None:
+        # Intercept project files before the normal document path.
+        if path.name.lower().endswith(".kdocproj.json"):
+            self._open_project_from_path(path)
+            return
         suffix = path.suffix.lower()
         is_import_ext = suffix in (".tex", ".md", ".markdown", ".docx", ".pdf")
         self._io_start("Importing\u2026" if is_import_ext else "Opening\u2026")
@@ -2236,6 +2282,9 @@ class MainWindow(QMainWindow):
         super().dropEvent(event)
 
     def _save(self) -> None:
+        if self._project is not None:
+            self._save_project()
+            return
         if self._current_path is None:
             self._save_as()
         else:
@@ -2326,6 +2375,262 @@ class MainWindow(QMainWindow):
         else:
             self._status.showMessage(
                 "\u2714 Saved (install pygit2 to enable version history)", 5000)
+
+    # ----- project operations -----
+
+    def _new_project(self) -> None:
+        """Create a new multi-chapter project."""
+        title, ok = QInputDialog.getText(
+            self, "New Project", "Project title:", text="My Thesis")
+        if not ok or not title.strip():
+            return
+        path_s = QFileDialog.getExistingDirectory(
+            self, "Choose project folder")
+        if not path_s:
+            return
+        proj_dir = Path(path_s)
+        proj = Project()
+        proj.meta.title = title.strip()
+        proj.meta.documentclass = "book"
+        # Create a first chapter file
+        ch_name = "chapter1"
+        ch_path = proj_dir / f"{ch_name}.kdoc.json"
+        ch_doc = Document(
+            children=[Section(level=1, children=[Text(text="Introduction")])],
+            meta=proj.meta,
+        )
+        ch_path.write_text(to_json(ch_doc), encoding="utf-8")
+        proj.chapters.append(ChapterEntry(
+            path=f"{ch_name}.kdoc.json",
+            label="1 \u2014 Introduction",
+            enabled=True,
+            start_page=1,
+            numbering="arabic",
+        ))
+        proj_path = proj_dir / f"{title.strip()}.kdocproj.json"
+        proj_path.write_text(project_to_json(proj), encoding="utf-8")
+        self._open_project_from_path(proj_path)
+
+    def _open_project(self) -> None:
+        path_s, _ = QFileDialog.getOpenFileName(
+            self, "Open project", "",
+            "KherveTeX Project (*.kdocproj.json);;All files (*)")
+        if not path_s:
+            return
+        self._open_project_from_path(Path(path_s))
+
+    def _open_project_from_path(self, path: Path) -> None:
+        try:
+            proj = project_from_json(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            QMessageBox.critical(self, "Open project failed", str(exc))
+            return
+        self._project = proj
+        self._project_path = path
+        self._project_chapter_idx = -1
+        self._project_chapter_docs.clear()
+        self._project_sidebar.set_project(proj)
+        self._project_dock.show()
+        self._update_title()
+        # Open the first chapter
+        if proj.chapters:
+            self._switch_chapter(0)
+        self._status.showMessage(
+            f"Opened project: {proj.meta.title} ({len(proj.chapters)} chapters)",
+            5000)
+
+    def _save_project(self) -> None:
+        if self._project is None or self._project_path is None:
+            self._status.showMessage("No project is open", 3000)
+            return
+        # Save current chapter doc back to disk
+        self._flush_current_chapter()
+        # Save the manifest
+        self._project_path.write_text(
+            project_to_json(self._project), encoding="utf-8")
+        # Write each chapter's .tex alongside its .kdoc.json
+        proj_dir = self._project_path.parent
+        for ch in self._project.chapters:
+            ch_path = proj_dir / ch.path
+            if ch_path.exists():
+                try:
+                    doc = from_json(ch_path.read_text(encoding="utf-8"))
+                    stem = ch_path.stem
+                    for ext in (".kdoc", ".ktex"):
+                        if stem.endswith(ext):
+                            stem = stem[:-len(ext)]
+                    tex_path = ch_path.parent / f"{stem}.tex"
+                    tex_path.write_text(
+                        serialize_chapter_body(doc), encoding="utf-8")
+                except Exception:
+                    pass
+        # Write the master .tex
+        master_tex = serialize_project_master(self._project)
+        master_stem = self._project_path.stem
+        if master_stem.endswith(".kdocproj"):
+            master_stem = master_stem[:-len(".kdocproj")]
+        master_path = proj_dir / f"{master_stem}.tex"
+        master_path.write_text(master_tex, encoding="utf-8")
+        self._status.showMessage(
+            f"\u2714 Project saved ({master_path.name} + "
+            f"{len(self._project.chapters)} chapters)", 5000)
+
+    def _close_project(self) -> None:
+        if self._project is not None:
+            self._flush_current_chapter()
+        self._project = None
+        self._project_path = None
+        self._project_chapter_idx = -1
+        self._project_chapter_docs.clear()
+        self._project_dock.hide()
+        self._new()
+
+    def _flush_current_chapter(self) -> None:
+        """Save the editor's current document back to the chapter file."""
+        if (self._project is None or self._project_path is None
+                or self._project_chapter_idx < 0):
+            return
+        doc = self._editor.get_document()
+        idx = self._project_chapter_idx
+        self._project_chapter_docs[idx] = doc
+        ch = self._project.chapters[idx]
+        ch_path = self._project_path.parent / ch.path
+        ch_path.write_text(to_json(doc), encoding="utf-8")
+
+    def _switch_chapter(self, idx: int) -> None:
+        if self._project is None or self._project_path is None:
+            return
+        if idx < 0 or idx >= len(self._project.chapters):
+            return
+        # Save current chapter first
+        self._flush_current_chapter()
+        ch = self._project.chapters[idx]
+        ch_path = self._project_path.parent / ch.path
+        if idx in self._project_chapter_docs:
+            doc = self._project_chapter_docs[idx]
+        elif ch_path.exists():
+            try:
+                doc = from_json(ch_path.read_text(encoding="utf-8"))
+            except Exception as exc:
+                QMessageBox.warning(
+                    self, "Chapter load failed",
+                    f"Could not load {ch.path}:\n{exc}")
+                return
+        else:
+            doc = Document(meta=self._project.meta)
+        self._project_chapter_docs[idx] = doc
+        self._project_chapter_idx = idx
+        self._project_sidebar.set_active_index(idx)
+        self._import_source_dir = ch_path.parent
+        self._editor.set_document(doc)
+        self._update_title()
+
+    def _on_chapter_toggled(self, idx: int, enabled: bool) -> None:
+        if self._project is not None:
+            self._project.chapters[idx].enabled = enabled
+
+    def _add_chapter_to_project(self) -> None:
+        if self._project is None or self._project_path is None:
+            return
+        proj_dir = self._project_path.parent
+        label, ok = QInputDialog.getText(
+            self, "Add Chapter", "Chapter label:", text="New Chapter")
+        if not ok or not label.strip():
+            return
+        label = label.strip()
+        # Generate a filename from the label
+        safe_name = "".join(
+            c if c.isalnum() or c in " _-" else "_" for c in label
+        ).strip().replace(" ", "_").lower()
+        ch_path = proj_dir / f"{safe_name}.kdoc.json"
+        n = 1
+        while ch_path.exists():
+            ch_path = proj_dir / f"{safe_name}_{n}.kdoc.json"
+            n += 1
+        doc = Document(
+            children=[Section(level=1, children=[Text(text=label)])],
+            meta=self._project.meta,
+        )
+        ch_path.write_text(to_json(doc), encoding="utf-8")
+        self._project.chapters.append(ChapterEntry(
+            path=ch_path.name,
+            label=label,
+            enabled=True,
+        ))
+        self._project_sidebar.set_project(self._project)
+        self._switch_chapter(len(self._project.chapters) - 1)
+
+    def _compile_project(self) -> None:
+        """Compile the entire project via the master .tex."""
+        if self._project is None or self._project_path is None:
+            return
+        self._save_project()
+        proj_dir = self._project_path.parent
+        master_stem = self._project_path.stem
+        if master_stem.endswith(".kdocproj"):
+            master_stem = master_stem[:-len(".kdocproj")]
+        master_path = proj_dir / f"{master_stem}.tex"
+        if not master_path.exists():
+            self._status.showMessage("Master .tex not found", 3000)
+            return
+        source = master_path.read_text(encoding="utf-8")
+        if self._compiler == "typst":
+            self._status.showMessage(
+                "Project compilation only supports LaTeX", 3000)
+            return
+        if not tectonic_available():
+            self._preview.show_message(
+                "tectonic not installed \u2014 install it to compile.")
+            return
+        if self._compile_worker is not None and self._compile_worker.isRunning():
+            self._pending_recompile = True
+            return
+        self._compile_worker = _CompileWorker(
+            source, self._build_dir, source_dir=proj_dir,
+            skip_images=self._skip_images,
+            use_compile_range=False,
+            compiler="latex")
+        self._compile_worker.finished_with.connect(self._on_project_compile_done)
+        self._compile_worker.start()
+        self._compile_label.setText("Compiling project\u2026")
+        self._compile_label.show()
+        self._compile_progress.show()
+
+    def _on_project_compile_done(self, result) -> None:
+        self._compile_label.hide()
+        self._compile_label.setText("")
+        self._compile_progress.hide()
+        self._update_console(result)
+        if result.ok and result.pdf_path is not None:
+            self._preview.show_pdf(result.pdf_path)
+            if self._side_by_side:
+                self._pdf_side_panel.show_pdf(result.pdf_path)
+            # Update page counts per chapter from the compiled PDF
+            if self._project is not None:
+                try:
+                    import pymupdf
+                    with pymupdf.open(result.pdf_path) as pdf:
+                        total_pages = len(pdf)
+                    enabled_count = sum(
+                        1 for ch in self._project.chapters if ch.enabled)
+                    if enabled_count > 0:
+                        per_ch = total_pages // enabled_count
+                        remainder = total_pages % enabled_count
+                        for ch in self._project.chapters:
+                            if ch.enabled:
+                                ch.last_known_pages = per_ch + (1 if remainder > 0 else 0)
+                                remainder -= 1
+                        self._project_sidebar._rebuild_list()
+                except Exception:
+                    pass
+            self._status.showMessage(
+                f"\u2714 Project compiled successfully", 5000)
+        else:
+            tail = "\n".join(result.log.splitlines()[-10:]) if result.log else ""
+            self._preview.show_message(f"{result.error}\n\n{tail}")
+            if self._side_by_side:
+                self._pdf_side_panel.show_message(f"{result.error}\n\n{tail}")
+        self._compile_worker = None
 
     def _show_in_explorer(self) -> None:
         if self._current_path is None:

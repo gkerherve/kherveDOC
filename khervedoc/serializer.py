@@ -7,10 +7,10 @@ from __future__ import annotations
 import re
 
 from .model import (
-    Abstract, Author, Block, Citation, Comment, CrossRef, Document, Figure,
-    Footnote, Frame, Highlight, HIGHLIGHT_COLORS, Inline, InlineRaw, Keywords,
-    Link, List as ListNode, ListItem, MathBlock, MathInline, Paragraph,
-    RawLatex, Section, Table, Text, Title,
+    Abstract, Author, Block, ChapterEntry, Citation, Comment, CrossRef,
+    Document, Figure, Footnote, Frame, Highlight, HIGHLIGHT_COLORS, Inline,
+    InlineRaw, Keywords, Link, List as ListNode, ListItem, MathBlock,
+    MathInline, Paragraph, Project, RawLatex, Section, Table, Text, Title,
 )
 
 
@@ -676,5 +676,169 @@ def serialize_document(doc: Document) -> str:
         f"{preamble_meta}"
         f"\\begin{{document}}\n"
         f"{body}"
+        f"\\end{{document}}\n"
+    )
+
+
+# ==================== Multi-chapter project ====================
+
+
+def serialize_chapter_body(doc: Document) -> str:
+    """Serialize a chapter document as body-only LaTeX (no preamble, no
+    \\begin{document}).  Used for \\include'd chapter files."""
+    m = doc.meta
+    has_chapters = (m.documentclass or "").lower() in _CHAPTER_CLASSES
+    is_journal = (m.documentclass or "").lower() not in _STANDARD_SERIALIZER_CLASSES
+    parts: list[str] = []
+    children = doc.children
+    n = len(children)
+    i = 0
+    while i < n:
+        block = children[i]
+        if isinstance(block, (Title, Author)):
+            i += 1
+            continue
+        if isinstance(block, Abstract):
+            paras: list[str] = []
+            while i < n and isinstance(children[i], Abstract):
+                paras.append(serialize_inlines(children[i].children))
+                i += 1
+            joined = "\n\n".join(p for p in paras if p)
+            parts.append(f"\\begin{{abstract}}\n{joined}\n\\end{{abstract}}\n")
+            if i < n:
+                parts.append("\n")
+            continue
+        if isinstance(block, Keywords):
+            group: list = []
+            while i < n and isinstance(children[i], Keywords):
+                group.append(children[i])
+                i += 1
+            terms = _split_keyword_inlines(group)
+            joined = " \\sep ".join(terms)
+            parts.append(f"\\begin{{keyword}}\n{joined}\n\\end{{keyword}}\n")
+            if i < n:
+                parts.append("\n")
+            continue
+        rendered = serialize_block(block, has_chapters=has_chapters,
+                                   float_h=not is_journal)
+        parts.append(rendered)
+        i += 1
+        if i < n:
+            parts.append("\n")
+    return "".join(parts)
+
+
+def _chapter_stem(ch: ChapterEntry) -> str:
+    """Return the file stem used in \\include{stem} for a chapter."""
+    from pathlib import PurePosixPath
+    p = ch.path.replace("\\", "/")
+    name = PurePosixPath(p).stem
+    for ext in (".kdoc", ".ktex"):
+        if name.endswith(ext):
+            name = name[:-len(ext)]
+    return name
+
+
+def serialize_project_master(proj: Project) -> str:
+    """Generate the master .tex for a multi-chapter project.
+
+    All chapters appear in \\include{} calls (so LaTeX keeps numbering
+    consistent), but only enabled chapters are listed in \\includeonly{}
+    so disabled ones compile as no-ops.
+    """
+    from . import page_sizes
+    m = proj.meta
+    page = page_sizes.by_code(m.page_size)
+    is_journal = (m.documentclass or "").lower() not in _STANDARD_SERIALIZER_CLASSES
+
+    if is_journal:
+        geometry = ""
+    else:
+        geometry = (
+            f"\\usepackage[{page.geometry_option},"
+            f"top={m.margin_top_cm}cm,bottom={m.margin_bottom_cm}cm,"
+            f"left={m.margin_left_cm}cm,right={m.margin_right_cm}cm]{{geometry}}"
+        )
+    font_pkg = "" if is_journal else _FONT_FAMILY_PACKAGES.get(m.body_font_family, "")
+    if is_journal:
+        spacing_pkg = ""
+        spacing_cmd = ""
+    else:
+        spacing_pkg = "\\usepackage{setspace}"
+        spacing_cmd = ""
+        if abs(m.line_spacing - 1.0) > 0.01:
+            if abs(m.line_spacing - 1.5) < 0.01:
+                spacing_cmd = "\\onehalfspacing"
+            elif abs(m.line_spacing - 2.0) < 0.01:
+                spacing_cmd = "\\doublespacing"
+            else:
+                spacing_cmd = f"\\setstretch{{{m.line_spacing}}}"
+    parindent = "" if (m.paragraph_indent or is_journal) else (
+        "\\setlength{\\parindent}{0pt}\n\\setlength{\\parskip}{0.8em}")
+
+    preamble_extras = "\n".join(p for p in (font_pkg, spacing_pkg, spacing_cmd, parindent) if p)
+    pkg_list = list(m.packages)
+    if "float" not in pkg_list and not is_journal:
+        pkg_list.append("float")
+    pkg_lines = "\n".join(f"\\usepackage{{{p}}}" for p in pkg_list)
+    packages = (geometry + "\n" + pkg_lines).strip() if geometry else pkg_lines
+    if preamble_extras:
+        packages += "\n" + preamble_extras
+    if m.preamble_extras and m.preamble_extras.strip():
+        packages += "\n" + m.preamble_extras.strip()
+    packages += "\n" + _KSTROKE_PROVIDE
+
+    # Title / author in the preamble
+    preamble_meta = ""
+    if m.title and m.title != "Untitled":
+        preamble_meta += f"\\title{{{escape_text(m.title)}}}\n"
+    if m.author:
+        preamble_meta += f"\\author{{{escape_text(m.author)}}}\n"
+
+    # Bibliography
+    bib_lines = ""
+    if proj.bibliography:
+        bib_path = proj.bibliography.replace("\\", "/")
+        if bib_path.endswith(".bib"):
+            bib_path = bib_path[:-4]
+        style = proj.bib_style or "plain"
+        bib_lines = (
+            f"\n\\bibliographystyle{{{style}}}\n"
+            f"\\bibliography{{{bib_path}}}\n"
+        )
+
+    # \includeonly for enabled chapters
+    enabled_stems = [_chapter_stem(ch) for ch in proj.chapters if ch.enabled]
+    includeonly = ""
+    if enabled_stems and len(enabled_stems) < len(proj.chapters):
+        includeonly = "\\includeonly{" + ",".join(enabled_stems) + "}\n"
+
+    # Body: page-numbering commands + \include for each chapter
+    body_parts: list[str] = []
+    if preamble_meta:
+        body_parts.append("\\maketitle\n")
+    prev_numbering = None
+    for ch in proj.chapters:
+        cmds: list[str] = []
+        if ch.numbering != prev_numbering:
+            cmds.append(f"\\pagenumbering{{{ch.numbering}}}")
+            prev_numbering = ch.numbering
+        if ch.start_page is not None:
+            cmds.append(f"\\setcounter{{page}}{{{ch.start_page}}}")
+        if cmds:
+            body_parts.append("\n".join(cmds) + "\n")
+        stem = _chapter_stem(ch)
+        body_parts.append(f"\\include{{{stem}}}\n")
+
+    body = "\n".join(body_parts)
+
+    return (
+        f"{_documentclass_line(m)}\n"
+        f"{packages}\n"
+        f"{preamble_meta}"
+        f"{includeonly}"
+        f"\\begin{{document}}\n"
+        f"{body}"
+        f"{bib_lines}"
         f"\\end{{document}}\n"
     )

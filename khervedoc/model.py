@@ -221,6 +221,33 @@ Block = Union[Paragraph, Section, MathBlock, List, Figure, Table, RawLatex,
               Title, Author, Abstract, Keywords, Frame]
 
 
+# ---------------- Project (multi-chapter) ----------------
+
+@dataclass
+class ChapterEntry:
+    """One entry in a multi-chapter project manifest."""
+    path: str = ""                       # relative path to .kdoc.json
+    label: str = ""                      # display name in sidebar
+    enabled: bool = True                 # ticked → included in compilation
+    start_page: int | None = None        # None = continue from previous
+    last_known_pages: int = 0            # updated after each compile
+    numbering: Literal["arabic", "roman"] = "arabic"
+
+
+@dataclass
+class Project:
+    """Multi-chapter project manifest — references chapter documents."""
+    meta: "DocMeta" = None               # type: ignore[assignment]  # set below
+    chapters: list[ChapterEntry] = field(default_factory=list)
+    bibliography: str = ""               # relative path to .bib
+    bib_style: str = ""                  # e.g. "vancouver", "plain"
+    type: str = "Project"
+
+    def __post_init__(self):
+        if self.meta is None:
+            self.meta = DocMeta(documentclass="book")
+
+
 # ---------------- Metadata + document ----------------
 
 # amssymb provides \square (and other math symbols) — required because the
@@ -417,4 +444,61 @@ def _build_document(d: dict) -> Document:
     return Document(
         children=[_build_block(b) for b in d.get("children", [])],
         meta=meta,
+    )
+
+
+# ---------------- Project JSON serialisation ----------------
+
+def project_to_json(proj: Project) -> str:
+    d = {
+        "type": "Project",
+        "meta": asdict(proj.meta),
+        "chapters": [asdict(ch) for ch in proj.chapters],
+        "bibliography": proj.bibliography,
+        "bib_style": proj.bib_style,
+    }
+    return json.dumps(d, indent=2, ensure_ascii=False)
+
+
+def project_from_json(s: str) -> Project:
+    d = json.loads(s)
+    if d.get("type") != "Project":
+        raise ValueError("Not a project manifest")
+    meta_d = d.get("meta", {})
+    meta = DocMeta(
+        title=meta_d.get("title", "Untitled"),
+        author=meta_d.get("author", ""),
+        documentclass=meta_d.get("documentclass", "book"),
+        class_options=str(meta_d.get("class_options", "")),
+        packages=list(meta_d.get("packages", list(DEFAULT_PACKAGES))),
+        page_size=meta_d.get("page_size", "A4"),
+        margin_top_cm=float(meta_d.get("margin_top_cm", 2.5)),
+        margin_bottom_cm=float(meta_d.get("margin_bottom_cm", 2.5)),
+        margin_left_cm=float(meta_d.get("margin_left_cm", 2.5)),
+        margin_right_cm=float(meta_d.get("margin_right_cm", 2.5)),
+        body_font_pt=int(meta_d.get("body_font_pt", 12)),
+        body_font_family=str(meta_d.get("body_font_family", "default")),
+        line_spacing=float(meta_d.get("line_spacing", 1.0)),
+        paragraph_indent=bool(meta_d.get("paragraph_indent", True)),
+        column_count=int(meta_d.get(
+            "column_count",
+            2 if bool(meta_d.get("two_column", False)) else 1)),
+        frontmatter_extras=str(meta_d.get("frontmatter_extras", "")),
+        preamble_extras=str(meta_d.get("preamble_extras", "")),
+    )
+    chapters = []
+    for ch_d in d.get("chapters", []):
+        chapters.append(ChapterEntry(
+            path=ch_d.get("path", ""),
+            label=ch_d.get("label", ""),
+            enabled=bool(ch_d.get("enabled", True)),
+            start_page=ch_d.get("start_page"),
+            last_known_pages=int(ch_d.get("last_known_pages", 0)),
+            numbering=ch_d.get("numbering", "arabic"),
+        ))
+    return Project(
+        meta=meta,
+        chapters=chapters,
+        bibliography=d.get("bibliography", ""),
+        bib_style=d.get("bib_style", ""),
     )
