@@ -9,12 +9,25 @@ their content will be paginated in the PDF.
 """
 from __future__ import annotations
 
+import re
 import shutil
+import unicodedata
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen
 from PySide6.QtWidgets import QTextEdit, QWidget
+
+
+def _normalize_for_match(s: str) -> str:
+    """Collapse whitespace, strip accents, and lowercase so PDF-extracted
+    text (which may have ligatures, special Unicode, or different whitespace)
+    can match the editor's QTextBlock content."""
+    s = unicodedata.normalize("NFKD", s)
+    # Drop combining marks (accents) — helps with ligature differences.
+    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+    s = re.sub(r"\s+", " ", s).strip().lower()
+    return s
 
 
 _IMAGE_SUFFIXES = {
@@ -65,7 +78,15 @@ class _PageBreakOverlay(QWidget):
         # text density (title block, abstract, floats) means the
         # break is nowhere near halfway through the editor content.
         anchors = self._edit.page_anchor_positions()
-        if anchors:
+        pdf_pages = self._edit.pdf_page_count()
+        # Only trust the anchored path when most page breaks resolved
+        # successfully — partial results produce confusing gaps and
+        # out-of-order labels.
+        expected_breaks = max(pdf_pages - 1, 1)
+        if anchors and len(anchors) >= expected_breaks * 0.6:
+            # Sort by Y so labels appear top-to-bottom even if snippet
+            # matching resolved them in a different order.
+            anchors.sort(key=lambda a: a[1])
             self._paint_anchored(anchors)
             return
         # Fallback: even spacing using doc_height / pdf_page_count.
@@ -207,10 +228,16 @@ class PagedTextEdit(QTextEdit):
             key = (snippet or "").strip()[:24]
             if not key:
                 continue
+            key_norm = _normalize_for_match(key)
+            if len(key_norm) < 3:
+                continue
             block = qdoc.firstBlock()
             while block.isValid():
                 text = block.text()
+                # Try exact match first, then normalized match.
                 idx = text.find(key)
+                if idx < 0:
+                    idx = _normalize_for_match(text).find(key_norm)
                 if idx >= 0:
                     block_rect = layout.blockBoundingRect(block)
                     if block_rect.height() > 0 or block_rect.top() > 0:
