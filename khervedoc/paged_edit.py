@@ -260,6 +260,32 @@ class PagedTextEdit(QTextEdit):
         super().resizeEvent(ev)
         self._overlay.resize(self.viewport().size())
 
+    # ----- drag cursor: show link arrow instead of "copy" badge -----
+
+    def _has_openable_url(self, mime) -> bool:
+        if mime.hasUrls():
+            for u in mime.urls():
+                local = u.toLocalFile()
+                if local:
+                    p = Path(local)
+                    if p.suffix.lower() in _IMAGE_SUFFIXES or _is_document_file(p):
+                        return True
+        return False
+
+    def dragEnterEvent(self, event) -> None:
+        if self._has_openable_url(event.mimeData()):
+            event.setDropAction(Qt.LinkAction)
+            event.accept()
+            return
+        super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event) -> None:
+        if self._has_openable_url(event.mimeData()):
+            event.setDropAction(Qt.LinkAction)
+            event.accept()
+            return
+        super().dragMoveEvent(event)
+
     # ----- paste / drop: route images through imageReceived signal -----
 
     def canInsertFromMimeData(self, source) -> bool:

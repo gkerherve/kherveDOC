@@ -5,7 +5,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QSettings, QSize, QThread, QTimer, Signal
+from PySide6.QtCore import QEvent, Qt, QSettings, QSize, QThread, QTimer, Signal
 from PySide6.QtGui import (
     QAction, QActionGroup, QColor, QFont, QGuiApplication, QIcon, QKeySequence,
     QPixmap, QTextCursor, QTextDocument,
@@ -711,6 +711,7 @@ class MainWindow(QMainWindow):
     def __init__(self, theme_name: str | None = None):
         super().__init__()
         self.setAcceptDrops(True)
+        QApplication.instance().installEventFilter(self)
         MainWindow._windows.append(self)
         # Read persisted theme when not explicitly provided (e.g. new windows).
         if theme_name is None:
@@ -1935,6 +1936,22 @@ class MainWindow(QMainWindow):
         self._io_label.setText("")
 
     # ---- drag-and-drop document files ----
+
+    def eventFilter(self, obj, event) -> bool:
+        """Show a link cursor (not "copy") when dragging openable files
+        over any child widget — Code tab, PDF tab, etc."""
+        etype = event.type()
+        if etype in (QEvent.DragEnter, QEvent.DragMove):
+            mime = event.mimeData()
+            if mime.hasUrls():
+                for url in mime.urls():
+                    if url.isLocalFile():
+                        suffix = Path(url.toLocalFile()).suffix.lower()
+                        if suffix in self._OPENABLE_SUFFIXES | self._IMAGE_SUFFIXES:
+                            event.setDropAction(Qt.LinkAction)
+                            event.accept()
+                            return True
+        return super().eventFilter(obj, event)
 
     def dragEnterEvent(self, event) -> None:
         if event.mimeData().hasUrls():
