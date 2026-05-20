@@ -193,6 +193,21 @@ def _is_complex_math(latex: str) -> bool:
     return "\n" in latex or bool(_COMPLEX_MATH_RE.search(latex))
 
 
+def _latex_to_display(s: str) -> str:
+    """Simplify raw LaTeX to readable plain text for visual summaries."""
+    s = _re.sub(r"\\textit\{([^}]*)\}", r"\1", s)
+    s = _re.sub(r"\\textbf\{([^}]*)\}", r"\1", s)
+    s = _re.sub(r"\\textsc\{([^}]*)\}", r"\1", s)
+    s = _re.sub(r"\\emph\{([^}]*)\}", r"\1", s)
+    s = _re.sub(r"\\text\{([^}]*)\}", r"\1", s)
+    s = _re.sub(r"\\mathrm\{([^}]*)\}", r"\1", s)
+    # Inline math: $x_2$ → x₂, $x^2$ → x²  (simple cases)
+    s = s.replace("$", "")
+    s = s.replace(r"\_", "_")
+    s = s.replace(r"\&", "&")
+    return s
+
+
 # ---- per-block user state encoding ----
 _STATE_PARAGRAPH = 0
 _STATE_TITLE = 7        # Word-style "Title" paragraph; emits \maketitle
@@ -1269,6 +1284,7 @@ class DocumentEditor(QWidget):
                 if cap:
                     from .importers import _consume_braced
                     cap_text, _ = _consume_braced(text, cap.end() - 1)
+                    cap_text = _latex_to_display(cap_text or "")
                 lab = _re.search(r"\\label\{([^}]*)\}", text)
                 env = "figure*" if "\\begin{figure*}" in text else "table*"
                 summary = f"[{env}]"
