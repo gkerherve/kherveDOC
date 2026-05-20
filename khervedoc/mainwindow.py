@@ -2718,7 +2718,7 @@ class MainWindow(QMainWindow):
             self._refresh_icons()
 
         # LaTeX view
-        self._latex_view.set_dark(dark)
+        self._latex_view.set_dark(dark, theme=t)
         self._latex_view.setStyleSheet(themes.latex_view_stylesheet(t))
 
         # Editor page / desk

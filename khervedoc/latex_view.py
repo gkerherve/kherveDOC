@@ -328,12 +328,14 @@ class _NumberedPlainTextEdit(QPlainTextEdit):
         super().__init__(parent)
         self._line_area = _LineNumberArea(self)
         self._dark = False
+        self._theme: dict[str, str] | None = None
         self.blockCountChanged.connect(lambda _: self._update_line_area_width())
         self.updateRequest.connect(self._update_line_area)
         self._update_line_area_width()
 
-    def set_dark(self, dark: bool) -> None:
+    def set_dark(self, dark: bool, theme: dict[str, str] | None = None) -> None:
         self._dark = dark
+        self._theme = theme
         self._line_area.update()
 
     def line_number_area_width(self) -> int:
@@ -361,7 +363,11 @@ class _NumberedPlainTextEdit(QPlainTextEdit):
 
     def line_number_area_paint(self, event) -> None:
         painter = QPainter(self._line_area)
-        if self._dark:
+        t = self._theme
+        if t:
+            painter.fillRect(event.rect(), QColor(t["surface"]))
+            num_color = QColor(t["text_muted"])
+        elif self._dark:
             painter.fillRect(event.rect(), QColor("#252526"))
             num_color = QColor("#858585")
         else:
@@ -491,10 +497,14 @@ class LatexView(QWidget):
                 menu.addAction(label, callback)
         menu.exec(self._edit.viewport().mapToGlobal(pos))
 
-    def set_dark(self, dark: bool) -> None:
+    def set_dark(self, dark: bool, theme: dict[str, str] | None = None) -> None:
         self._highlighter.set_dark(dark)
-        self._edit.set_dark(dark)
-        if dark:
+        self._edit.set_dark(dark, theme)
+        if theme:
+            self._edit.setStyleSheet(
+                f"QPlainTextEdit {{ background: {theme['base']};"
+                f" color: {theme['text']}; }}")
+        elif dark:
             self._edit.setStyleSheet(
                 "QPlainTextEdit { background: #1e1e1e; color: #d4d4d4; }")
         else:
