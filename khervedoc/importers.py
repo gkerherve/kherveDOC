@@ -1024,18 +1024,93 @@ def docx_available() -> bool:
         return False
 
 
-_DOCX_STYLE_TO_LEVEL = {
+# --- Style classification --------------------------------------------------
+
+# Exact matches checked first (lowercased).
+_DOCX_STYLE_TO_LEVEL: dict[str, int] = {
     "title": -1,
     "heading 1": 1, "heading 2": 2, "heading 3": 3,
     "heading 4": 4, "heading 5": 5, "heading 6": 5,
 }
 
+# Regex patterns tried in order when exact match fails. Each pattern maps a
+# Word style name to a model block type. This catches custom styles like
+# "ThesisTitle", "1.1 Heading3", "Heading2", "MySubtitle", "Abstract", etc.
+_HEADING_RE = re.compile(r"heading\s*(\d)", re.I)
+_TITLE_RE = re.compile(r"title", re.I)
+_SUBTITLE_RE = re.compile(r"sub\s*title", re.I)
+_AUTHOR_RE = re.compile(r"author", re.I)
+_ABSTRACT_RE = re.compile(r"abstract", re.I)
+_CAPTION_RE = re.compile(r"caption", re.I)
+
+# Paragraph alignment from python-docx to model alignment.
+_DOCX_ALIGNMENT_MAP = {
+    0: "left",    # WD_ALIGN_PARAGRAPH.LEFT
+    1: "center",  # WD_ALIGN_PARAGRAPH.CENTER
+    2: "right",   # WD_ALIGN_PARAGRAPH.RIGHT
+    3: "justify", # WD_ALIGN_PARAGRAPH.JUSTIFY
+}
+
+
+def _classify_style(style_name: str, style_obj) -> tuple[str, int]:
+    """Return (block_kind, heading_level) for a Word paragraph style.
+
+    block_kind is one of: "title", "heading", "subtitle", "author",
+    "abstract", "caption", "list", "paragraph".
+    heading_level is 1-5 for headings, -1 for title, 0 otherwise.
+
+    Checks the built-in outline_level first (reliable even for custom styles
+    that derive from Heading N), then falls back to name-based matching.
+    """
+    name = (style_name or "").strip()
+    name_lower = name.lower()
+
+    # 1. Exact match on the static table.
+    if name_lower in _DOCX_STYLE_TO_LEVEL:
+        lvl = _DOCX_STYLE_TO_LEVEL[name_lower]
+        return ("title" if lvl == -1 else "heading", max(lvl, 1))
+
+    # 2. python-docx exposes paragraph_format.outline_level via the style's
+    #    XML <w:outlineLvl>. Headings set this to 0-8, body text to None/9.
+    try:
+        outline = style_obj.paragraph_format.outline_level
+        if outline is not None and 0 <= outline <= 4:
+            return ("heading", outline + 1)
+    except Exception:
+        pass
+
+    # 3. Regex-based heuristics for custom style names.
+    m = _HEADING_RE.search(name)
+    if m:
+        lvl = min(int(m.group(1)), 5)
+        return ("heading", max(lvl, 1))
+
+    if _ABSTRACT_RE.search(name):
+        return ("abstract", 0)
+    if _SUBTITLE_RE.search(name) or _AUTHOR_RE.search(name):
+        return ("author", 0)
+    if _TITLE_RE.search(name):
+        return ("title", -1)
+    if _CAPTION_RE.search(name):
+        return ("caption", 0)
+
+    # 4. List styles — detected by name or by numId (handled in caller).
+    if "list" in name_lower:
+        return ("list", 0)
+
+    return ("paragraph", 0)
+
+
+# --- Main importer ---------------------------------------------------------
 
 def import_docx(docx_path: Path, image_dir: Path) -> Document:
     """Import a .docx file. Embedded images are saved to image_dir and
     referenced from Figure blocks. image_dir is created if missing.
 
-    Falls back to RawLatex for unsupported content (complex tables, shapes).
+    Recognises custom heading/title/abstract/author/subtitle/caption styles
+    by name heuristics and outline level. Imports Word tables, bullet /
+    numbered lists, hyperlinks, footnotes, subscript/superscript, and
+    paragraph alignment.
     """
     import docx as _docx
     image_dir.mkdir(parents=True, exist_ok=True)
@@ -1046,66 +1121,309 @@ def import_docx(docx_path: Path, image_dir: Path) -> Document:
     author: str = src.core_properties.author or ""
 
     image_counter = 0
-    # Use the docx package's part API to find image relationships.
-    image_rels: dict[str, str] = {}
-    for rel in src.part.rels.values():
-        if "image" in rel.reltype:
-            image_rels[rel.rId] = rel.target_ref
 
-    for para in src.paragraphs:
-        style_name = (para.style.name or "").lower().strip()
-        text_runs = list(_runs_to_inlines(para))
-        # Detect embedded images in this paragraph by inspecting the XML.
+    # Walk the document body in order (paragraphs *and* tables interleaved).
+    # src.element.body contains both <w:p> and <w:tbl> elements; iterating
+    # src.paragraphs alone silently drops tables.
+    from docx.oxml.ns import qn
+    body = src.element.body
+
+    # Build a lookup from XML element → python-docx Paragraph/Table object.
+    para_map: dict = {}
+    for p in src.paragraphs:
+        para_map[id(p._element)] = p
+    table_map: dict = {}
+    for t in src.tables:
+        table_map[id(t._element)] = t
+
+    # Track consecutive list paragraphs so we can merge them.
+    pending_list_items: list[ListItem] = []
+    pending_list_ordered: bool = False
+
+    def _flush_list():
+        nonlocal pending_list_items, pending_list_ordered
+        if pending_list_items:
+            children.append(ListNode(ordered=pending_list_ordered,
+                                     items=pending_list_items))
+            pending_list_items = []
+            pending_list_ordered = False
+
+    for child_elem in body:
+        tag = child_elem.tag.rpartition("}")[-1]  # strip namespace
+
+        # --- Table ---
+        if tag == "tbl":
+            _flush_list()
+            tbl_obj = table_map.get(id(child_elem))
+            if tbl_obj is not None:
+                tbl_node = _import_table(tbl_obj)
+                if tbl_node is not None:
+                    children.append(tbl_node)
+            continue
+
+        if tag != "p":
+            continue
+
+        para = para_map.get(id(child_elem))
+        if para is None:
+            continue
+
+        style_name = (para.style.name or "") if para.style else ""
+        kind, level = _classify_style(style_name, para.style)
+
+        text_runs = _runs_to_inlines(para)
+
+        # Detect embedded images.
         para_images = _images_in_paragraph(para, src, image_dir, image_counter)
         image_counter += len(para_images)
 
         if para_images:
+            _flush_list()
             for path in para_images:
                 children.append(Figure(path=str(path).replace("\\", "/"),
                                        caption="", label=None))
-            # If the paragraph only contained images and whitespace, skip
-            # adding an empty text block beside them.
-            if not any(isinstance(r, (Text,)) and r.text.strip() for r in text_runs):
+            if not any(isinstance(r, Text) and r.text.strip() for r in text_runs):
                 continue
 
-        if style_name == "title":
+        # Detect list paragraphs via numId in the XML (catches styled lists
+        # like "List Paragraph" and also paragraphs with ad-hoc numbering).
+        is_list = kind == "list" or _para_is_list(para)
+        if is_list:
+            ordered = _para_is_ordered(para)
+            if pending_list_items and ordered != pending_list_ordered:
+                _flush_list()
+            pending_list_ordered = ordered
+            pending_list_items.append(ListItem(children=text_runs))
+            continue
+
+        _flush_list()
+
+        # Resolve paragraph alignment.
+        alignment = _para_alignment(para)
+
+        if kind == "title":
             title = "".join(r.text for r in text_runs if isinstance(r, Text))
             children.append(Title(children=text_runs))
-        elif style_name in _DOCX_STYLE_TO_LEVEL:
-            lvl = _DOCX_STYLE_TO_LEVEL[style_name]
-            if lvl >= 1:
-                children.append(Section(level=lvl, children=text_runs))
-            else:
-                children.append(Title(children=text_runs))
+        elif kind == "heading":
+            children.append(Section(level=level, children=text_runs))
+        elif kind == "author":
+            children.append(Author(children=text_runs))
+        elif kind == "abstract":
+            children.append(Abstract(children=text_runs))
+        elif kind == "caption":
+            # Captions are kept as italic paragraphs (no dedicated node).
+            for r in text_runs:
+                if isinstance(r, Text) and "italic" not in r.marks:
+                    r.marks.append("italic")
+            children.append(Paragraph(children=text_runs, alignment="center"))
         else:
             if text_runs:
-                children.append(Paragraph(children=text_runs))
+                children.append(Paragraph(children=text_runs,
+                                          alignment=alignment))
+
+    _flush_list()
 
     meta = DocMeta(title=title, author=author)
     return Document(meta=meta, children=children)
 
 
+# --- Inline extraction (with hyperlinks, footnotes, sub/superscript) -------
+
 def _runs_to_inlines(para) -> list:
+    """Extract inline content from a paragraph, including hyperlinks."""
+    from docx.oxml.ns import qn
     out: list = []
-    for run in para.runs:
-        text = run.text
-        if not text:
-            continue
-        marks: list = []
-        if run.bold: marks.append("bold")
-        if run.italic: marks.append("italic")
-        if run.underline: marks.append("underline")
-        if getattr(run.font, "strike", False): marks.append("strikethrough")
-        out.append(Text(text=text, marks=marks))
+
+    # Walk child XML elements to capture hyperlinks in document order.
+    # <w:r> = run, <w:hyperlink> = link wrapping one or more runs.
+    for elem in para._element:
+        tag = elem.tag.rpartition("}")[-1]
+
+        if tag == "r":
+            inline = _run_element_to_inline(elem, para)
+            if inline is not None:
+                out.append(inline)
+
+        elif tag == "hyperlink":
+            link_runs: list = []
+            url = ""
+            # Resolve the relationship target for the URL.
+            rid = elem.get(qn("r:id"))
+            if rid:
+                try:
+                    rel = para.part.rels.get(rid)
+                    if rel is not None:
+                        url = rel.target_ref
+                except Exception:
+                    pass
+            for sub in elem.findall(qn("w:r")):
+                inline = _run_element_to_inline(sub, para)
+                if inline is not None:
+                    link_runs.append(inline)
+            if link_runs and url:
+                out.append(Link(url=url, children=link_runs))
+            else:
+                out.extend(link_runs)
+
+    # Append footnote markers at the end of inline content.
+    _extract_footnotes(para, out)
+
     return out
 
+
+def _run_element_to_inline(run_elem, para):
+    """Convert a <w:r> XML element to a Text inline (or None if empty)."""
+    from docx.oxml.ns import qn
+    text_el = run_elem.find(qn("w:t"))
+    if text_el is None or not text_el.text:
+        return None
+    text = text_el.text
+
+    marks: list = []
+    rpr = run_elem.find(qn("w:rPr"))
+    if rpr is not None:
+        if rpr.find(qn("w:b")) is not None:
+            marks.append("bold")
+        if rpr.find(qn("w:i")) is not None:
+            marks.append("italic")
+        u_el = rpr.find(qn("w:u"))
+        if u_el is not None and u_el.get(qn("w:val")) != "none":
+            marks.append("underline")
+        if rpr.find(qn("w:strike")) is not None:
+            marks.append("strikethrough")
+        vert = rpr.find(qn("w:vertAlign"))
+        if vert is not None:
+            val = vert.get(qn("w:val"), "")
+            if val == "subscript":
+                marks.append("subscript")
+            elif val == "superscript":
+                marks.append("superscript")
+        if rpr.find(qn("w:smallCaps")) is not None:
+            marks.append("smallcaps")
+
+    return Text(text=text, marks=marks)
+
+
+def _extract_footnotes(para, out: list):
+    """Append Footnote inlines for any footnote references in the paragraph."""
+    from docx.oxml.ns import qn
+    fn_refs = para._element.findall(".//" + qn("w:footnoteReference"))
+    for fn_ref in fn_refs:
+        fn_id = fn_ref.get(qn("w:id"))
+        if fn_id is None:
+            continue
+        try:
+            fn_id_int = int(fn_id)
+            if fn_id_int <= 0:
+                continue
+            # Access the footnote part to get its text content.
+            fn_part = para.part.document.part.footnotes_part
+            if fn_part is None:
+                continue
+            fn_elem = fn_part.element.find(
+                f".//{qn('w:footnote')}[@{qn('w:id')}='{fn_id}']")
+            if fn_elem is None:
+                continue
+            fn_text_parts: list = []
+            for p in fn_elem.findall(qn("w:p")):
+                for r in p.findall(qn("w:r")):
+                    t = r.find(qn("w:t"))
+                    if t is not None and t.text:
+                        fn_text_parts.append(t.text)
+            if fn_text_parts:
+                fn_content = " ".join(fn_text_parts)
+                out.append(Footnote(children=[Text(text=fn_content)]))
+        except Exception:
+            continue
+
+
+# --- List detection --------------------------------------------------------
+
+def _para_is_list(para) -> bool:
+    """Return True if the paragraph has a numId (bullet or numbered list)."""
+    from docx.oxml.ns import qn
+    num_pr = para._element.find(f".//{qn('w:numPr')}")
+    if num_pr is None:
+        return False
+    num_id = num_pr.find(qn("w:numId"))
+    return num_id is not None and num_id.get(qn("w:val"), "0") != "0"
+
+
+def _para_is_ordered(para) -> bool:
+    """Best-effort check whether the list paragraph is numbered vs. bulleted.
+    Looks at the abstract numbering definition's numFmt."""
+    from docx.oxml.ns import qn
+    try:
+        num_pr = para._element.find(f".//{qn('w:numPr')}")
+        if num_pr is None:
+            return False
+        num_id_el = num_pr.find(qn("w:numId"))
+        ilvl_el = num_pr.find(qn("w:ilvl"))
+        if num_id_el is None:
+            return False
+        num_id = num_id_el.get(qn("w:val"), "0")
+        ilvl = ilvl_el.get(qn("w:val"), "0") if ilvl_el is not None else "0"
+        # Walk the numbering part to find the format.
+        numbering_part = para.part.numbering_part
+        if numbering_part is None:
+            return False
+        num_elem = numbering_part.element
+        # Find <w:num w:numId="..."> → get abstractNumId
+        for num in num_elem.findall(qn("w:num")):
+            if num.get(qn("w:numId")) == num_id:
+                abs_ref = num.find(qn("w:abstractNumId"))
+                if abs_ref is None:
+                    break
+                abs_id = abs_ref.get(qn("w:val"))
+                for abs_num in num_elem.findall(qn("w:abstractNum")):
+                    if abs_num.get(qn("w:abstractNumId")) == abs_id:
+                        for lvl in abs_num.findall(qn("w:lvl")):
+                            if lvl.get(qn("w:ilvl")) == ilvl:
+                                fmt = lvl.find(qn("w:numFmt"))
+                                if fmt is not None:
+                                    val = fmt.get(qn("w:val"), "")
+                                    return val not in ("bullet", "none", "")
+                break
+    except Exception:
+        pass
+    return False
+
+
+# --- Paragraph alignment ---------------------------------------------------
+
+def _para_alignment(para) -> str:
+    """Return the model alignment string for a paragraph."""
+    try:
+        al = para.paragraph_format.alignment
+        if al is not None:
+            # python-docx stores alignment as an IntEnum; int() to be safe.
+            return _DOCX_ALIGNMENT_MAP.get(int(al), "justify")
+    except Exception:
+        pass
+    return "justify"
+
+
+# --- Table import -----------------------------------------------------------
+
+def _import_table(tbl) -> Table | None:
+    """Convert a python-docx Table object to a model Table node."""
+    rows: list[list[str]] = []
+    for row in tbl.rows:
+        cells: list[str] = []
+        for cell in row.cells:
+            cells.append(cell.text.strip())
+        rows.append(cells)
+    if not rows:
+        return None
+    return Table(rows=rows, caption="", label=None)
+
+
+# --- Image extraction -------------------------------------------------------
 
 def _images_in_paragraph(para, src_doc, image_dir: Path, start_idx: int) -> list[Path]:
     """Save any inline images referenced from this paragraph into image_dir.
     Returns the list of saved file paths in document order."""
     paths: list[Path] = []
-    # The python-docx public API doesn't expose images per-paragraph directly,
-    # so we look at the underlying XML for "blip" elements referencing parts.
     from docx.oxml.ns import qn
     blips = para._element.findall(".//" + qn("a:blip"))
     for blip in blips:
