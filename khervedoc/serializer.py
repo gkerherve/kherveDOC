@@ -49,6 +49,30 @@ _MARK_ORDER = ["bold", "italic", "underline", "smallcaps",
                "subscript", "superscript", "strikethrough", "code"]
 
 
+def _auto_table_alignment(rows: list[list[str]], cols: int) -> str:
+    """Pick column specs that fit on the page. Short tables get bare ``l``
+    columns; wider ones get proportional ``p{...\\textwidth}`` columns so
+    LaTeX can wrap long cell text instead of overflowing the margins."""
+    # Measure the longest cell in each column.
+    max_lens = [0] * cols
+    for r in rows:
+        for j in range(min(len(r), cols)):
+            max_lens[j] = max(max_lens[j], len(r[j]))
+    total = sum(max_lens) or 1
+    # Heuristic: if the total character width is modest, plain l columns
+    # will fit a standard page just fine (≈80 chars across).
+    if total <= 80:
+        return "l" * cols
+    # Otherwise distribute \textwidth proportionally.
+    usable = 0.95  # leave a small margin for \tabcolsep
+    specs: list[str] = []
+    for ml in max_lens:
+        frac = round(usable * ml / total, 2)
+        frac = max(frac, 0.06)  # minimum readable width
+        specs.append(f"p{{{frac:.2f}\\textwidth}}")
+    return "".join(specs)
+
+
 def serialize_inline(node: Inline) -> str:
     if isinstance(node, Text):
         s = escape_text(node.text)
@@ -170,13 +194,19 @@ def serialize_block(node: Block, *, has_chapters: bool = False,
         if not node.rows:
             return ""
         cols = max(len(r) for r in node.rows)
-        align = node.alignment.strip() or ("l" * cols)
+        align = node.alignment.strip()
+        if not align:
+            align = _auto_table_alignment(node.rows, cols)
         # Pad short rows with empty cells.
         body_rows: list[str] = []
-        for r in node.rows:
+        for i, r in enumerate(node.rows):
             # Table cells are stored as raw LaTeX — emit verbatim.
             cells = list(r) + [""] * (cols - len(r))
-            body_rows.append(" & ".join(cells) + r" \\")
+            row_str = " & ".join(cells) + r" \\"
+            # Add \hline after the first row (header separator).
+            if i == 0 and len(node.rows) > 1:
+                row_str += " \\hline"
+            body_rows.append(row_str)
         body = "\n    ".join(body_rows)
         cap = node.caption
         lab = _maybe_label(node.label) if node.label else ""
