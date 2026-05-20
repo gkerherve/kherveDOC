@@ -31,6 +31,12 @@ def test_koma_and_mimosis_support_chapter():
     assert class_supports_chapter("mimosis")
 
 
+def test_thesis_and_book_classes_support_chapter():
+    for cls in ("hepthesis", "suftesi", "toptesi", "disser",
+                "amsbook", "ElegantBook"):
+        assert class_supports_chapter(cls), cls
+
+
 def test_class_with_options_or_variants_still_recognised():
     """A prefix match catches scrbook (and similar memoir-family
     variants) without forcing the user to register every name."""

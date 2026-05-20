@@ -43,6 +43,9 @@ TEMPLATE_CHOICES = [
     "llncs", "acmart", "svjour3", "sn-jnl", "mnras", "aa",
     # Thesis / long-form
     "tufte-handout", "tufte-book", "mimosis",
+    "hepthesis", "suftesi", "toptesi", "disser",
+    # Book
+    "amsbook", "ElegantBook",
     # Social-science / humanities
     "apa7",
     # CV / résumé
@@ -239,7 +242,10 @@ _STATE_RAW = 102
 # Document classes that natively support \chapter. The heading-style
 # combo greys out the Chapter entry for any other class (article,
 # letter, beamer — those classes don't define \chapter at all).
-CHAPTER_CLASSES = ("report", "book", "memoir", "scrreprt", "scrbook", "mimosis")
+CHAPTER_CLASSES = (
+    "report", "book", "memoir", "scrreprt", "scrbook", "mimosis",
+    "hepthesis", "suftesi", "toptesi", "disser", "amsbook", "elegantbook",
+)
 
 
 def class_supports_chapter(class_name: str) -> bool:
