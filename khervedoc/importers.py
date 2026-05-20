@@ -1013,6 +1013,193 @@ def import_tex(tex_source: str) -> Document:
 
 
 # ============================================================
+#                       .pdf importer
+# ============================================================
+
+def pdf_available() -> bool:
+    try:
+        import pymupdf  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
+# PyMuPDF font-flags bitmask constants.
+_PDF_FLAG_SUPERSCRIPT = 1
+_PDF_FLAG_ITALIC = 2
+_PDF_FLAG_MONOSPACE = 8
+_PDF_FLAG_BOLD = 16
+
+
+def import_pdf(pdf_path: Path, image_dir: Path,
+               progress=None) -> Document:
+    """Import a .pdf file into the document model.
+
+    Uses PyMuPDF to extract structured text (with font metrics for heading /
+    bold / italic detection) and embedded images.  *progress*, if given, is
+    called as ``progress(page, total_pages)`` after each page.
+    """
+    import pymupdf
+
+    image_dir.mkdir(parents=True, exist_ok=True)
+    src = pymupdf.open(str(pdf_path))
+    total_pages = len(src)
+
+    # --- First pass: determine the dominant (body) font size ---------------
+    size_counts: dict[float, int] = {}
+    for page in src:
+        td = page.get_text("dict", flags=pymupdf.TEXT_PRESERVE_WHITESPACE)
+        for blk in td.get("blocks", []):
+            if blk.get("type") != 0:
+                continue
+            for line in blk.get("lines", []):
+                for span in line.get("spans", []):
+                    text = span.get("text", "").strip()
+                    if text:
+                        sz = round(span["size"], 1)
+                        size_counts[sz] = size_counts.get(sz, 0) + len(text)
+    body_size = max(size_counts, key=size_counts.get) if size_counts else 12.0
+
+    # Heading thresholds: text significantly larger than body is a heading.
+    # level 1 ≥ 1.6×, level 2 ≥ 1.3×, level 3 ≥ 1.1× body size.
+    _H1 = body_size * 1.6
+    _H2 = body_size * 1.3
+    _H3 = body_size * 1.1
+
+    children: list = []
+    image_counter = 0
+
+    # --- Second pass: build model blocks -----------------------------------
+    for page_idx, page in enumerate(src):
+        td = page.get_text("dict", flags=pymupdf.TEXT_PRESERVE_WHITESPACE)
+
+        for blk in td.get("blocks", []):
+            # --- Image blocks ---
+            if blk.get("type") == 1:
+                xref = blk.get("image", b"")
+                # For image blocks in dict mode, extract via xref list.
+                continue  # handled below via get_images
+
+            if blk.get("type") != 0:
+                continue
+
+            # Collect all spans in the block into inline nodes.
+            block_inlines: list = []
+            block_sizes: list[float] = []
+            is_all_bold = True
+
+            for line in blk.get("lines", []):
+                for span in line.get("spans", []):
+                    text = span.get("text", "")
+                    if not text:
+                        continue
+                    flags = span.get("flags", 0)
+                    sz = span.get("size", body_size)
+                    block_sizes.append(sz)
+
+                    marks: list[str] = []
+                    if flags & _PDF_FLAG_BOLD:
+                        marks.append("bold")
+                    else:
+                        is_all_bold = False
+                    if flags & _PDF_FLAG_ITALIC:
+                        marks.append("italic")
+                    if flags & _PDF_FLAG_SUPERSCRIPT:
+                        marks.append("superscript")
+                    if flags & _PDF_FLAG_MONOSPACE:
+                        marks.append("code")
+
+                    block_inlines.append(Text(text=text, marks=marks))
+
+                # Add a space between lines within the same block, unless
+                # the last character is already whitespace or a hyphen (for
+                # hyphenated line breaks, join directly).
+                if block_inlines:
+                    last_text = block_inlines[-1].text
+                    if last_text and last_text[-1] == "-":
+                        # Remove trailing hyphen (word was split across lines).
+                        block_inlines[-1] = Text(
+                            text=last_text[:-1],
+                            marks=block_inlines[-1].marks)
+                    elif last_text and not last_text[-1].isspace():
+                        block_inlines.append(Text(text=" "))
+
+            # Remove any trailing whitespace-only node.
+            while (block_inlines
+                   and isinstance(block_inlines[-1], Text)
+                   and not block_inlines[-1].text.strip()):
+                block_inlines.pop()
+
+            if not block_inlines:
+                continue
+
+            plain = "".join(
+                n.text for n in block_inlines if isinstance(n, Text)).strip()
+            if not plain:
+                continue
+
+            # Classify: heading vs paragraph based on the dominant span size.
+            avg_size = (sum(block_sizes) / len(block_sizes)
+                        if block_sizes else body_size)
+
+            if avg_size >= _H1:
+                # Strip bold marks from heading inlines (it's implicit).
+                for inl in block_inlines:
+                    if isinstance(inl, Text) and "bold" in inl.marks:
+                        inl.marks = [m for m in inl.marks if m != "bold"]
+                children.append(Section(level=1, children=block_inlines))
+            elif avg_size >= _H2:
+                for inl in block_inlines:
+                    if isinstance(inl, Text) and "bold" in inl.marks:
+                        inl.marks = [m for m in inl.marks if m != "bold"]
+                children.append(Section(level=2, children=block_inlines))
+            elif avg_size >= _H3 and is_all_bold:
+                # Level 3: only slightly larger, so require bold too to
+                # avoid false positives on body text with minor size diffs.
+                for inl in block_inlines:
+                    if isinstance(inl, Text) and "bold" in inl.marks:
+                        inl.marks = [m for m in inl.marks if m != "bold"]
+                children.append(Section(level=3, children=block_inlines))
+            else:
+                children.append(Paragraph(children=block_inlines))
+
+        # --- Extract images from this page ---------------------------------
+        for img_info in page.get_images(full=True):
+            xref = img_info[0]
+            try:
+                pix = pymupdf.Pixmap(src, xref)
+                if pix.alpha:
+                    pix = pymupdf.Pixmap(pymupdf.csRGB, pix)
+                ext = ".png"
+                out_path = image_dir / f"image_{image_counter:03d}{ext}"
+                pix.save(str(out_path))
+                children.append(Figure(
+                    path=str(out_path).replace("\\", "/"),
+                    caption="", label=None))
+                image_counter += 1
+            except Exception:
+                continue
+
+        if progress is not None:
+            progress(page_idx + 1, total_pages)
+
+    # --- Build metadata from PDF info dict ---------------------------------
+    meta_info = src.metadata if hasattr(src, "metadata") else {}
+    src.close()
+    title = meta_info.get("title", "") or ""
+    author = meta_info.get("author", "") or ""
+
+    if title:
+        children.insert(0, Title(children=[Text(text=title)]))
+    if author:
+        idx = 1 if title else 0
+        children.insert(idx, Author(children=[Text(text=author)]))
+
+    meta = DocMeta(title=title, author=author)
+    return Document(meta=meta, children=children)
+
+
+# ============================================================
 #                       .docx importer
 # ============================================================
 

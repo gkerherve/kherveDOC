@@ -999,6 +999,7 @@ class MainWindow(QMainWindow):
         self.act_close_doc = QAction("&Close document", self, triggered=self._new)
         self.act_import_tex = QAction("Import .&tex...", self, triggered=self._import_tex)
         self.act_import_docx = QAction("Import .&docx...", self, triggered=self._import_docx)
+        self.act_import_pdf = QAction("Import .&pdf...", self, triggered=self._import_pdf)
         self.act_import_md = QAction("Import .&md...", self, triggered=self._import_md)
         self.act_export_tex = QAction("Export .&tex...", self, triggered=self._export_tex)
         self.act_export_docx = QAction("Export .&docx...", self, triggered=self._export_docx)
@@ -1351,6 +1352,7 @@ class MainWindow(QMainWindow):
         m_import = m_file.addMenu("&Import")
         m_import.addAction(self.act_import_tex)
         m_import.addAction(self.act_import_docx)
+        m_import.addAction(self.act_import_pdf)
         m_import.addAction(self.act_import_md)
         m_export = m_file.addMenu("&Export")
         m_export.addAction(self.act_export_tex)
@@ -1881,9 +1883,9 @@ class MainWindow(QMainWindow):
     def _open(self) -> None:
         path_s, _ = QFileDialog.getOpenFileName(
             self, "Open document", "",
-            "All supported (*.ktexz *.ktex.json *.kdocz *.kdoc.json *.tex *.md *.markdown *.docx);;"
+            "All supported (*.ktexz *.ktex.json *.kdocz *.kdoc.json *.tex *.md *.markdown *.docx *.pdf);;"
             "Bundled (*.ktexz *.kdocz);;JSON (*.ktex.json *.kdoc.json);;LaTeX (*.tex);;"
-            "Markdown (*.md *.markdown);;Word (*.docx);;All files (*)")
+            "Markdown (*.md *.markdown);;Word (*.docx);;PDF (*.pdf);;All files (*)")
         if path_s:
             self._open_path(Path(path_s))
 
@@ -1899,7 +1901,7 @@ class MainWindow(QMainWindow):
 
     def _open_path(self, path: Path) -> None:
         suffix = path.suffix.lower()
-        is_import_ext = suffix in (".tex", ".md", ".markdown", ".docx")
+        is_import_ext = suffix in (".tex", ".md", ".markdown", ".docx", ".pdf")
         self._io_start("Importing\u2026" if is_import_ext else "Opening\u2026")
         is_import = False
         try:
@@ -1924,6 +1926,18 @@ class MainWindow(QMainWindow):
                     return
                 image_dir = self._build_dir / f"{path.stem}_images"
                 doc = importers.import_docx(path, image_dir)
+                self._kdocz_extract_dir = None
+                is_import = True
+            elif path.suffix.lower() == ".pdf":
+                if not importers.pdf_available():
+                    self._io_stop()
+                    QMessageBox.warning(
+                        self, "PyMuPDF missing",
+                        "PyMuPDF is not installed. Run "
+                        "pip install PyMuPDF to enable .pdf import.")
+                    return
+                image_dir = self._build_dir / f"{path.stem}_images"
+                doc = importers.import_pdf(path, image_dir)
                 self._kdocz_extract_dir = None
                 is_import = True
             else:
@@ -2176,6 +2190,56 @@ class MainWindow(QMainWindow):
         n_imgs = len(list(image_dir.glob("image_*"))) if image_dir.exists() else 0
         self._status.showMessage(
             f"Imported {path.name} ({n_imgs} image(s) extracted to {image_dir})", 8000)
+
+    def _import_pdf(self) -> None:
+        if not importers.pdf_available():
+            QMessageBox.warning(
+                self, "PyMuPDF missing",
+                "PyMuPDF is not installed. Run "
+                "pip install PyMuPDF to enable .pdf import.")
+            return
+        path_s, _ = QFileDialog.getOpenFileName(
+            self, "Import PDF", "", "PDF (*.pdf);;All files (*)")
+        if not path_s:
+            return
+        path = Path(path_s)
+        image_dir = self._build_dir / f"{path.stem}_images"
+
+        import pymupdf
+        page_count = 0
+        try:
+            tmp = pymupdf.open(str(path))
+            page_count = len(tmp)
+            tmp.close()
+        except Exception:
+            pass
+
+        dlg = QProgressDialog("Importing\u2026", None, 0,
+                              max(page_count, 1), self)
+        dlg.setWindowTitle("Import PDF")
+        dlg.setMinimumDuration(0)
+        dlg.setWindowModality(Qt.WindowModal)
+
+        def _on_progress(current: int, total: int) -> None:
+            dlg.setValue(current)
+            QApplication.processEvents()
+
+        try:
+            doc = importers.import_pdf(path, image_dir, progress=_on_progress)
+        except Exception as exc:
+            dlg.close()
+            QMessageBox.critical(self, "Import failed", str(exc))
+            return
+        dlg.setValue(dlg.maximum())
+        self._current_path = None
+        self._import_source_dir = None
+        self._sync_editor_source_dir()
+        self._editor.set_document(doc)
+        self.setWindowTitle(
+            f"KherveTeX {version_string()} — {path.stem} (imported)")
+        n_imgs = len(list(image_dir.glob("image_*"))) if image_dir.exists() else 0
+        self._status.showMessage(
+            f"Imported {path.name} ({n_imgs} image(s) extracted)", 8000)
 
     def _import_md(self) -> None:
         path_s, _ = QFileDialog.getOpenFileName(
