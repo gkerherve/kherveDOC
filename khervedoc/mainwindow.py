@@ -157,10 +157,6 @@ class _ProjectSidebar(QWidget):
 
     def _rebuild_list(self) -> None:
         self._list.blockSignals(True)
-        try:
-            self._list.itemChanged.disconnect(self._on_item_changed)
-        except RuntimeError:
-            pass
         self._list.clear()
         total_pages = 0
         compiling_pages = 0
@@ -1229,6 +1225,7 @@ class MainWindow(QMainWindow):
             self.act_side_by_side.setChecked(True)
             self._side_by_side = True
             self._side_tabs.show()
+            self._update_zoom_visibility()
 
         # Restore fit-page-width state (default: on).
         fit_w = self._settings.value("fit_page_width", True, type=bool)
