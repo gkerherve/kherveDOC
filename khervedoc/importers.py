@@ -759,9 +759,15 @@ def _parse_figure(body: str) -> Figure:
         caption = (text or "").strip()
     lab = re.search(r"\\label\{([^}]*)\}", body)
     width = "0.8\\textwidth"
-    if inc and inc.group(1):
-        wm = re.search(r"width\s*=\s*([^,\]]+)", inc.group(1))
-        if wm: width = wm.group(1).strip()
+    if inc:
+        opts = inc.group(1) or ""
+        wm = re.search(r"width\s*=\s*([^,\]]+)", opts)
+        if wm:
+            width = wm.group(1).strip()
+        elif not opts.strip():
+            # Original had no width — use \columnwidth so figures fit
+            # in single-column or two-column layouts alike.
+            width = "\\columnwidth"
     return Figure(
         path=inc.group(2) if inc else "",
         caption=caption,

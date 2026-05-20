@@ -152,7 +152,9 @@ def serialize_block(node: Block, *, has_chapters: bool = False,
     if isinstance(node, Figure):
         # Use forward slashes in the path — LaTeX dislikes backslashes.
         path = node.path.replace("\\", "/")
-        cap = escape_text(node.caption)
+        # Caption is stored as raw LaTeX (may contain \textit, $...$,
+        # etc.) — emit verbatim, do not re-escape.
+        cap = node.caption
         lab = _maybe_label(node.label) if node.label else ""
         placement = "H" if float_h else "htbp"
         return (
@@ -172,10 +174,11 @@ def serialize_block(node: Block, *, has_chapters: bool = False,
         # Pad short rows with empty cells.
         body_rows: list[str] = []
         for r in node.rows:
-            cells = [escape_text(c) for c in r] + [""] * (cols - len(r))
+            # Table cells are stored as raw LaTeX — emit verbatim.
+            cells = list(r) + [""] * (cols - len(r))
             body_rows.append(" & ".join(cells) + r" \\")
         body = "\n    ".join(body_rows)
-        cap = escape_text(node.caption)
+        cap = node.caption
         lab = _maybe_label(node.label) if node.label else ""
         placement = "H" if float_h else "htbp"
         return (

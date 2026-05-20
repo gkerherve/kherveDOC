@@ -2351,7 +2351,9 @@ class DocumentEditor(QWidget):
         if not path:
             return
         c = self._edit.textCursor()
-        fig = Figure(path=path, caption=dlg.caption(), label=dlg.label() or None,
+        from .serializer import escape_text
+        fig = Figure(path=path, caption=escape_text(dlg.caption()),
+                     label=dlg.label() or None,
                      width="0.8\\textwidth")
         self._insert_figure_widget(c, fig)
 
@@ -2370,8 +2372,9 @@ class DocumentEditor(QWidget):
                                    title="Drawing details")
         if cdlg.exec() != QDialog.Accepted:
             return
+        from .serializer import escape_text
         c = self._edit.textCursor()
-        fig = Figure(path=str(path), caption=cdlg.caption(),
+        fig = Figure(path=str(path), caption=escape_text(cdlg.caption()),
                      label=cdlg.label() or None, width="0.7\\textwidth")
         self._insert_figure_widget(c, fig)
         self._on_text_changed()
@@ -2443,10 +2446,12 @@ class DocumentEditor(QWidget):
         dlg = _InsertTableDialog(self)
         if dlg.exec() != QDialog.Accepted:
             return
+        from .serializer import escape_text
         r, co = dlg.dimensions()
         c = self._edit.textCursor()
         table = Table(rows=[["cell"] * co for _ in range(r)],
-                      caption=dlg.caption(), label=dlg.label() or None,
+                      caption=escape_text(dlg.caption()),
+                      label=dlg.label() or None,
                       alignment="")
         self._insert_table_widget(c, table)
 
