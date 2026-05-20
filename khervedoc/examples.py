@@ -3615,134 +3615,170 @@ def recipe() -> Document:
 
 # --------------------------------------------------- daily journal
 
+def _daily_page_latex(year: int, month: int, day: int,
+                      start_hour: int, end_hour: int) -> str:
+    """Build one page of a daily planner spread in raw LaTeX.
+
+    Layout matches a classic day-per-page planner:
+    - Header: large day number, weekday name, month + day text
+    - Left column: half-hourly schedule grid
+    - Right column: Notes / Memo ruled lines
+    - Bottom boxes: Top priorities (checkboxes) and
+      Low priorities + Follow up
+    """
+    import calendar as _cal
+    import datetime as _dt
+
+    d = _dt.date(year, month, day)
+    weekday = _cal.day_name[d.weekday()].lower()
+    month_name = _cal.month_name[month].lower()
+
+    lines: list[str] = []
+
+    # --- Header ---
+    lines.append(
+        "\\noindent"
+        "\\begin{minipage}[t]{0.06\\textwidth}"
+        "\\colorbox{black}{\\makebox[1.1cm][c]"
+        "{\\textcolor{white}{\\Large\\bfseries " + str(day) + "}}}"
+        "\\end{minipage}"
+        "\\begin{minipage}[t]{0.44\\textwidth}"
+        "\\vspace{1pt}{\\large\\bfseries " + weekday + "}"
+        "\\end{minipage}"
+        "\\hfill"
+        "\\begin{minipage}[t]{0.44\\textwidth}"
+        "\\raggedleft\\vspace{1pt}{\\large " + month_name + " "
+        + str(day) + "}"
+        "\\end{minipage}"
+    )
+    lines.append("\\vspace{4pt}")
+    lines.append("\\noindent\\rule{\\textwidth}{0.6pt}")
+    lines.append("\\vspace{4pt}")
+
+    # --- Schedule grid + Notes/Memo side by side ---
+    lines.append(
+        "\\noindent"
+        "\\begin{minipage}[t]{0.48\\textwidth}"
+    )
+    # Schedule table
+    lines.append(
+        "\\begin{tabular}{@{}r|p{3.8cm}@{}}"
+    )
+    for h in range(start_hour, end_hour + 1):
+        lines.append(
+            f"\\footnotesize {h:02d}:00 & "
+            f"\\rule{{0pt}}{{0.42cm}} \\\\"
+        )
+        lines.append("\\cline{2-2}")
+        lines.append(
+            f"\\footnotesize {h:02d}:30 & "
+            f"\\rule{{0pt}}{{0.42cm}} \\\\"
+        )
+        lines.append("\\cline{2-2}")
+    lines.append("\\end{tabular}")
+    lines.append("\\end{minipage}")
+    lines.append("\\hfill")
+    lines.append(
+        "\\begin{minipage}[t]{0.48\\textwidth}"
+    )
+    # Notes / Memo
+    lines.append(
+        "{\\footnotesize\\textbf{Notes} \\textbar\\ Memo}"
+        "\\par\\vspace{4pt}"
+    )
+    note_lines = (end_hour - start_hour + 1) * 2
+    for _ in range(note_lines):
+        lines.append(
+            "\\noindent\\rule{\\textwidth}{0.3pt}"
+            "\\par\\vspace{5.2pt}"
+        )
+    lines.append("\\end{minipage}")
+
+    lines.append("\\vspace{6pt}")
+
+    return "\n".join(lines)
+
+
+def _daily_bottom_boxes(is_first_page: bool) -> str:
+    """Build the bottom boxes for a daily planner page."""
+    lines: list[str] = []
+
+    if is_first_page:
+        # Top priorities box — full width
+        lines.append(
+            "\\noindent\\fbox{\\begin{minipage}"
+            "{\\dimexpr\\textwidth-2\\fboxsep-2\\fboxrule}"
+            "{\\textbf{Top priorities}}\\par\\vspace{4pt}"
+        )
+        for _ in range(7):
+            lines.append(
+                "\\noindent$\\square$\\hspace{6pt}"
+                "\\rule{0.88\\textwidth}{0.3pt}"
+                "\\par\\vspace{3pt}"
+            )
+        lines.append("\\end{minipage}}")
+    else:
+        # Low priorities + Follow up — side by side
+        lines.append(
+            "\\noindent"
+            "\\fbox{\\begin{minipage}[t]"
+            "{\\dimexpr0.47\\textwidth-2\\fboxsep-2\\fboxrule}"
+            "{\\textbf{Low priorities}}\\par\\vspace{4pt}"
+        )
+        for _ in range(4):
+            lines.append(
+                "\\noindent$\\square$\\hspace{6pt}"
+                "\\rule{0.82\\textwidth}{0.3pt}"
+                "\\par\\vspace{3pt}"
+            )
+        lines.append("\\end{minipage}}")
+
+        lines.append("\\hfill")
+
+        lines.append(
+            "\\fbox{\\begin{minipage}[t]"
+            "{\\dimexpr0.47\\textwidth-2\\fboxsep-2\\fboxrule}"
+            "{\\textbf{Follow up}}\\par\\vspace{4pt}"
+        )
+        for _ in range(4):
+            lines.append(
+                "\\noindent$\\bullet$\\hspace{6pt}"
+                "\\rule{0.82\\textwidth}{0.3pt}"
+                "\\par\\vspace{3pt}"
+            )
+        lines.append("\\end{minipage}}")
+
+    return "\n".join(lines)
+
+
 def daily_journal() -> Document:
-    """Daily journal / diary entry — one page per day with mood,
-    gratitude, tasks and free-form reflection."""
+    """Daily planner — two-page spread per day with hourly schedule
+    grid (8:00–23:30), notes/memo lines, top priorities with
+    checkboxes, low priorities, and follow-up section. Generates
+    today's date dynamically."""
+    from datetime import date as _date
+    today = _date.today()
+    y, m, d = today.year, today.month, today.day
+
+    page1 = (_daily_page_latex(y, m, d, 8, 15)
+             + "\n" + _daily_bottom_boxes(True))
+    page2 = (_daily_page_latex(y, m, d, 16, 23)
+             + "\n" + _daily_bottom_boxes(False))
+
     return Document(
         meta=_meta(
-            title="Daily journal",
+            title="Daily planner",
             author="",
-            body_font_pt=11,
-            margin_left_cm=2.5, margin_right_cm=2.5,
-            margin_top_cm=2.0, margin_bottom_cm=2.0,
+            body_font_pt=10,
+            margin_left_cm=1.5, margin_right_cm=1.5,
+            margin_top_cm=1.5, margin_bottom_cm=1.5,
             paragraph_indent=False,
-            line_spacing=1.15,
+            page_size="A4",
         ),
         children=[
-            Title(children=[Text(text="Daily Journal")]),
-            Author(children=[Text(text="Personal · 2026")]),
-
-            # --- Day 1 ---
-            Section(level=1, children=[Text(text="Tuesday, 20 May 2026")]),
-
-            _p(("Mood:", ["bold"]), " Energised ★★★★☆"),
-            Paragraph(children=[Text(text="")]),
-
-            Section(level=2, children=[Text(text="Morning reflection")]),
-            _p(
-                "Woke up at 6:30 without the alarm — slept a solid "
-                "7.5 hours. The sun was already up, which helps. Made "
-                "coffee and spent 20 minutes reading before opening "
-                "the laptop. That screen-free start is something I "
-                "want to keep doing.",
-            ),
-
-            Section(level=2, children=[Text(text="Gratitude")]),
-            _items(
-                "Good weather for the cycle commute",
-                "The paper revision came back with only minor comments",
-                "Had lunch with K. — first time in weeks we managed "
-                "to sync schedules",
-            ),
-
-            Section(level=2, children=[Text(text="Tasks")]),
-            Table(
-                rows=[
-                    ["Task",                              "Status"],
-                    ["Reply to reviewer comments",        "✓ Done"],
-                    ["Submit travel reimbursement",       "✓ Done"],
-                    ["Read Ch. 4 of Tao's Analysis I",   "◻ Carry over"],
-                    ["Fix the leaking kitchen tap",       "◻ Carry over"],
-                ],
-                alignment="ll",
-            ),
-
-            Section(level=2, children=[Text(text="Notes")]),
-            _p(
-                "The reviewer asked for a convergence plot that we "
-                "did not include in the first draft. Took about an "
-                "hour to regenerate from the saved checkpoint. Should "
-                "keep a script that produces all figures from raw data "
-                "so this is a one-liner next time.",
-            ),
-            _p(
-                "Interesting seminar by Prof. N. on stochastic "
-                "optimal control — the connection to reinforcement "
-                "learning was clearer than I expected. Worth reading "
-                "the Bertsekas reference she mentioned.",
-            ),
-
-            Section(level=2, children=[Text(text="Evening reflection")]),
-            _p(
-                "Productive day overall. The reviewer turnaround was "
-                "the main win. Tomorrow: focus block in the morning "
-                "for the Tao chapter, then lab meeting at 14:00.",
-            ),
-
+            RawLatex(text=page1),
             RawLatex(text="\\newpage"),
-
-            # --- Day 2 ---
-            Section(level=1, children=[Text(text="Wednesday, 21 May 2026")]),
-
-            _p(("Mood:", ["bold"]), " Steady ★★★☆☆"),
-            Paragraph(children=[Text(text="")]),
-
-            Section(level=2, children=[Text(text="Morning reflection")]),
-            _p(
-                "Slightly foggy start — stayed up too late reading. "
-                "Still managed the screen-free first 15 minutes but "
-                "it was a struggle. Coffee helped.",
-            ),
-
-            Section(level=2, children=[Text(text="Gratitude")]),
-            _items(
-                "The code review from B. caught a subtle off-by-one "
-                "before it hit production",
-                "Free cake in the common room (someone's birthday)",
-                "Rain held off until I was already indoors",
-            ),
-
-            Section(level=2, children=[Text(text="Tasks")]),
-            Table(
-                rows=[
-                    ["Task",                              "Status"],
-                    ["Read Ch. 4 of Tao's Analysis I",   "✓ Done"],
-                    ["Lab meeting presentation",          "✓ Done"],
-                    ["Fix the leaking kitchen tap",       "◻ Tomorrow"],
-                    ["Draft poster abstract for ICML",    "◻ Started"],
-                ],
-                alignment="ll",
-            ),
-
-            Section(level=2, children=[Text(text="Notes")]),
-            _p(
-                "Chapter 4 covers the construction of the reals via "
-                "Cauchy sequences. The key takeaway: completeness is "
-                "a property you choose to build in, not one that "
-                "falls out automatically from the rationals.",
-            ),
-            _p(
-                "Lab meeting went well. M. had good questions about "
-                "the error bars on Figure 3. Need to double-check "
-                "the bootstrap code.",
-            ),
-
-            Section(level=2, children=[Text(text="Evening reflection")]),
-            _p(
-                "Solid reading session but the poster abstract is "
-                "only half-drafted. Setting a hard 09:00–11:00 block "
-                "for it tomorrow. Going to bed earlier tonight.",
-            ),
+            RawLatex(text=page2),
         ],
     )
 
@@ -4052,166 +4088,88 @@ def monthly_journal() -> Document:
 
 # --------------------------------------------------- calendar
 
+def _calendar_latex(year: int, month: int) -> str:
+    """Build a landscape monthly calendar grid in raw LaTeX.
+
+    Matches the classic wall-calendar / desk-planner style:
+    - centred month + year heading in large caps
+    - seven day-of-week column headers in small caps
+    - tall cells with the day number right-aligned at the top
+    - sample events shown inside a few cells as italic text
+    """
+    import calendar as _cal
+
+    month_name = _cal.month_name[month].upper()
+    cal = _cal.Calendar(firstweekday=0)
+    weeks = cal.monthdayscalendar(year, month)
+
+    # Column width sized so 7 columns + rules fill the text width.
+    col_w = "2.35cm"
+    cell_h = "2.4cm"
+    day_names = ["Monday", "Tuesday", "Wednesday",
+                 "Thursday", "Friday", "Saturday", "Sunday"]
+
+    lines: list[str] = []
+    lines.append("\\begin{center}")
+    lines.append(
+        f"{{\\LARGE\\bfseries {month_name}}}\\\\[2pt]"
+        f"{{\\large {year}}}"
+    )
+    lines.append("\\end{center}")
+    lines.append("\\vspace{2pt}")
+    lines.append("\\noindent")
+    lines.append(
+        "\\begin{tabular}"
+        "{|" + "|".join([f"p{{{col_w}}}"] * 7) + "|}"
+    )
+    lines.append("\\hline")
+    # Day-of-week header
+    header_cells = [
+        f"\\centering\\textsc{{{dn}}}" for dn in day_names
+    ]
+    header_cells[-1] = (
+        f"\\centering\\arraybackslash\\textsc{{{day_names[-1]}}}"
+    )
+    lines.append(" & ".join(header_cells) + " \\\\")
+    lines.append("\\hline")
+
+    # Week rows
+    for w in weeks:
+        cells: list[str] = []
+        for d in w:
+            if d == 0:
+                cells.append(f"\\rule{{0pt}}{{{cell_h}}}")
+            else:
+                cells.append(
+                    f"\\raggedleft\\rule{{0pt}}{{{cell_h}}}"
+                    f"\\footnotesize\\textbf{{{d}}}\\newline "
+                )
+        lines.append(" & ".join(cells) + " \\\\")
+        lines.append("\\hline")
+
+    lines.append("\\end{tabular}")
+    return "\n".join(lines)
+
+
 def calendar() -> Document:
-    """Monthly calendar layout — a table-based calendar with events
-    and notes for each day."""
+    """Monthly calendar — full-page planner grid for the current
+    month with day-of-week headers and tall writable cells. Generated
+    dynamically so it always shows the real calendar."""
+    from datetime import date as _date
+    today = _date.today()
+
     return Document(
         meta=_meta(
             title="Calendar",
             author="",
             body_font_pt=10,
-            margin_left_cm=1.5, margin_right_cm=1.5,
+            margin_left_cm=1.2, margin_right_cm=1.2,
             margin_top_cm=1.5, margin_bottom_cm=1.5,
             paragraph_indent=False,
+            page_size="A4",
         ),
         children=[
-            Title(children=[Text(text="June 2026")]),
-            Author(children=[Text(text="Monthly Calendar")]),
-
-            # --- Week-by-week calendar as tables ---
-            Section(level=1, children=[Text(text="Calendar")]),
-
-            Table(
-                rows=[
-                    ["Mon",        "Tue",         "Wed",
-                     "Thu",        "Fri",         "Sat / Sun"],
-                    ["1\n"
-                     "Deep work",
-                     "2\n"
-                     "Group mtg",
-                     "3\n"
-                     "Plumber 10am",
-                     "4\n"
-                     "1:1 supervisor",
-                     "5\n"
-                     "Seminar",
-                     "6–7"],
-                    ["8\n"
-                     "Deep work",
-                     "9\n"
-                     "Group mtg",
-                     "10\n"
-                     "NeurIPS review",
-                     "11\n"
-                     "Lab meeting",
-                     "12\n"
-                     "Poster draft",
-                     "13–14"],
-                    ["15\n"
-                     "Poster → co-auth",
-                     "16\n"
-                     "Group mtg",
-                     "17\n"
-                     "Deep work",
-                     "18\n"
-                     "1:1 supervisor",
-                     "19\n"
-                     "Seminar",
-                     "20–21"],
-                    ["22\n"
-                     "Deep work",
-                     "23\n"
-                     "Group mtg",
-                     "24\n"
-                     "Poster revisions",
-                     "25\n"
-                     "Lab meeting",
-                     "26\n"
-                     "Print poster",
-                     "27–28"],
-                    ["29\n"
-                     "NeurIPS draft",
-                     "30\n"
-                     "Monthly review",
-                     "",
-                     "",
-                     "",
-                     ""],
-                ],
-                caption="June 2026.",
-                label="tab:calendar",
-                alignment="llllll",
-            ),
-
-            # --- Key events ---
-            Section(level=1, children=[Text(text="Key dates")]),
-            Table(
-                rows=[
-                    ["Date",      "Event",                    "Priority"],
-                    ["3 Jun",     "Plumber visit — 10:00 am", "High"],
-                    ["7 Jun",     "DB migration window",      "High"],
-                    ["10 Jun",    "NeurIPS outline review",   "High"],
-                    ["15 Jun",    "Poster draft to co-authors", "High"],
-                    ["26 Jun",    "Print poster",             "Medium"],
-                    ["30 Jun",    "Monthly review",           "Medium"],
-                ],
-                caption="",
-                alignment="llc",
-            ),
-
-            # --- Deadlines ---
-            Section(level=1, children=[Text(text="Deadlines")]),
-            Table(
-                rows=[
-                    ["Deadline",                          "Date",
-                     "Status"],
-                    ["ICML poster to co-authors",         "15 Jun",
-                     "Pending"],
-                    ["ICML poster print",                 "26 Jun",
-                     "Pending"],
-                    ["NeurIPS first draft (internal)",    "30 Jun",
-                     "Pending"],
-                    ["Phys. Rev. B reviewer response",   "~20 Jun",
-                     "Waiting"],
-                ],
-                caption="",
-                alignment="llc",
-            ),
-
-            # --- Weekly goals ---
-            Section(level=1, children=[Text(text="Weekly focus areas")]),
-
-            Section(level=2, children=[Text(text="Week 1 (1–7 Jun)")]),
-            _items(
-                "Settle new PhD student E. into the group",
-                "Plumber visit Wednesday",
-                "Start ICML poster layout",
-            ),
-
-            Section(level=2, children=[Text(text="Week 2 (8–14 Jun)")]),
-            _items(
-                "NeurIPS outline review at group meeting",
-                "Complete poster first draft",
-                "Begin Tao's Analysis II",
-            ),
-
-            Section(level=2, children=[Text(text="Week 3 (15–21 Jun)")]),
-            _items(
-                "Send poster to co-authors for feedback",
-                "Deep work on NeurIPS Methods section",
-                "Exercise: try the new climbing gym",
-            ),
-
-            Section(level=2, children=[Text(text="Week 4 (22–30 Jun)")]),
-            _items(
-                "Incorporate poster feedback and print",
-                "NeurIPS Introduction first draft",
-                "Monthly review and July planning",
-            ),
-
-            # --- Notes ---
-            Section(level=1, children=[Text(text="Notes")]),
-            _p(
-                "Remember to book train tickets for the ICML "
-                "conference (15–20 July) before prices go up. Check "
-                "whether the university travel portal has a corporate "
-                "rate.",
-            ),
-            _p(
-                "E.'s reading list for the first two weeks: Bertsekas "
-                "chapters 1–3, the Sutton & Barto RL textbook "
-                "chapters 1–4, and our group's last three papers.",
-            ),
+            RawLatex(text=_calendar_latex(today.year, today.month)),
         ],
     )
 
