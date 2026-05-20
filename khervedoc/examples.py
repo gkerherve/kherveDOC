@@ -4095,17 +4095,23 @@ def _calendar_latex(year: int, month: int) -> str:
     - centred month + year heading in large caps
     - seven day-of-week column headers in small caps
     - tall cells with the day number right-aligned at the top
-    - sample events shown inside a few cells as italic text
+    - fills the full landscape A4 page
     """
     import calendar as _cal
 
     month_name = _cal.month_name[month].upper()
     cal = _cal.Calendar(firstweekday=0)
     weeks = cal.monthdayscalendar(year, month)
+    n_weeks = len(weeks)
 
-    # Column width sized so 7 columns + rules fill the text width.
-    col_w = "2.35cm"
-    cell_h = "2.4cm"
+    # A4 landscape usable area with 1.2 cm margins each side:
+    #   width  = 29.7 - 2×1.2 = 27.3 cm
+    #   height = 21.0 - 2×1.2 = 18.6 cm
+    # Reserve ~1.4 cm for heading + header row → ~17.2 cm for week rows.
+    # Divide evenly among weeks, with a small deduction for hlines.
+    available_h = 17.2 - n_weeks * 0.05
+    cell_h_cm = round(available_h / n_weeks, 2)
+
     day_names = ["Monday", "Tuesday", "Wednesday",
                  "Thursday", "Friday", "Saturday", "Sunday"]
 
@@ -4117,56 +4123,73 @@ def _calendar_latex(year: int, month: int) -> str:
     )
     lines.append("\\end{center}")
     lines.append("\\vspace{2pt}")
-    lines.append("\\noindent")
+
+    # Use the full text width: 7 equal columns stretching edge to edge.
+    # tabular* with @{\extracolsep{\fill}} or tabularx would work, but
+    # the simplest portable approach is explicit p{} columns computed
+    # from the text width minus rules.
+    lines.append("\\noindent\\makebox[\\textwidth]{%")
     lines.append(
         "\\begin{tabular}"
-        "{|" + "|".join([f"p{{{col_w}}}"] * 7) + "|}"
+        "{|p{\\dimexpr\\textwidth/7-2\\tabcolsep-"
+        "\\arrayrulewidth\\relax}"
+        * 1  # first column
     )
+    for _ in range(6):
+        lines.append(
+            "|p{\\dimexpr\\textwidth/7-2\\tabcolsep-"
+            "\\arrayrulewidth\\relax}"
+        )
+    lines.append("|}")
     lines.append("\\hline")
+
     # Day-of-week header
-    header_cells = [
-        f"\\centering\\textsc{{{dn}}}" for dn in day_names
-    ]
-    header_cells[-1] = (
-        f"\\centering\\arraybackslash\\textsc{{{day_names[-1]}}}"
-    )
+    header_cells = []
+    for i, dn in enumerate(day_names):
+        if i == len(day_names) - 1:
+            header_cells.append(
+                f"\\centering\\arraybackslash\\textsc{{{dn}}}")
+        else:
+            header_cells.append(f"\\centering\\textsc{{{dn}}}")
     lines.append(" & ".join(header_cells) + " \\\\")
     lines.append("\\hline")
 
-    # Week rows
+    # Week rows — each cell has a fixed height and the day number
+    # right-aligned at the top.
     for w in weeks:
         cells: list[str] = []
         for d in w:
             if d == 0:
-                cells.append(f"\\rule{{0pt}}{{{cell_h}}}")
+                cells.append(f"\\rule{{0pt}}{{{cell_h_cm}cm}}")
             else:
                 cells.append(
-                    f"\\raggedleft\\rule{{0pt}}{{{cell_h}}}"
+                    f"\\raggedleft\\rule{{0pt}}{{{cell_h_cm}cm}}"
                     f"\\footnotesize\\textbf{{{d}}}\\newline "
                 )
         lines.append(" & ".join(cells) + " \\\\")
         lines.append("\\hline")
 
-    lines.append("\\end{tabular}")
+    lines.append("\\end{tabular}}")  # close makebox
     return "\n".join(lines)
 
 
 def calendar() -> Document:
-    """Monthly calendar — full-page planner grid for the current
-    month with day-of-week headers and tall writable cells. Generated
-    dynamically so it always shows the real calendar."""
+    """Monthly calendar — landscape full-page planner grid for the
+    current month with day-of-week headers and tall writable cells.
+    Generated dynamically so it always shows the real calendar."""
     from datetime import date as _date
     today = _date.today()
 
     return Document(
         meta=_meta(
-            title="Calendar",
-            author="",
+            title="", author="",
             body_font_pt=10,
             margin_left_cm=1.2, margin_right_cm=1.2,
-            margin_top_cm=1.5, margin_bottom_cm=1.5,
+            margin_top_cm=1.2, margin_bottom_cm=1.2,
             paragraph_indent=False,
             page_size="A4",
+            class_options="landscape",
+            preamble_extras="\\geometry{landscape}",
         ),
         children=[
             RawLatex(text=_calendar_latex(today.year, today.month)),
