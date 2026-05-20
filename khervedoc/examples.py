@@ -3632,6 +3632,11 @@ def _daily_planner_latex(year: int, month: int, day: int) -> str:
 
     L: list[str] = []
 
+    # Kill the parskip and line-spacing that _meta injects — they add
+    # ~8 cm of dead space across the many \par commands in this layout.
+    L.append("\\setlength{\\parskip}{0pt}")
+    L.append("\\setstretch{1.0}")
+
     # --- Header ---
     L.append(
         "\\noindent"
@@ -3644,13 +3649,13 @@ def _daily_planner_latex(year: int, month: int, day: int) -> str:
     )
     L.append("\\vspace{2pt}")
     L.append("\\noindent\\rule{\\textwidth}{0.5pt}")
-    L.append("\\vspace{3pt}")
+    L.append("\\vspace{2pt}")
 
     # --- Schedule grid (left) + Notes/Memo (right) ---
-    # Row height: fit 8:00–20:00 = 13 hours in ~21 cm available height
-    # after header (~1.2 cm) and bottom boxes (~6 cm) → ~22 cm for grid.
-    # Each hour row = 22/13 ≈ 1.69 cm; use 0.76 cm per half-hour slot.
-    slot_h = "0.76cm"
+    # A4 portrait usable = 20.0 cm (21 − 2×0.5).
+    # Header ≈ 0.9 cm, bottom boxes ≈ 3.0 cm, gaps ≈ 0.3 cm
+    # → grid budget ≈ 15.8 cm for 26 half-hour slots → 0.60 cm each.
+    slot_h = "0.60cm"
 
     L.append("\\noindent\\begin{minipage}[t]{0.48\\textwidth}")
     L.append("\\renewcommand{\\arraystretch}{0}")
@@ -3675,25 +3680,25 @@ def _daily_planner_latex(year: int, month: int, day: int) -> str:
     L.append("\\begin{minipage}[t]{0.48\\textwidth}")
     L.append(
         "{\\scriptsize\\textbf{Notes} \\textbar\\ Memo}"
-        "\\par\\vspace{2pt}"
+        "\\par\\vspace{1pt}"
     )
     for _ in range(n_note_lines):
         L.append(
             "\\noindent\\rule{\\textwidth}{0.2pt}"
-            "\\par\\vspace{4.3pt}"
+            "\\par\\vspace{3.8pt}"
         )
     L.append("\\end{minipage}")
 
-    L.append("\\vspace{4pt}")
+    L.append("\\vspace{3pt}")
 
     # --- Bottom boxes: Top priorities (left) + Low priorities & Follow up (right) ---
     L.append("\\noindent\\begin{minipage}[t]{0.48\\textwidth}")
     L.append(
         "\\fbox{\\begin{minipage}"
         "{\\dimexpr\\textwidth-2\\fboxsep-2\\fboxrule}"
-        "{\\scriptsize\\textbf{Top priorities}}\\par\\vspace{2pt}"
+        "{\\scriptsize\\textbf{Top priorities}}\\par\\vspace{1pt}"
     )
-    for _ in range(6):
+    for _ in range(5):
         L.append(
             "\\noindent$\\square$\\hspace{4pt}"
             "\\rule{0.86\\textwidth}{0.2pt}"
@@ -4096,6 +4101,10 @@ def _calendar_latex(year: int, month: int) -> str:
                  "Thursday", "Friday", "Saturday", "Sunday"]
 
     L: list[str] = []
+    # Kill parskip/stretch inherited from _meta — they inflate the
+    # parboxes and push the grid off the bottom of the page.
+    L.append("\\setlength{\\parskip}{0pt}")
+    L.append("\\setstretch{1.0}")
     L.append("\\begin{center}")
     L.append(
         f"{{\\LARGE\\bfseries {month_name}}}\\\\[1pt]"
