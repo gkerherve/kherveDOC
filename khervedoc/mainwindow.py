@@ -45,12 +45,27 @@ from .serializer import (
 
 # ---------- project chapter sidebar ----------
 
+def _roman(n: int) -> str:
+    """Convert a small positive integer to a lowercase Roman numeral."""
+    if n <= 0:
+        return str(n)
+    result = ""
+    for value, numeral in ((1000, "m"), (900, "cm"), (500, "d"), (400, "cd"),
+                            (100, "c"), (90, "xc"), (50, "l"), (40, "xl"),
+                            (10, "x"), (9, "ix"), (5, "v"), (4, "iv"), (1, "i")):
+        while n >= value:
+            result += numeral
+            n -= value
+    return result
+
+
 class _ProjectSidebar(QWidget):
     """Sidebar showing chapters with checkboxes, page ranges, and controls."""
     chapterDoubleClicked = Signal(int)
     chapterToggled = Signal(int, bool)
     addChapterRequested = Signal()
     compileRequested = Signal()
+    autoPageToggled = Signal(bool)
 
     def __init__(self, parent=None, *, theme=None):
         super().__init__(parent)
@@ -67,6 +82,15 @@ class _ProjectSidebar(QWidget):
         self._summary_label.setAlignment(Qt.AlignCenter)
         self._summary_label.setStyleSheet("color: #888; font-size: 11px;")
         layout.addWidget(self._summary_label)
+
+        self._auto_page_cb = QCheckBox("Auto page numbers")
+        self._auto_page_cb.setToolTip(
+            "Automatically compute each chapter's start page from the\n"
+            "cumulative page counts of preceding chapters.\n"
+            "Page counts update after every compilation.")
+        self._auto_page_cb.setChecked(True)
+        self._auto_page_cb.toggled.connect(self._on_auto_page_toggled)
+        layout.addWidget(self._auto_page_cb)
 
         self._list = QListWidget()
         self._list.setDragDropMode(QListWidget.InternalMove)
@@ -88,11 +112,14 @@ class _ProjectSidebar(QWidget):
 
         self._chapters: list[ChapterEntry] = []
         self._active_index: int = -1
+        self._project: Project | None = None
 
     def set_project(self, proj: Project) -> None:
+        self._project = proj
         self._chapters = proj.chapters
         title = proj.meta.title or "Untitled Project"
         self._title_label.setText(f"<b>{title}</b>")
+        self._auto_page_cb.setChecked(proj.auto_page_numbers)
         self._rebuild_list()
 
     def set_active_index(self, idx: int) -> None:
@@ -103,6 +130,31 @@ class _ProjectSidebar(QWidget):
             font.setBold(i == idx)
             item.setFont(font)
 
+    def recompute_auto_pages(self) -> None:
+        """Recompute start_page for every chapter from cumulative page counts.
+        Called after compilation updates last_known_pages."""
+        if self._project is None or not self._project.auto_page_numbers:
+            return
+        running = 0
+        prev_numbering = None
+        for ch in self._chapters:
+            if ch.numbering != prev_numbering:
+                # Numbering system change resets the counter
+                ch.start_page = 1
+                running = 0
+                prev_numbering = ch.numbering
+            else:
+                ch.start_page = running + 1
+            running += ch.last_known_pages if ch.last_known_pages > 0 else 1
+        self._rebuild_list()
+
+    def _on_auto_page_toggled(self, checked: bool) -> None:
+        if self._project is not None:
+            self._project.auto_page_numbers = checked
+        if checked:
+            self.recompute_auto_pages()
+        self.autoPageToggled.emit(checked)
+
     def _rebuild_list(self) -> None:
         self._list.blockSignals(True)
         try:
@@ -112,14 +164,16 @@ class _ProjectSidebar(QWidget):
         self._list.clear()
         total_pages = 0
         compiling_pages = 0
-        running_page = 0
         for i, ch in enumerate(self._chapters):
             page_range = ""
             if ch.last_known_pages > 0:
-                start = running_page + 1
-                end = running_page + ch.last_known_pages
-                page_range = f"  {start}\u2013{end}  ({ch.last_known_pages}p)"
-                running_page = end
+                if ch.start_page is not None:
+                    start = ch.start_page
+                    end = start + ch.last_known_pages - 1
+                    fmt = _roman(start) + "\u2013" + _roman(end) if ch.numbering == "roman" else f"{start}\u2013{end}"
+                    page_range = f"  {fmt}  ({ch.last_known_pages}p)"
+                else:
+                    page_range = f"  ({ch.last_known_pages}p)"
             total_pages += ch.last_known_pages
             if ch.enabled:
                 compiling_pages += ch.last_known_pages
@@ -2629,24 +2683,8 @@ class MainWindow(QMainWindow):
             self._preview.show_pdf(result.pdf_path)
             if self._side_by_side:
                 self._pdf_side_panel.show_pdf(result.pdf_path)
-            # Update page counts per chapter from the compiled PDF
             if self._project is not None:
-                try:
-                    import pymupdf
-                    with pymupdf.open(result.pdf_path) as pdf:
-                        total_pages = len(pdf)
-                    enabled_count = sum(
-                        1 for ch in self._project.chapters if ch.enabled)
-                    if enabled_count > 0:
-                        per_ch = total_pages // enabled_count
-                        remainder = total_pages % enabled_count
-                        for ch in self._project.chapters:
-                            if ch.enabled:
-                                ch.last_known_pages = per_ch + (1 if remainder > 0 else 0)
-                                remainder -= 1
-                        self._project_sidebar._rebuild_list()
-                except Exception:
-                    pass
+                self._update_chapter_page_counts(result.pdf_path)
             self._status.showMessage(
                 f"\u2714 Project compiled successfully", 5000)
         else:
@@ -2655,6 +2693,63 @@ class MainWindow(QMainWindow):
             if self._side_by_side:
                 self._pdf_side_panel.show_message(f"{result.error}\n\n{tail}")
         self._compile_worker = None
+
+    def _update_chapter_page_counts(self, pdf_path: Path) -> None:
+        """Read the compiled PDF and assign page counts to each enabled
+        chapter by detecting \\chapter headings in the PDF text."""
+        if self._project is None:
+            return
+        try:
+            import pymupdf
+        except ImportError:
+            return
+        try:
+            pdf = pymupdf.open(pdf_path)
+            total_pages = len(pdf)
+            # Try to find chapter boundaries by looking for the chapter
+            # title text on each page.  Each enabled chapter's label
+            # (or its section heading) should appear near the top of its
+            # first page.
+            enabled = [ch for ch in self._project.chapters if ch.enabled]
+            if not enabled:
+                pdf.close()
+                return
+            # Build list of (chapter_index_in_enabled, first_page_0based)
+            ch_starts: list[tuple[int, int]] = []
+            for ci, ch in enumerate(enabled):
+                label = ch.label or Path(ch.path).stem
+                # Strip numbering prefix like "1 — " for matching
+                clean_label = label
+                for sep in (" \u2014 ", " - ", " – "):
+                    if sep in clean_label:
+                        clean_label = clean_label.split(sep, 1)[1]
+                        break
+                # Search each page for the chapter's title text
+                for pi in range(total_pages):
+                    page_text = pdf[pi].get_text("text")[:500]
+                    if clean_label and clean_label.lower() in page_text.lower():
+                        ch_starts.append((ci, pi))
+                        break
+            pdf.close()
+            if ch_starts:
+                # Sort by page number and compute page counts
+                ch_starts.sort(key=lambda x: x[1])
+                for j, (ci, start_page) in enumerate(ch_starts):
+                    if j + 1 < len(ch_starts):
+                        pages = ch_starts[j + 1][1] - start_page
+                    else:
+                        pages = total_pages - start_page
+                    enabled[ci].last_known_pages = max(1, pages)
+            else:
+                # Fallback: divide evenly
+                per_ch = total_pages // len(enabled)
+                remainder = total_pages % len(enabled)
+                for ch in enabled:
+                    ch.last_known_pages = per_ch + (1 if remainder > 0 else 0)
+                    remainder -= 1
+        except Exception:
+            return
+        self._project_sidebar.recompute_auto_pages()
 
     def _show_in_explorer(self) -> None:
         if self._current_path is None:

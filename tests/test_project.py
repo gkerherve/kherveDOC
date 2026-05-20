@@ -162,3 +162,21 @@ def test_serialize_project_master_all_enabled_no_includeonly():
         ch.enabled = True
     master = serialize_project_master(proj)
     assert "\\includeonly" not in master
+
+
+def test_auto_page_numbers_default():
+    proj = Project()
+    assert proj.auto_page_numbers is True
+
+
+def test_auto_page_numbers_round_trip():
+    proj = _sample_project()
+    proj.auto_page_numbers = False
+    s = project_to_json(proj)
+    proj2 = project_from_json(s)
+    assert proj2.auto_page_numbers is False
+
+    proj.auto_page_numbers = True
+    s = project_to_json(proj)
+    proj2 = project_from_json(s)
+    assert proj2.auto_page_numbers is True

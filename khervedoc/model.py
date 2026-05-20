@@ -241,6 +241,7 @@ class Project:
     chapters: list[ChapterEntry] = field(default_factory=list)
     bibliography: str = ""               # relative path to .bib
     bib_style: str = ""                  # e.g. "vancouver", "plain"
+    auto_page_numbers: bool = True       # auto-compute start_page from cumulative pages
     type: str = "Project"
 
     def __post_init__(self):
@@ -456,6 +457,7 @@ def project_to_json(proj: Project) -> str:
         "chapters": [asdict(ch) for ch in proj.chapters],
         "bibliography": proj.bibliography,
         "bib_style": proj.bib_style,
+        "auto_page_numbers": proj.auto_page_numbers,
     }
     return json.dumps(d, indent=2, ensure_ascii=False)
 
@@ -501,6 +503,7 @@ def project_from_json(s: str) -> Project:
         chapters=chapters,
         bibliography=d.get("bibliography", ""),
         bib_style=d.get("bib_style", ""),
+        auto_page_numbers=bool(d.get("auto_page_numbers", True)),
     )
 
 
