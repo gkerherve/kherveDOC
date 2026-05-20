@@ -94,8 +94,14 @@ def _extract_preamble_extras(src: str, *, strip_author: bool = True) -> str:
     # Strip the patterns we already represent in the model.
     preamble = re.sub(
         r"\\documentclass(?:\[[^\]]*\])?\{[^}]+\}", "", preamble)
+    # Strip option-less \usepackage{name} — the model stores these.
+    # Packages WITH options (\usepackage[utf8]{inputenc}) stay in
+    # preamble_extras so the options survive the round-trip.
     preamble = re.sub(
-        r"\\usepackage(?:\[[^\]]*\])?\{[^}]+\}", "", preamble)
+        r"\\usepackage\{[^}]+\}", "", preamble)
+    # Also strip packages-with-options that the model handles itself.
+    preamble = re.sub(
+        r"\\usepackage\[[^\]]*\]\{(?:geometry|setspace)\}", "", preamble)
     if strip_author:
         preamble = _strip_balanced_command(preamble, "title")
         preamble = _strip_balanced_command(preamble, "author")
@@ -256,6 +262,9 @@ _DOCCLASS_RE = re.compile(r"\\documentclass(?:\[[^\]]*\])?\{([^}]+)\}")
 # the DocMeta default, so the user's twocolumn / font choice vanishes.
 _DOCCLASS_OPTS_RE = re.compile(r"\\documentclass\[([^\]]*)\]\{[^}]+\}")
 _PACKAGE_RE = re.compile(r"\\usepackage(?:\[[^\]]*\])?\{([^}]+)\}")
+# Matches only option-less \usepackage{name} — packages with [opts]
+# are kept in preamble_extras so the options survive round-trip.
+_PACKAGE_BARE_RE = re.compile(r"\\usepackage\{([^}]+)\}")
 _GEOMETRY_RE = re.compile(r"\\usepackage\[([^\]]*)\]\{geometry\}")
 
 _BODY_RE = re.compile(
@@ -844,7 +853,9 @@ def import_tex(tex_source: str) -> Document:
     title_text = _extract_braced(tex_source, "title")
     author_text = _extract_braced(tex_source, "author")
     geom_m = _GEOMETRY_RE.search(tex_source)
-    packages = [p for p in _PACKAGE_RE.findall(tex_source)
+    # Only collect option-less packages into the model — packages with
+    # options (\usepackage[utf8]{inputenc}) are kept in preamble_extras.
+    packages = [p for p in _PACKAGE_BARE_RE.findall(tex_source)
                 if p not in ("geometry", "setspace")]
 
     page_size = "A4"
@@ -890,8 +901,9 @@ def import_tex(tex_source: str) -> Document:
         if raw_class_opts else []
     body_font_pt = 12
     for opt in doc_class_opts:
-        if opt in ("10pt", "11pt", "12pt"):
-            body_font_pt = int(opt[:-2])
+        m_pt = re.match(r"(\d+)pt$", opt)
+        if m_pt:
+            body_font_pt = int(m_pt.group(1))
             break
     column_count = 1
     if "twocolumn" in doc_class_opts:
@@ -900,7 +912,15 @@ def import_tex(tex_source: str) -> Document:
 
     # For non-standard classes (journal templates) preserve the raw
     # options string so "VANCOUVER,LATO2COL" etc. survive round-trip.
-    class_options = "" if is_standard else raw_class_opts
+    # For standard classes, preserve extra options (a4paper, draft,
+    # landscape, etc.) that the serializer doesn't reconstruct itself.
+    if is_standard:
+        _RECONSTRUCTED = {"twocolumn", "onecolumn"}
+        extra = [o for o in doc_class_opts
+                 if o and not re.match(r"\d+pt$", o) and o not in _RECONSTRUCTED]
+        class_options = ",".join(extra) if extra else ""
+    else:
+        class_options = raw_class_opts
 
     # For Elsevier classes we keep \author[opts]{...\corref{...}},
     # \ead, \cortext, \affiliation etc. as raw LaTeX in frontmatter_extras
@@ -968,12 +988,6 @@ def import_tex(tex_source: str) -> Document:
     # surviving as literal LaTeX in the Text fragment.
     if title_text and not any(isinstance(b, Title) for b in children):
         title_inlines = _parse_inlines(title_text) or [Text(text=title_text)]
-        # Title style is bold by definition — strip the bold mark from any
-        # inline run so the next serialization round-trip doesn't double-
-        # wrap with \textbf and leave literal characters behind.
-        for c in title_inlines:
-            if isinstance(c, Text) and "bold" in c.marks:
-                c.marks = [m for m in c.marks if m != "bold"]
         children.insert(0, Title(children=title_inlines))
         meta.title = ""
 

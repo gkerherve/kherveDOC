@@ -284,8 +284,8 @@ _FONT_FAMILY_PACKAGES = {
 
 
 def _body_font_pt_class_option(pt: int) -> str:
-    """LaTeX article supports 10/11/12pt. Snap to the closest."""
-    return f"{min((10, 11, 12), key=lambda v: abs(v - pt))}pt"
+    """Emit the font size as-is — some classes accept non-standard sizes."""
+    return f"{pt}pt"
 
 
 _STANDARD_SERIALIZER_CLASSES = {
@@ -298,20 +298,21 @@ _STANDARD_SERIALIZER_CLASSES = {
 def _class_options(m) -> str:
     """Comma-joined documentclass options: font size, twocolumn, etc.
 
-    If `class_options` is set (journal templates), emit it verbatim
-    so options like "VANCOUVER,LATO2COL" survive the round-trip.
-    For non-standard classes with no explicit options, return empty
-    string so the serializer omits the brackets entirely — custom
-    classes set their own font size and layout internally.
+    For non-standard classes without explicit options, return empty
+    string — custom classes set their own layout internally.
+    For standard classes, reconstruct from model fields and append
+    any extra preserved options (a4paper, draft, etc.).
     """
     raw = getattr(m, "class_options", "")
-    if raw:
-        return raw
     if (m.documentclass or "").lower() not in _STANDARD_SERIALIZER_CLASSES:
-        return ""
+        return raw
     opts = [_body_font_pt_class_option(m.body_font_pt)]
     if getattr(m, "column_count", 1) == 2:
         opts.append("twocolumn")
+    # Append preserved extras (a4paper, draft, landscape, etc.)
+    if raw:
+        extras = [o.strip() for o in raw.split(",") if o.strip()]
+        opts.extend(extras)
     return ",".join(opts)
 
 
@@ -370,15 +371,12 @@ def serialize_document(doc: Document) -> str:
     has_chapters = (m.documentclass or "").lower() in _CHAPTER_CLASSES
     # Non-standard classes carry their own layout — don't inject geometry,
     # setspace, or font packages that may conflict.
-    is_journal = ((m.documentclass or "").lower() not in _STANDARD_SERIALIZER_CLASSES
-                  or bool(getattr(m, "class_options", "")))
+    is_journal = (m.documentclass or "").lower() not in _STANDARD_SERIALIZER_CLASSES
 
     # Margins flow into geometry per-side so users can pick asymmetric layouts.
-    # Journal classes with explicit class_options (e.g. WileyNJDv5) often
-    # define their own layout that conflicts with geometry — skip it for
-    # those. All other classes (including custom ones like resume) get
-    # geometry so user margins are honoured.
-    if bool(getattr(m, "class_options", "")):
+    # Journal classes (non-standard) often define their own layout that
+    # conflicts with geometry — skip it for those.
+    if is_journal:
         geometry = ""
     else:
         geometry = (
@@ -522,8 +520,8 @@ def serialize_document(doc: Document) -> str:
     if has_metadata:
         if not re.search(r"\\title\b", all_extras):
             preamble_meta += f"\\title{{{title_text or '~'}}}\n"
-        if not re.search(r"\\author\b", all_extras):
-            preamble_meta += f"\\author{{{author_text or '~'}}}\n"
+        if author_text and not re.search(r"\\author\b", all_extras):
+            preamble_meta += f"\\author{{{author_text}}}\n"
 
     parts: list[str] = []
     emitted_maketitle = False
@@ -545,6 +543,11 @@ def serialize_document(doc: Document) -> str:
     children = doc.children
     n = len(children)
     i = 0
+    # If a RawLatex block already contains \maketitle (e.g. inside a
+    # \twocolumn[...\maketitle...] wrapper), don't emit a separate one.
+    raw_has_maketitle = any(
+        isinstance(b, RawLatex) and "\\maketitle" in b.text
+        for b in children)
 
     if is_beamer:
         while i < n:
@@ -584,6 +587,12 @@ def serialize_document(doc: Document) -> str:
             if fm_extras and isinstance(block, (Title, Author, Abstract, Keywords)):
                 i += 1
                 continue
+            # Skip the Title block's \maketitle if a RawLatex block
+            # already contains one (e.g. \twocolumn[...\maketitle...]).
+            if raw_has_maketitle and isinstance(block, Title):
+                emitted_maketitle = True
+                i += 1
+                continue
             if isinstance(block, Abstract):
                 paras: list[str] = []
                 while i < n and isinstance(children[i], Abstract):
@@ -606,6 +615,8 @@ def serialize_document(doc: Document) -> str:
             rendered = serialize_block(block, has_chapters=has_chapters,
                                        float_h=not is_journal)
             if isinstance(block, Title):
+                emitted_maketitle = True
+            elif isinstance(block, RawLatex) and "\\maketitle" in block.text:
                 emitted_maketitle = True
             parts.append(rendered)
             i += 1
