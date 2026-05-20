@@ -3613,6 +3613,609 @@ def recipe() -> Document:
     )
 
 
+# --------------------------------------------------- daily journal
+
+def daily_journal() -> Document:
+    """Daily journal / diary entry — one page per day with mood,
+    gratitude, tasks and free-form reflection."""
+    return Document(
+        meta=_meta(
+            title="Daily journal",
+            author="",
+            body_font_pt=11,
+            margin_left_cm=2.5, margin_right_cm=2.5,
+            margin_top_cm=2.0, margin_bottom_cm=2.0,
+            paragraph_indent=False,
+            line_spacing=1.15,
+        ),
+        children=[
+            Title(children=[Text(text="Daily Journal")]),
+            Author(children=[Text(text="Personal · 2026")]),
+
+            # --- Day 1 ---
+            Section(level=1, children=[Text(text="Tuesday, 20 May 2026")]),
+
+            _p(("Mood:", ["bold"]), " Energised ★★★★☆"),
+            Paragraph(children=[Text(text="")]),
+
+            Section(level=2, children=[Text(text="Morning reflection")]),
+            _p(
+                "Woke up at 6:30 without the alarm — slept a solid "
+                "7.5 hours. The sun was already up, which helps. Made "
+                "coffee and spent 20 minutes reading before opening "
+                "the laptop. That screen-free start is something I "
+                "want to keep doing.",
+            ),
+
+            Section(level=2, children=[Text(text="Gratitude")]),
+            _items(
+                "Good weather for the cycle commute",
+                "The paper revision came back with only minor comments",
+                "Had lunch with K. — first time in weeks we managed "
+                "to sync schedules",
+            ),
+
+            Section(level=2, children=[Text(text="Tasks")]),
+            Table(
+                rows=[
+                    ["Task",                              "Status"],
+                    ["Reply to reviewer comments",        "✓ Done"],
+                    ["Submit travel reimbursement",       "✓ Done"],
+                    ["Read Ch. 4 of Tao's Analysis I",   "◻ Carry over"],
+                    ["Fix the leaking kitchen tap",       "◻ Carry over"],
+                ],
+                alignment="ll",
+            ),
+
+            Section(level=2, children=[Text(text="Notes")]),
+            _p(
+                "The reviewer asked for a convergence plot that we "
+                "did not include in the first draft. Took about an "
+                "hour to regenerate from the saved checkpoint. Should "
+                "keep a script that produces all figures from raw data "
+                "so this is a one-liner next time.",
+            ),
+            _p(
+                "Interesting seminar by Prof. N. on stochastic "
+                "optimal control — the connection to reinforcement "
+                "learning was clearer than I expected. Worth reading "
+                "the Bertsekas reference she mentioned.",
+            ),
+
+            Section(level=2, children=[Text(text="Evening reflection")]),
+            _p(
+                "Productive day overall. The reviewer turnaround was "
+                "the main win. Tomorrow: focus block in the morning "
+                "for the Tao chapter, then lab meeting at 14:00.",
+            ),
+
+            RawLatex(text="\\newpage"),
+
+            # --- Day 2 ---
+            Section(level=1, children=[Text(text="Wednesday, 21 May 2026")]),
+
+            _p(("Mood:", ["bold"]), " Steady ★★★☆☆"),
+            Paragraph(children=[Text(text="")]),
+
+            Section(level=2, children=[Text(text="Morning reflection")]),
+            _p(
+                "Slightly foggy start — stayed up too late reading. "
+                "Still managed the screen-free first 15 minutes but "
+                "it was a struggle. Coffee helped.",
+            ),
+
+            Section(level=2, children=[Text(text="Gratitude")]),
+            _items(
+                "The code review from B. caught a subtle off-by-one "
+                "before it hit production",
+                "Free cake in the common room (someone's birthday)",
+                "Rain held off until I was already indoors",
+            ),
+
+            Section(level=2, children=[Text(text="Tasks")]),
+            Table(
+                rows=[
+                    ["Task",                              "Status"],
+                    ["Read Ch. 4 of Tao's Analysis I",   "✓ Done"],
+                    ["Lab meeting presentation",          "✓ Done"],
+                    ["Fix the leaking kitchen tap",       "◻ Tomorrow"],
+                    ["Draft poster abstract for ICML",    "◻ Started"],
+                ],
+                alignment="ll",
+            ),
+
+            Section(level=2, children=[Text(text="Notes")]),
+            _p(
+                "Chapter 4 covers the construction of the reals via "
+                "Cauchy sequences. The key takeaway: completeness is "
+                "a property you choose to build in, not one that "
+                "falls out automatically from the rationals.",
+            ),
+            _p(
+                "Lab meeting went well. M. had good questions about "
+                "the error bars on Figure 3. Need to double-check "
+                "the bootstrap code.",
+            ),
+
+            Section(level=2, children=[Text(text="Evening reflection")]),
+            _p(
+                "Solid reading session but the poster abstract is "
+                "only half-drafted. Setting a hard 09:00–11:00 block "
+                "for it tomorrow. Going to bed earlier tonight.",
+            ),
+        ],
+    )
+
+
+# --------------------------------------------------- weekly journal
+
+def weekly_journal() -> Document:
+    """Weekly journal / planner — goals, schedule overview, daily
+    highlights, and end-of-week review."""
+    return Document(
+        meta=_meta(
+            title="Weekly journal",
+            author="",
+            body_font_pt=11,
+            margin_left_cm=2.0, margin_right_cm=2.0,
+            margin_top_cm=2.0, margin_bottom_cm=2.0,
+            paragraph_indent=False,
+            line_spacing=1.15,
+        ),
+        children=[
+            Title(children=[Text(text="Weekly Journal")]),
+            Author(children=[Text(text="Week 21 · 19–25 May 2026")]),
+
+            # --- Goals ---
+            Section(level=1, children=[Text(text="Goals for this week")]),
+            _ord_items(
+                "Submit revised manuscript to Phys. Rev. B",
+                "Finish poster abstract for ICML deadline (Friday)",
+                "Run the full benchmark suite on the new cluster nodes",
+                "30 min exercise at least 4 days",
+                "Read two chapters of Tao's Analysis I",
+            ),
+
+            # --- Schedule overview ---
+            Section(level=1, children=[Text(text="Schedule overview")]),
+            Table(
+                rows=[
+                    ["Day",       "Morning",           "Afternoon",
+                     "Evening"],
+                    ["Mon",       "Deep work: paper",  "Group meeting",
+                     "Gym"],
+                    ["Tue",       "Deep work: paper",  "Seminar (Prof. N.)",
+                     "Reading"],
+                    ["Wed",       "Poster abstract",   "Lab meeting",
+                     "Free"],
+                    ["Thu",       "Benchmarks",        "1:1 with supervisor",
+                     "Gym"],
+                    ["Fri",       "Poster abstract",   "ICML deadline 17:00",
+                     "Dinner out"],
+                    ["Sat",       "Reading",           "Free",
+                     "Free"],
+                    ["Sun",       "Weekly review",     "Meal prep",
+                     "Free"],
+                ],
+                caption="",
+                alignment="llll",
+            ),
+
+            # --- Daily highlights ---
+            Section(level=1, children=[Text(text="Daily highlights")]),
+
+            Section(level=2, children=[Text(text="Monday 19 May")]),
+            _p(
+                "Finished the last round of revisions. Sent the "
+                "manuscript to co-authors for a final read before "
+                "submission. Group meeting ran long — new PhD student "
+                "presented their literature review and needed feedback "
+                "on scope.",
+            ),
+
+            Section(level=2, children=[Text(text="Tuesday 20 May")]),
+            _p(
+                "Co-authors signed off on the paper. Submitted to "
+                "Phys. Rev. B at 15:22 — ", ("Goal 1 done.", ["bold"]),
+                " Attended Prof. N.'s seminar on stochastic optimal "
+                "control; good connection to our RL side-project.",
+            ),
+
+            Section(level=2, children=[Text(text="Wednesday 21 May")]),
+            _p(
+                "Drafted 80% of the poster abstract. Lab meeting "
+                "feedback: need to clarify the error-bar methodology "
+                "in Figure 3. Opened an issue to track that.",
+            ),
+
+            Section(level=2, children=[Text(text="Thursday 22 May")]),
+            _p(
+                "Benchmarks running on the new nodes — first results "
+                "show a 1.8× speedup over the old cluster, consistent "
+                "with the core-count ratio. 1:1 with supervisor: "
+                "agreed to target NeurIPS for the follow-up paper.",
+            ),
+
+            Section(level=2, children=[Text(text="Friday 23 May")]),
+            _p(
+                "Polished and submitted the poster abstract at 14:30 "
+                "— ", ("Goal 2 done.", ["bold"]),
+                " Benchmark suite finished overnight; all 48 tests "
+                "passed — ", ("Goal 3 done.", ["bold"]),
+                " Celebrated with dinner at the Italian place.",
+            ),
+
+            Section(level=2, children=[Text(text="Weekend")]),
+            _p(
+                "Read chapters 4 and 5 of Tao — ",
+                ("Goal 5 done.", ["bold"]),
+                " Exercise: Mon gym, Thu gym, Sat 5 km run, Sun yoga "
+                "— 4 days — ", ("Goal 4 done.", ["bold"]), ".",
+            ),
+
+            # --- Review ---
+            Section(level=1, children=[Text(text="End-of-week review")]),
+
+            _p(("Wins:", ["bold"])),
+            _items(
+                "All five goals completed — first clean sweep in a "
+                "month",
+                "Paper submitted ahead of the internal deadline",
+                "New cluster benchmarks provide data for the NeurIPS "
+                "intro section",
+            ),
+
+            _p(("Lessons:", ["bold"])),
+            _items(
+                "Setting a hard morning focus block works — protect "
+                "it from meetings",
+                "The poster abstract took longer than expected; start "
+                "earlier next time",
+                "Need a reproducible figure-generation script; manual "
+                "re-plotting wasted an hour",
+            ),
+
+            _p(("Carry-over to next week:", ["bold"])),
+            _items(
+                "Fix the bootstrap error-bar code (from lab meeting "
+                "feedback)",
+                "Start NeurIPS paper outline",
+                "Kitchen tap still leaking — call a plumber",
+            ),
+        ],
+    )
+
+
+# --------------------------------------------------- monthly journal
+
+def monthly_journal() -> Document:
+    """Monthly journal / review — goals, key events, metrics,
+    achievements, and planning for next month."""
+    return Document(
+        meta=_meta(
+            title="Monthly journal",
+            author="",
+            body_font_pt=11,
+            margin_left_cm=2.5, margin_right_cm=2.5,
+            margin_top_cm=2.0, margin_bottom_cm=2.0,
+            paragraph_indent=False,
+            line_spacing=1.15,
+        ),
+        children=[
+            Title(children=[Text(text="Monthly Review")]),
+            Author(children=[Text(text="May 2026")]),
+
+            # --- Overview ---
+            Section(level=1, children=[Text(text="Month at a glance")]),
+            _p(
+                "A strong month overall. The Phys. Rev. B paper was "
+                "submitted after three rounds of internal review, the "
+                "ICML poster was accepted, and the new cluster is now "
+                "fully operational. On the personal side, maintained "
+                "the exercise habit (17 out of 22 working days) and "
+                "finished Tao's Analysis I.",
+            ),
+
+            # --- Goals review ---
+            Section(level=1, children=[Text(text="Goals: review")]),
+            Table(
+                rows=[
+                    ["Goal",                                "Status",
+                     "Notes"],
+                    ["Submit Phys. Rev. B paper",           "✓ Done",
+                     "Submitted 20 May"],
+                    ["ICML poster abstract",                "✓ Done",
+                     "Accepted 28 May"],
+                    ["Benchmark new cluster",               "✓ Done",
+                     "1.8× speedup confirmed"],
+                    ["Read Tao's Analysis I (Ch. 1–8)",     "✓ Done",
+                     "Finished 25 May"],
+                    ["Exercise 4×/week",                    "✓ 4.25 avg",
+                     "17/20 target days"],
+                    ["Draft NeurIPS outline",               "◻ Partial",
+                     "Intro + methods only"],
+                    ["Fix kitchen tap",                     "◻ Not done",
+                     "Plumber booked for 3 Jun"],
+                ],
+                caption="May 2026 goals scorecard.",
+                label="tab:monthly-goals",
+                alignment="llp{5cm}",
+            ),
+            _p(
+                "Five of seven goals completed. The NeurIPS outline "
+                "stalled in weeks 3–4 because the poster deadline "
+                "consumed the time I had planned for it. Realistic "
+                "assessment: I over-committed by one goal this month.",
+            ),
+
+            # --- Key events ---
+            Section(level=1, children=[Text(text="Key events")]),
+            Table(
+                rows=[
+                    ["Date",    "Event"],
+                    ["5 May",   "Group retreat — brainstormed Q3 "
+                                "research directions"],
+                    ["12 May",  "Prof. N.'s colloquium on stochastic "
+                                "control"],
+                    ["20 May",  "Phys. Rev. B submission"],
+                    ["23 May",  "ICML poster abstract submitted"],
+                    ["28 May",  "ICML acceptance notification — poster "
+                                "accepted"],
+                    ["30 May",  "New PhD student E. joined the group"],
+                ],
+                caption="",
+                alignment="lp{12cm}",
+            ),
+
+            # --- Metrics ---
+            Section(level=1, children=[Text(text="Metrics")]),
+            Table(
+                rows=[
+                    ["Metric",                  "April", "May",
+                     "Trend"],
+                    ["Papers submitted",        "0",     "1",
+                     "↑"],
+                    ["Conference submissions",  "0",     "1",
+                     "↑"],
+                    ["Deep-work hours",         "62",    "71",
+                     "↑ +15%"],
+                    ["Exercise days",           "14",    "17",
+                     "↑"],
+                    ["Books / chapters read",   "4",     "8",
+                     "↑"],
+                    ["Meetings attended",       "18",    "16",
+                     "↓ (good)"],
+                ],
+                caption="Month-over-month tracking.",
+                label="tab:monthly-metrics",
+                alignment="lrrr",
+            ),
+
+            # --- Reflection ---
+            Section(level=1, children=[Text(text="Reflection")]),
+
+            _p(("What went well:", ["bold"])),
+            _items(
+                "Protecting the morning focus block paid off — deep-"
+                "work hours up 15%",
+                "Starting the paper revision early meant the deadline "
+                "felt comfortable instead of rushed",
+                "The exercise habit is now self-sustaining; missed "
+                "days feel wrong rather than normal",
+            ),
+
+            _p(("What to improve:", ["bold"])),
+            _items(
+                "Over-committed on goals again — cap at 5 next month",
+                "Spent too long on email in the afternoons; batch it "
+                "to two 20-minute windows",
+                "The reading goal was met but at the expense of the "
+                "NeurIPS outline — need to prioritise better",
+            ),
+
+            _p(("Surprises:", ["bold"])),
+            _items(
+                "The cluster speedup was higher than expected — worth "
+                "re-running older experiments",
+                "ICML poster acceptance came faster than anticipated; "
+                "need to start making the poster now",
+            ),
+
+            # --- Next month ---
+            Section(level=1, children=[Text(text="Goals for June 2026")]),
+            _ord_items(
+                "Complete NeurIPS paper outline and first draft of "
+                "Introduction + Methods",
+                "Design and print ICML poster (conference 15–20 July)",
+                "Onboard new PhD student E. — set up their dev "
+                "environment and assign first reading list",
+                "Start Tao's Analysis II (target: chapters 1–4)",
+                "Exercise 4×/week (maintain)",
+            ),
+
+            _p(("Key dates:", ["bold"])),
+            Table(
+                rows=[
+                    ["Date",    "Event"],
+                    ["3 Jun",   "Plumber visit (finally)"],
+                    ["7 Jun",   "Database migration maintenance window"],
+                    ["10 Jun",  "Group meeting: NeurIPS outline review"],
+                    ["15 Jun",  "ICML poster draft to co-authors"],
+                    ["30 Jun",  "Monthly review"],
+                ],
+                caption="",
+                alignment="ll",
+            ),
+        ],
+    )
+
+
+# --------------------------------------------------- calendar
+
+def calendar() -> Document:
+    """Monthly calendar layout — a table-based calendar with events
+    and notes for each day."""
+    return Document(
+        meta=_meta(
+            title="Calendar",
+            author="",
+            body_font_pt=10,
+            margin_left_cm=1.5, margin_right_cm=1.5,
+            margin_top_cm=1.5, margin_bottom_cm=1.5,
+            paragraph_indent=False,
+        ),
+        children=[
+            Title(children=[Text(text="June 2026")]),
+            Author(children=[Text(text="Monthly Calendar")]),
+
+            # --- Week-by-week calendar as tables ---
+            Section(level=1, children=[Text(text="Calendar")]),
+
+            Table(
+                rows=[
+                    ["Mon",        "Tue",         "Wed",
+                     "Thu",        "Fri",         "Sat / Sun"],
+                    ["1\n"
+                     "Deep work",
+                     "2\n"
+                     "Group mtg",
+                     "3\n"
+                     "Plumber 10am",
+                     "4\n"
+                     "1:1 supervisor",
+                     "5\n"
+                     "Seminar",
+                     "6–7"],
+                    ["8\n"
+                     "Deep work",
+                     "9\n"
+                     "Group mtg",
+                     "10\n"
+                     "NeurIPS review",
+                     "11\n"
+                     "Lab meeting",
+                     "12\n"
+                     "Poster draft",
+                     "13–14"],
+                    ["15\n"
+                     "Poster → co-auth",
+                     "16\n"
+                     "Group mtg",
+                     "17\n"
+                     "Deep work",
+                     "18\n"
+                     "1:1 supervisor",
+                     "19\n"
+                     "Seminar",
+                     "20–21"],
+                    ["22\n"
+                     "Deep work",
+                     "23\n"
+                     "Group mtg",
+                     "24\n"
+                     "Poster revisions",
+                     "25\n"
+                     "Lab meeting",
+                     "26\n"
+                     "Print poster",
+                     "27–28"],
+                    ["29\n"
+                     "NeurIPS draft",
+                     "30\n"
+                     "Monthly review",
+                     "",
+                     "",
+                     "",
+                     ""],
+                ],
+                caption="June 2026.",
+                label="tab:calendar",
+                alignment="llllll",
+            ),
+
+            # --- Key events ---
+            Section(level=1, children=[Text(text="Key dates")]),
+            Table(
+                rows=[
+                    ["Date",      "Event",                    "Priority"],
+                    ["3 Jun",     "Plumber visit — 10:00 am", "High"],
+                    ["7 Jun",     "DB migration window",      "High"],
+                    ["10 Jun",    "NeurIPS outline review",   "High"],
+                    ["15 Jun",    "Poster draft to co-authors", "High"],
+                    ["26 Jun",    "Print poster",             "Medium"],
+                    ["30 Jun",    "Monthly review",           "Medium"],
+                ],
+                caption="",
+                alignment="llc",
+            ),
+
+            # --- Deadlines ---
+            Section(level=1, children=[Text(text="Deadlines")]),
+            Table(
+                rows=[
+                    ["Deadline",                          "Date",
+                     "Status"],
+                    ["ICML poster to co-authors",         "15 Jun",
+                     "Pending"],
+                    ["ICML poster print",                 "26 Jun",
+                     "Pending"],
+                    ["NeurIPS first draft (internal)",    "30 Jun",
+                     "Pending"],
+                    ["Phys. Rev. B reviewer response",   "~20 Jun",
+                     "Waiting"],
+                ],
+                caption="",
+                alignment="llc",
+            ),
+
+            # --- Weekly goals ---
+            Section(level=1, children=[Text(text="Weekly focus areas")]),
+
+            Section(level=2, children=[Text(text="Week 1 (1–7 Jun)")]),
+            _items(
+                "Settle new PhD student E. into the group",
+                "Plumber visit Wednesday",
+                "Start ICML poster layout",
+            ),
+
+            Section(level=2, children=[Text(text="Week 2 (8–14 Jun)")]),
+            _items(
+                "NeurIPS outline review at group meeting",
+                "Complete poster first draft",
+                "Begin Tao's Analysis II",
+            ),
+
+            Section(level=2, children=[Text(text="Week 3 (15–21 Jun)")]),
+            _items(
+                "Send poster to co-authors for feedback",
+                "Deep work on NeurIPS Methods section",
+                "Exercise: try the new climbing gym",
+            ),
+
+            Section(level=2, children=[Text(text="Week 4 (22–30 Jun)")]),
+            _items(
+                "Incorporate poster feedback and print",
+                "NeurIPS Introduction first draft",
+                "Monthly review and July planning",
+            ),
+
+            # --- Notes ---
+            Section(level=1, children=[Text(text="Notes")]),
+            _p(
+                "Remember to book train tickets for the ICML "
+                "conference (15–20 July) before prices go up. Check "
+                "whether the university travel portal has a corporate "
+                "rate.",
+            ),
+            _p(
+                "E.'s reading list for the first two weeks: Bertsekas "
+                "chapters 1–3, the Sutton & Barto RL textbook "
+                "chapters 1–4, and our group's last three papers.",
+            ),
+        ],
+    )
+
+
 # Order = display order in the Examples menu. The labels here are what
 # the user sees; the factories above produce the actual documents.
 EXAMPLES: list[tuple[str, callable]] = [
@@ -3635,6 +4238,10 @@ EXAMPLES: list[tuple[str, callable]] = [
     ("&Poster / two-column",  poster),
     ("&White paper",          white_paper),
     ("How-to &guide",         recipe),
+    ("&Daily journal",        daily_journal),
+    ("Wee&kly journal",       weekly_journal),
+    ("Mo&nthly journal",      monthly_journal),
+    ("Ca&lendar",             calendar),
 ]
 
 # Journal and publisher templates — grouped by publisher so the Examples
