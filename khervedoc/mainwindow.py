@@ -15,8 +15,9 @@ from PySide6.QtWidgets import (
     QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFontComboBox,
     QFormLayout, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QInputDialog,
     QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox, QPlainTextEdit,
-    QPushButton, QScrollArea, QSlider, QSpinBox, QSplitter, QStackedWidget,
-    QStatusBar, QTabWidget, QToolBar, QToolButton, QVBoxLayout, QWidget,
+    QProgressBar, QPushButton, QScrollArea, QSlider, QSpinBox, QSplitter,
+    QStackedWidget, QStatusBar, QTabWidget, QToolBar, QToolButton,
+    QVBoxLayout, QWidget,
 )
 
 from . import (
@@ -896,6 +897,13 @@ class MainWindow(QMainWindow):
         self._io_label.setStyleSheet(
             f"padding: 0 8px; color: {self._theme['status_text']};")
         self._status.addPermanentWidget(self._io_label)
+
+        self._io_progress = QProgressBar(self)
+        self._io_progress.setRange(0, 0)  # indeterminate
+        self._io_progress.setMaximumWidth(120)
+        self._io_progress.setMaximumHeight(14)
+        self._io_progress.hide()
+        self._status.addPermanentWidget(self._io_progress)
 
         # Initially on Formatted tab — hide PDF zoom, show editor zoom.
         self._pdf_zoom_sep.hide()
@@ -1876,9 +1884,20 @@ class MainWindow(QMainWindow):
         if path_s:
             self._open_path(Path(path_s))
 
-    def _open_path(self, path: Path) -> None:
-        self._io_label.setText("Loading\u2026")
+    def _io_start(self, label: str = "Loading\u2026") -> None:
+        self._io_label.setText(label)
+        self._io_progress.show()
         self._io_label.repaint()
+        QApplication.processEvents()
+
+    def _io_stop(self) -> None:
+        self._io_label.setText("")
+        self._io_progress.hide()
+
+    def _open_path(self, path: Path) -> None:
+        suffix = path.suffix.lower()
+        is_import_ext = suffix in (".tex", ".md", ".markdown", ".docx")
+        self._io_start("Importing\u2026" if is_import_ext else "Opening\u2026")
         is_import = False
         try:
             if kdocz.is_kdocz_path(path):
@@ -1894,7 +1913,7 @@ class MainWindow(QMainWindow):
                 is_import = True
             elif path.suffix.lower() == ".docx":
                 if not importers.docx_available():
-                    self._io_label.setText("")
+                    self._io_stop()
                     QMessageBox.warning(
                         self, "python-docx missing",
                         "python-docx is not installed. Run "
@@ -1908,7 +1927,7 @@ class MainWindow(QMainWindow):
                 doc = from_json(path.read_text(encoding="utf-8"))
                 self._kdocz_extract_dir = None
         except Exception as exc:
-            self._io_label.setText("")
+            self._io_stop()
             QMessageBox.critical(self, "Open failed", str(exc))
             return
         if is_import:
@@ -1933,7 +1952,7 @@ class MainWindow(QMainWindow):
             self._editor.set_document(doc)
             self._update_title()
             self._remember_recent(path)
-        self._io_label.setText("")
+        self._io_stop()
 
     # ---- drag-and-drop document files ----
 
@@ -2091,9 +2110,11 @@ class MainWindow(QMainWindow):
             self, "Import LaTeX", "", "LaTeX (*.tex);;All files (*)")
         if not path_s: return
         path = Path(path_s)
+        self._io_start("Importing\u2026")
         try:
             doc = importers.import_tex(path.read_text(encoding="utf-8"))
         except Exception as exc:
+            self._io_stop()
             QMessageBox.critical(self, "Import failed", str(exc))
             return
         self._current_path = None
@@ -2103,6 +2124,7 @@ class MainWindow(QMainWindow):
         self._import_source_dir = path.parent
         self._sync_editor_source_dir()
         self._editor.set_document(doc)
+        self._io_stop()
         self.setWindowTitle(f"KherveTeX {version_string()} — {path.stem} (imported)")
         self._status.showMessage(f"Imported {path.name} — Save As to keep it", 6000)
 
@@ -2117,18 +2139,21 @@ class MainWindow(QMainWindow):
             self, "Import Word document", "", "Word (*.docx);;All files (*)")
         if not path_s: return
         path = Path(path_s)
+        self._io_start("Importing\u2026")
         # Embedded images get written next to the eventual save location.
         # Until the user picks one, drop them in the temp build dir.
         image_dir = self._build_dir / f"{path.stem}_images"
         try:
             doc = importers.import_docx(path, image_dir)
         except Exception as exc:
+            self._io_stop()
             QMessageBox.critical(self, "Import failed", str(exc))
             return
         self._current_path = None
         self._import_source_dir = None  # docx images are extracted into build_dir
         self._sync_editor_source_dir()
         self._editor.set_document(doc)
+        self._io_stop()
         self.setWindowTitle(f"KherveTeX {version_string()} — {path.stem} (imported)")
         n_imgs = len(list(image_dir.glob("image_*"))) if image_dir.exists() else 0
         self._status.showMessage(
@@ -2141,15 +2166,18 @@ class MainWindow(QMainWindow):
         if not path_s:
             return
         path = Path(path_s)
+        self._io_start("Importing\u2026")
         try:
             doc = importers.import_md(path.read_text(encoding="utf-8"))
         except Exception as exc:
+            self._io_stop()
             QMessageBox.critical(self, "Import failed", str(exc))
             return
         self._current_path = None
         self._import_source_dir = path.parent
         self._sync_editor_source_dir()
         self._editor.set_document(doc)
+        self._io_stop()
         self.setWindowTitle(
             f"KherveTeX {version_string()} — {path.stem} (imported)")
         self._status.showMessage(
