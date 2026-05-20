@@ -1281,17 +1281,11 @@ class DocumentEditor(QWidget):
             # For figure*/table* blocks that contain an image, show a
             # preview thumbnail above the raw LaTeX source.
             if ("\\begin{figure*}" in text or "\\begin{table*}" in text):
-                # Store the full original LaTeX on the block format so
-                # reconstruction recovers the real source, not the
-                # compact display summary.
-                bfmt = cursor.blockFormat()
-                bfmt.setProperty(_P_RAW_BLOCK, text)
-                cursor.setBlockFormat(bfmt)
                 inc = _re.search(
                     r"\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}", text)
                 if inc:
                     self._insert_figure_thumbnail(cursor, inc.group(1))
-                    cursor.insertText("\n")
+                    cursor.insertText(_LINE_SEP)
                 # Show a compact summary instead of the full LaTeX.
                 cap = _re.search(r"\\caption\{", text)
                 cap_text = ""
@@ -1307,6 +1301,12 @@ class DocumentEditor(QWidget):
                 if lab:
                     summary += f"  ({lab.group(1)})"
                 cursor.insertText(summary, _typed_stub_char_format("#1565c0"))
+                # Store the full original LaTeX on the block so
+                # reconstruction recovers the real source, not the
+                # compact display summary.
+                bfmt = cursor.blockFormat()
+                bfmt.setProperty(_P_RAW_BLOCK, text)
+                cursor.setBlockFormat(bfmt)
             else:
                 visible = text.replace("\n", _LINE_SEP)
                 cursor.insertText(visible, _typed_stub_char_format(color))
