@@ -1696,6 +1696,10 @@ class DocumentEditor(QWidget):
         # State-driven dispatch for paragraph styles that aren't visually
         # distinguishable from Body (Abstract / Keywords share the body
         # font and only differ by indentation/italic).
+        if state == _STATE_TITLE:
+            return Title(children=children)
+        if state == _STATE_AUTHOR:
+            return Author(children=children)
         if state == _STATE_ABSTRACT:
             return Abstract(children=children)
         if state == _STATE_KEYWORDS:
