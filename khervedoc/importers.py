@@ -26,9 +26,18 @@ from .model import (
 #                       .tex importer
 # ============================================================
 
+# Matches the section command prefix only — the braced argument is extracted
+# separately via _consume_braced so nested commands like \textbf{...} inside
+# the heading survive.
+_SECTION_PREFIX_RE = re.compile(
+    r"\\(chapter|section|subsection|subsubsection|paragraph|subparagraph)"
+    r"(\*?)\s*(?=\{)")
+
+# Legacy regex kept only for _is_section_command (boolean probe, doesn't need
+# the body). Never used for extraction.
 _SECTION_RE = re.compile(
     r"\\(chapter|section|subsection|subsubsection|paragraph|subparagraph)"
-    r"(\*?)\{([^}]*)\}")
+    r"(\*?)\{")
 
 
 _FRONTMATTER_BLOCK_RE = re.compile(
@@ -317,8 +326,8 @@ _BLOCK_DISPATCH = [
     ("center",          re.compile(r"\\begin\{center\}(.*?)\\end\{center\}", re.DOTALL)),
     # Beamer frames.
     ("frame",           re.compile(r"\\begin\{frame\}(?:\{([^}]*)\})?(.*?)\\end\{frame\}", re.DOTALL)),
-    # Sections / titles.
-    ("section",         _SECTION_RE),
+    # Sections are handled by _scan_section (balanced braces) — see _parse_blocks.
+    # ("section",         _SECTION_RE),  # removed
     ("maketitle",       re.compile(r"\\maketitle\b")),
     # Last-resort: any other \begin{...}...\end{...} we don't understand
     # gets wrapped in a RawLatex block instead of leaking its body as
@@ -529,6 +538,41 @@ def _flatten_single(nodes: list):
     return nodes[0] if len(nodes) == 1 else nodes
 
 
+class _SectionMatch:
+    """Stub match for section commands parsed with balanced braces."""
+    def __init__(self, start: int, end: int, cmd: str, star: str, body: str):
+        self._start = start
+        self._end = end
+        self._groups = (cmd, star, body)
+    def start(self) -> int: return self._start
+    def end(self) -> int: return self._end
+    def group(self, n: int = 0) -> str:
+        if n == 0:
+            raise IndexError("group(0) not supported")
+        return self._groups[n - 1]
+
+
+def _scan_section(body: str, start: int) -> _SectionMatch | None:
+    """Find the next section command at or after `start` and extract its
+    argument using balanced-brace matching so nested commands like
+    \\textbf{...} inside the heading survive."""
+    m = _SECTION_PREFIX_RE.search(body, start)
+    if not m:
+        return None
+    cmd = m.group(1)
+    star = m.group(2)
+    brace_pos = m.end()
+    # Skip whitespace between prefix and opening brace.
+    while brace_pos < len(body) and body[brace_pos] in " \t\n":
+        brace_pos += 1
+    if brace_pos >= len(body) or body[brace_pos] != "{":
+        return None
+    content, end_pos = _consume_braced(body, brace_pos)
+    if content is None:
+        return None
+    return _SectionMatch(m.start(), end_pos, cmd, star, content)
+
+
 _BRACKET_ARG_MACROS = ("twocolumn", "onecolumn")
 
 
@@ -586,6 +630,13 @@ def _parse_blocks(body: str) -> list:
             best_kind = "bracket_arg_macro"
             best_match = _StubMatch(ba_start, ba_end, body[ba_start:ba_end])
             best_start = ba_start
+        # Section commands use balanced-brace extraction so nested
+        # macros like \textbf{...} inside headings don't break.
+        sec = _scan_section(body, i)
+        if sec is not None and sec.start() < best_start:
+            best_kind = "section"
+            best_match = sec
+            best_start = sec.start()
         for kind, regex in _BLOCK_DISPATCH:
             m = regex.search(body, i)
             if m and m.start() < best_start:
