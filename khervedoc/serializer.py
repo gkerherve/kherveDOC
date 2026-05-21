@@ -807,20 +807,26 @@ def serialize_project_master(proj: Project) -> str:
             f"\\bibliography{{{bib_path}}}\n"
         )
 
-    # \includeonly for enabled chapters
-    enabled_stems = [_chapter_stem(ch) for ch in proj.chapters if ch.enabled]
-    includeonly = ""
-    if enabled_stems and len(enabled_stems) < len(proj.chapters):
-        includeonly = "\\includeonly{" + ",".join(enabled_stems) + "}\n"
+    # Disabled chapters are omitted from the body entirely (no \include
+    # line), with \setcounter used to keep numbering consistent. This is
+    # simpler and more reliable than \includeonly, which still requires
+    # every \include to be present and leaves .aux files from prior runs.
 
     # Body: section-type switches, page-numbering commands, \include per chapter.
     # \frontmatter / \mainmatter / \appendix / \backmatter are standard
     # book-class commands that control chapter numbering and page style.
+    #
+    # Disabled chapters are excluded via \includeonly, but we still need
+    # to keep counters consistent: each disabled chapter advances the
+    # chapter counter (and page counter by its last-known page count) so
+    # the next enabled chapter prints the right numbers.
     body_parts: list[str] = []
     if preamble_meta:
         body_parts.append("\\maketitle\n")
     prev_numbering = None
     prev_type = None
+    running_chapter = 0       # tracks the chapter counter across all entries
+    running_page_offset = 0   # pages consumed by preceding disabled chapters
     for ch in proj.chapters:
         cmds: list[str] = []
         ctype = getattr(ch, "chapter_type", "chapter")
@@ -829,19 +835,43 @@ def serialize_project_master(proj: Project) -> str:
                 cmds.append("\\frontmatter")
             elif ctype == "chapter" and prev_type in ("frontmatter", None):
                 cmds.append("\\mainmatter")
+                running_chapter = 0
             elif ctype == "appendix":
                 cmds.append("\\appendix")
+                running_chapter = 0
             elif ctype == "backmatter":
                 cmds.append("\\backmatter")
             prev_type = ctype
+
+        # Determine what chapter number this entry occupies.
+        ch_num = getattr(ch, "chapter_number", None)
+        if ctype == "chapter":
+            if ch_num is not None:
+                running_chapter = ch_num
+            else:
+                running_chapter += 1
+
         if ch.numbering != prev_numbering:
             cmds.append(f"\\pagenumbering{{{ch.numbering}}}")
             prev_numbering = ch.numbering
+
+        if not ch.enabled:
+            # Skip the \include but account for the pages and chapter
+            # number this entry would have consumed.
+            running_page_offset += ch.last_known_pages or 0
+            continue
+
+        # Enabled chapter: set counters to compensate for any skipped
+        # chapters that came before.
         if ch.start_page is not None:
             cmds.append(f"\\setcounter{{page}}{{{ch.start_page}}}")
-        ch_num = getattr(ch, "chapter_number", None)
-        if ch_num is not None and ctype == "chapter":
-            cmds.append(f"\\setcounter{{chapter}}{{{ch_num - 1}}}")
+        elif running_page_offset > 0:
+            cmds.append(f"\\addtocounter{{page}}{{{running_page_offset}}}")
+            running_page_offset = 0
+
+        if ctype == "chapter":
+            cmds.append(f"\\setcounter{{chapter}}{{{running_chapter - 1}}}")
+
         if cmds:
             body_parts.append("\n".join(cmds) + "\n")
         stem = _chapter_stem(ch)
@@ -853,7 +883,6 @@ def serialize_project_master(proj: Project) -> str:
         f"{_documentclass_line(m)}\n"
         f"{packages}\n"
         f"{preamble_meta}"
-        f"{includeonly}"
         f"\\begin{{document}}\n"
         f"{body}"
         f"{bib_lines}"

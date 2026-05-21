@@ -122,22 +122,20 @@ def test_serialize_project_master_structure():
     assert "\\documentclass" in master
     assert "\\begin{document}" in master
     assert "\\end{document}" in master
-    # All chapters appear in \include
+    # Enabled chapters appear in \include; disabled ones are omitted
     assert "\\include{frontmatter}" in master
     assert "\\include{ch1_intro}" in master
-    assert "\\include{ch2_theory}" in master
+    assert "\\include{ch2_theory}" not in master  # disabled
     assert "\\include{ch3_results}" in master
 
 
-def test_serialize_project_master_includeonly():
+def test_serialize_project_master_disabled_chapters_keep_counters():
     proj = _sample_project()
     master = serialize_project_master(proj)
-    # Only enabled chapters in \includeonly (ch2 is disabled)
-    assert "\\includeonly{" in master
-    assert "ch2_theory" not in master.split("\\includeonly{")[1].split("}")[0]
-    assert "frontmatter" in master.split("\\includeonly{")[1].split("}")[0]
-    assert "ch1_intro" in master.split("\\includeonly{")[1].split("}")[0]
-    assert "ch3_results" in master.split("\\includeonly{")[1].split("}")[0]
+    # ch2_theory is disabled (30 pages) — the next enabled chapter
+    # (ch3_results) must compensate for the skipped pages.
+    assert "\\include{ch2_theory}" not in master
+    assert "\\addtocounter{page}{30}" in master
 
 
 def test_serialize_project_master_page_numbering():
@@ -155,13 +153,17 @@ def test_serialize_project_master_bibliography():
     assert "\\bibliography{refs}" in master
 
 
-def test_serialize_project_master_all_enabled_no_includeonly():
-    """When all chapters are enabled, no \\includeonly is emitted."""
+def test_serialize_project_master_all_enabled_includes_all():
+    """When all chapters are enabled, all appear as \\include."""
     proj = _sample_project()
     for ch in proj.chapters:
         ch.enabled = True
     master = serialize_project_master(proj)
-    assert "\\includeonly" not in master
+    assert "\\include{frontmatter}" in master
+    assert "\\include{ch1_intro}" in master
+    assert "\\include{ch2_theory}" in master
+    assert "\\include{ch3_results}" in master
+    assert "\\addtocounter{page}" not in master
 
 
 def test_auto_page_numbers_default():

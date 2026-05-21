@@ -96,6 +96,7 @@ class _ProjectSidebar(QWidget):
         self._list.setDragDropMode(QListWidget.InternalMove)
         self._list.setDefaultDropAction(Qt.MoveAction)
         self._list.itemDoubleClicked.connect(self._on_double_click)
+        self._list.itemChanged.connect(self._on_item_changed)
         self._list.model().rowsMoved.connect(self._on_rows_moved)
         self._list.setContextMenuPolicy(Qt.CustomContextMenu)
         self._list.customContextMenuRequested.connect(self._on_context_menu)
@@ -217,7 +218,6 @@ class _ProjectSidebar(QWidget):
             item.setFont(font)
             self._list.addItem(item)
         self._list.blockSignals(False)
-        self._list.itemChanged.connect(self._on_item_changed)
         summary = f"Total: ~{total_pages}p"
         if compiling_pages != total_pages:
             summary += f"  \u00b7  Compiling: ~{compiling_pages}p"
