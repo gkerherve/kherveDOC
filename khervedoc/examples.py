@@ -4091,7 +4091,21 @@ def _calendar_latex(year: int, month: int) -> str:
     # 21.0 − 2×0.5 = 20.0 cm tall.
     # Reserve ~1.2 cm for heading + header row → ~18.8 cm for weeks.
     available_h = 18.8
-    cell_h_cm = round(available_h / n_weeks, 2)
+
+    # Partial weeks (first/last) get half-height so they don't waste
+    # space when only a few days are filled.
+    first_partial = any(d == 0 for d in weeks[0])
+    last_partial = any(d == 0 for d in weeks[-1])
+    # Weight: partial weeks count as 0.5, full weeks as 1.0
+    total_weight = n_weeks - 0.5 * first_partial - 0.5 * last_partial
+    full_h = round(available_h / total_weight, 2)
+    half_h = round(full_h / 2, 2)
+    row_heights = []
+    for i, w in enumerate(weeks):
+        if (i == 0 and first_partial) or (i == n_weeks - 1 and last_partial):
+            row_heights.append(half_h)
+        else:
+            row_heights.append(full_h)
 
     # Column width: 28.7 cm / 7 ≈ 4.1 cm each, minus tabcolsep+rules.
     col_spec = (
@@ -4128,7 +4142,8 @@ def _calendar_latex(year: int, month: int) -> str:
 
     # Week rows — use a \parbox so the day number sits at the top-right
     # and the rest of the cell is empty writing space below.
-    for w in weeks:
+    for row_idx, w in enumerate(weeks):
+        h = row_heights[row_idx]
         cells: list[str] = []
         for d in w:
             inner_w = (
@@ -4137,12 +4152,12 @@ def _calendar_latex(year: int, month: int) -> str:
             )
             if d == 0:
                 cells.append(
-                    f"\\parbox[t][{cell_h_cm}cm][t]{{{inner_w}}}"
+                    f"\\parbox[t][{h}cm][t]{{{inner_w}}}"
                     "{\\mbox{}}"
                 )
             else:
                 cells.append(
-                    f"\\parbox[t][{cell_h_cm}cm][t]{{{inner_w}}}"
+                    f"\\parbox[t][{h}cm][t]{{{inner_w}}}"
                     "{\\raggedleft\\footnotesize\\textbf{"
                     + str(d) + "}\\par}"
                 )
