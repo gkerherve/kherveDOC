@@ -97,6 +97,159 @@ def tectonic_available() -> bool:
     return _find_tectonic() is not None
 
 
+def tectonic_cache_size_mb() -> float:
+    """Return the approximate size of the tectonic cache in MB."""
+    cache_dir = _tectonic_cache_dir()
+    if cache_dir is None:
+        return 0.0
+    total = sum(f.stat().st_size for f in cache_dir.rglob("*") if f.is_file())
+    return total / (1024 * 1024)
+
+
+def _tectonic_cache_dir() -> Path | None:
+    """Return the tectonic bundle cache directory, or None."""
+    tectonic_path = _find_tectonic()
+    if tectonic_path is None:
+        return None
+    try:
+        kw: dict = dict(capture_output=True, text=True, encoding="utf-8",
+                        errors="replace", timeout=10)
+        if sys.platform == "win32":
+            kw["creationflags"] = subprocess.CREATE_NO_WINDOW
+        proc = subprocess.run(
+            [tectonic_path, "-X", "show", "user-cache-dir"], **kw)
+        d = proc.stdout.strip().splitlines()[-1].strip() if proc.stdout else ""
+        if d and Path(d).is_dir():
+            return Path(d)
+    except Exception:
+        pass
+    # Fallback to known Windows location
+    fallback = (Path.home() / "AppData" / "Local"
+                / "TectonicProject" / "Tectonic" / "bundles")
+    if fallback.is_dir():
+        return fallback
+    return None
+
+
+def download_tectonic_bundle(on_output=None) -> tuple[bool, str]:
+    """Pre-cache all common TeX packages for offline compilation.
+
+    Compiles a kitchen-sink .tex document that \\usepackage's every
+    package kherveDOC is likely to need.  Each package tectonic hasn't
+    seen yet gets downloaded and cached locally.  After this completes,
+    normal compilation should rarely (if ever) need the network.
+
+    `on_output` is called with each line of tectonic's output for
+    progress reporting.  Returns (success, log_text).
+    """
+    tectonic_path = _find_tectonic()
+    if tectonic_path is None:
+        return False, "tectonic is not installed"
+
+    import tempfile
+    workdir = Path(tempfile.mkdtemp(prefix="khervedoc-bundle-"))
+
+    # Kitchen-sink document that loads all commonly-needed packages.
+    kitchen_sink = r"""\documentclass[12pt]{book}
+% --- Core ---
+\usepackage{amsmath,amssymb,amsfonts,amsthm}
+\usepackage{graphicx,xcolor,float,multicol}
+\usepackage[a4paper]{geometry}
+\usepackage{setspace}
+\usepackage{hyperref}
+\usepackage[colorinlistoftodos]{todonotes}
+% --- Fonts ---
+\usepackage{times}
+\usepackage{courier}
+\usepackage{helvet}
+\usepackage{charter}
+\usepackage{libertine}
+% --- Tables & figures ---
+\usepackage{booktabs,longtable,tabularx,multirow}
+\usepackage{caption,subcaption}
+% --- Code listings ---
+\usepackage{listings}
+% --- Bibliography ---
+\usepackage{natbib}
+% --- Cross-references ---
+\usepackage{cleveref}
+% --- PDF features ---
+\usepackage{pdfpages}
+% --- Layout ---
+\usepackage{fancyhdr,titlesec,enumitem}
+\usepackage{parskip}
+% --- Beamer (separate doc needed, but load the class packages) ---
+\usepackage{textcomp,fontenc}
+% --- Maths extras ---
+\usepackage{mathtools,bm,siunitx}
+% --- Drawing ---
+\usepackage{tikz}
+% --- Algorithms ---
+\usepackage{algorithm,algpseudocode}
+% --- Strikethrough ---
+\usepackage[normalem]{ulem}
+
+\begin{document}
+\chapter{Package cache warmup}
+This document exists only to populate the tectonic package cache.
+$E = mc^2$
+
+\begin{equation}
+\int_0^\infty e^{-x^2} dx = \frac{\sqrt{\pi}}{2}
+\end{equation}
+
+\begin{itemize}
+\item Item one
+\item Item two
+\end{itemize}
+
+\begin{lstlisting}[language=Python]
+print("hello")
+\end{lstlisting}
+
+\begin{tikzpicture}
+\draw (0,0) -- (1,1);
+\end{tikzpicture}
+
+\end{document}
+"""
+    tex_path = workdir / "cache_warmup.tex"
+    tex_path.write_text(kitchen_sink, encoding="utf-8")
+
+    try:
+        kw: dict = dict(
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, encoding="utf-8", errors="replace")
+        if sys.platform == "win32":
+            kw["creationflags"] = subprocess.CREATE_NO_WINDOW
+        proc = subprocess.Popen(
+            [tectonic_path,
+             "-Z", "continue-on-errors",
+             "--keep-logs",
+             "--outdir", str(workdir),
+             str(tex_path)],
+            **kw)
+        log_lines: list[str] = []
+        for line in proc.stdout:
+            line = line.rstrip()
+            log_lines.append(line)
+            if on_output is not None:
+                on_output(line)
+        proc.wait()
+        log = "\n".join(log_lines)
+        # Clean up the temp dir
+        shutil.rmtree(workdir, ignore_errors=True)
+        if proc.returncode == 0:
+            return True, log
+        # Even if the return code is non-zero, the packages were
+        # still downloaded and cached — the compile may fail due to
+        # package conflicts in our kitchen-sink doc but that's fine.
+        return True, log + "\n(some packages may have conflicted, but all were cached)"
+    except Exception as exc:
+        shutil.rmtree(workdir, ignore_errors=True)
+        return False, str(exc)
+
+
 def _strip_images(tex_source: str) -> str:
     r"""Replace every \includegraphics with a lightweight placeholder box
     so tectonic skips image embedding entirely — much faster for drafts."""

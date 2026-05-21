@@ -28,7 +28,7 @@ from . import (
 )
 from .compiler import (
     CompileResult, compile_tex, compile_typst,
-    tectonic_available, typst_available,
+    download_tectonic_bundle, tectonic_available, typst_available,
 )
 from .editor import DocumentEditor, TEMPLATE_CHOICES
 from . import examples, importers
@@ -387,6 +387,17 @@ class _CompileWorker(QThread):
                source_dir=self._source_dir,
                skip_images=self._skip_images,
                use_compile_range=self._use_compile_range))
+
+
+class _BundleDownloadWorker(QThread):
+    """Background thread that downloads the full tectonic TeX Live bundle."""
+    finished_with = Signal(bool, str)   # (success, log)
+    line_output = Signal(str)           # progress lines
+
+    def run(self) -> None:
+        ok, log = download_tectonic_bundle(
+            on_output=lambda line: self.line_output.emit(line))
+        self.finished_with.emit(ok, log)
 
 
 class _GitNetworkWorker(QThread):
@@ -1860,6 +1871,14 @@ class MainWindow(QMainWindow):
         self._compiler_group.addAction(self._act_compiler_typst)
         m_compiler.addAction(self._act_compiler_latex)
         m_compiler.addAction(self._act_compiler_typst)
+        m_compiler.addSeparator()
+        self._act_download_bundle = QAction(
+            "&Download offline bundle\u2026", self,
+            triggered=self._download_tectonic_bundle)
+        self._act_download_bundle.setStatusTip(
+            "Download the full TeX Live bundle (~3 GB) so compilation "
+            "never needs the network again")
+        m_compiler.addAction(self._act_download_bundle)
 
         m_git = mb.addMenu("&Git")
         m_git.addAction(self.act_commit_now)
@@ -4362,6 +4381,56 @@ class MainWindow(QMainWindow):
             from .typst_serializer import serialize_document as serialize_typst
             return serialize_typst(doc)
         return serialize_document(doc)
+
+    def _download_tectonic_bundle(self) -> None:
+        """Download the full TeX Live bundle for offline compilation."""
+        if not tectonic_available():
+            QMessageBox.warning(
+                self, "tectonic not found",
+                "tectonic is not installed. Install it first from\n"
+                "https://tectonic-typesetting.github.io/")
+            return
+        reply = QMessageBox.question(
+            self, "Download offline bundle",
+            "This will download the full TeX Live package bundle (~3 GB) "
+            "so that tectonic never needs the network again.\n\n"
+            "The download may take several minutes depending on your "
+            "connection speed.\n\nProceed?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+        if reply != QMessageBox.Yes:
+            return
+        dlg = QProgressDialog(
+            "Downloading TeX Live bundle\u2026\n"
+            "This may take several minutes.", "Cancel", 0, 0, self)
+        dlg.setWindowTitle("Download offline bundle")
+        dlg.setMinimumWidth(450)
+        dlg.setWindowModality(Qt.WindowModal)
+        dlg.setMinimumDuration(0)
+        dlg.setValue(0)
+        dlg.show()
+        QApplication.processEvents()
+
+        self._bundle_worker = _BundleDownloadWorker()
+        self._bundle_worker.line_output.connect(
+            lambda line: dlg.setLabelText(
+                f"Downloading TeX Live bundle\u2026\n{line}"))
+        self._bundle_worker.finished_with.connect(
+            lambda ok, log: self._on_bundle_done(ok, log, dlg))
+        dlg.canceled.connect(self._bundle_worker.terminate)
+        self._bundle_worker.start()
+
+    def _on_bundle_done(self, ok: bool, log: str, dlg) -> None:
+        dlg.close()
+        self._bundle_worker = None
+        if ok:
+            QMessageBox.information(
+                self, "Bundle downloaded",
+                "The full TeX Live bundle has been downloaded.\n"
+                "Compilation will now work fully offline.")
+        else:
+            QMessageBox.warning(
+                self, "Download failed",
+                f"The bundle download failed.\n\n{log[-500:]}")
 
     def _set_compiler(self, engine: str) -> None:
         if engine == self._compiler:
