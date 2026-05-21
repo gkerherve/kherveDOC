@@ -813,18 +813,35 @@ def serialize_project_master(proj: Project) -> str:
     if enabled_stems and len(enabled_stems) < len(proj.chapters):
         includeonly = "\\includeonly{" + ",".join(enabled_stems) + "}\n"
 
-    # Body: page-numbering commands + \include for each chapter
+    # Body: section-type switches, page-numbering commands, \include per chapter.
+    # \frontmatter / \mainmatter / \appendix / \backmatter are standard
+    # book-class commands that control chapter numbering and page style.
     body_parts: list[str] = []
     if preamble_meta:
         body_parts.append("\\maketitle\n")
     prev_numbering = None
+    prev_type = None
     for ch in proj.chapters:
         cmds: list[str] = []
+        ctype = getattr(ch, "chapter_type", "chapter")
+        if ctype != prev_type:
+            if ctype == "frontmatter":
+                cmds.append("\\frontmatter")
+            elif ctype == "chapter" and prev_type in ("frontmatter", None):
+                cmds.append("\\mainmatter")
+            elif ctype == "appendix":
+                cmds.append("\\appendix")
+            elif ctype == "backmatter":
+                cmds.append("\\backmatter")
+            prev_type = ctype
         if ch.numbering != prev_numbering:
             cmds.append(f"\\pagenumbering{{{ch.numbering}}}")
             prev_numbering = ch.numbering
         if ch.start_page is not None:
             cmds.append(f"\\setcounter{{page}}{{{ch.start_page}}}")
+        ch_num = getattr(ch, "chapter_number", None)
+        if ch_num is not None and ctype == "chapter":
+            cmds.append(f"\\setcounter{{chapter}}{{{ch_num - 1}}}")
         if cmds:
             body_parts.append("\n".join(cmds) + "\n")
         stem = _chapter_stem(ch)

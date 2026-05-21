@@ -308,6 +308,26 @@ def file_new() -> QIcon:
     return QIcon(px)
 
 
+def project_open() -> QIcon:
+    """Folder with stacked pages — represents a multi-chapter project."""
+    px, p = _new_canvas()
+    p.setRenderHint(QPainter.Antialiasing, True)
+    pen = QPen(_fg(), 1.4)
+    p.setPen(pen)
+    # Back page
+    p.setBrush(QBrush(QColor("#c8daf0") if not _dark else QColor("#3a4a60")))
+    p.drawRect(QRect(7, 4, 13, 16))
+    # Front page
+    p.setBrush(QBrush(QColor("#e8f0fe") if not _dark else QColor("#4a5a70")))
+    p.drawRect(QRect(4, 6, 13, 16))
+    # Lines on front page
+    p.setPen(QPen(_fg(), 0.8))
+    for y in (10, 13, 16, 19):
+        p.drawLine(6, y, 15, y)
+    p.end()
+    return QIcon(px)
+
+
 def file_open() -> QIcon:
     px, p = _new_canvas()
     p.setPen(QPen(_fg(), 1.6)); p.setBrush(QBrush(QColor("#ffd073")))

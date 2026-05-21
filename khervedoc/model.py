@@ -223,6 +223,14 @@ Block = Union[Paragraph, Section, MathBlock, List, Figure, Table, RawLatex,
 
 # ---------------- Project (multi-chapter) ----------------
 
+CHAPTER_TYPES = [
+    "frontmatter",   # title page, dedication, preface, acknowledgements
+    "chapter",       # numbered chapter (default)
+    "appendix",      # appendix A, B, ...
+    "backmatter",    # bibliography, index — unnumbered
+]
+
+
 @dataclass
 class ChapterEntry:
     """One entry in a multi-chapter project manifest."""
@@ -232,6 +240,8 @@ class ChapterEntry:
     start_page: int | None = None        # None = continue from previous
     last_known_pages: int = 0            # updated after each compile
     numbering: Literal["arabic", "roman"] = "arabic"
+    chapter_type: str = "chapter"        # one of CHAPTER_TYPES
+    chapter_number: int | None = None    # None = auto from position
 
 
 @dataclass
@@ -497,6 +507,8 @@ def project_from_json(s: str) -> Project:
             start_page=ch_d.get("start_page"),
             last_known_pages=int(ch_d.get("last_known_pages", 0)),
             numbering=ch_d.get("numbering", "arabic"),
+            chapter_type=ch_d.get("chapter_type", "chapter"),
+            chapter_number=ch_d.get("chapter_number"),
         ))
     return Project(
         meta=meta,

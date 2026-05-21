@@ -101,6 +101,18 @@ class _ProjectSidebar(QWidget):
         self._list.customContextMenuRequested.connect(self._on_context_menu)
         layout.addWidget(self._list, 1)
 
+        # Move up / down buttons
+        move_row = QHBoxLayout()
+        self._up_btn = QPushButton("\u25b2 Up")
+        self._up_btn.setToolTip("Move selected chapter up")
+        self._up_btn.clicked.connect(self._move_up)
+        move_row.addWidget(self._up_btn)
+        self._down_btn = QPushButton("\u25bc Down")
+        self._down_btn.setToolTip("Move selected chapter down")
+        self._down_btn.clicked.connect(self._move_down)
+        move_row.addWidget(self._down_btn)
+        layout.addLayout(move_row)
+
         btn_row = QHBoxLayout()
         self._add_btn = QPushButton("+ Add Chapter")
         self._add_btn.clicked.connect(self.addChapterRequested)
@@ -160,6 +172,8 @@ class _ProjectSidebar(QWidget):
         self._list.clear()
         total_pages = 0
         compiling_pages = 0
+        ch_counter = 0          # running chapter number
+        app_counter = 0         # running appendix letter
         for i, ch in enumerate(self._chapters):
             page_range = ""
             if ch.last_known_pages > 0:
@@ -167,7 +181,7 @@ class _ProjectSidebar(QWidget):
                     start = ch.start_page
                     end = start + ch.last_known_pages - 1
                     fmt = _roman(start) + "\u2013" + _roman(end) if ch.numbering == "roman" else f"{start}\u2013{end}"
-                    page_range = f"  {fmt}  ({ch.last_known_pages}p)"
+                    page_range = f"  pp. {fmt}  ({ch.last_known_pages}p)"
                 else:
                     page_range = f"  ({ch.last_known_pages}p)"
             total_pages += ch.last_known_pages
@@ -175,7 +189,24 @@ class _ProjectSidebar(QWidget):
                 compiling_pages += ch.last_known_pages
 
             label = ch.label or Path(ch.path).stem
-            text = f"{label}{page_range}"
+            ctype = getattr(ch, "chapter_type", "chapter")
+            # Build a prefix showing the chapter/appendix number
+            if ctype == "chapter":
+                ch_counter += 1
+                num = ch.chapter_number if ch.chapter_number is not None else ch_counter
+                prefix = f"Ch. {num} \u2014 "
+            elif ctype == "appendix":
+                app_counter += 1
+                num = ch.chapter_number if ch.chapter_number is not None else app_counter
+                prefix = f"App. {chr(64 + num)} \u2014 "
+            elif ctype == "frontmatter":
+                prefix = "\u25c7 "   # diamond
+            elif ctype == "backmatter":
+                prefix = "\u25cb "   # circle
+            else:
+                prefix = ""
+
+            text = f"{prefix}{label}{page_range}"
             item = QListWidgetItem(text)
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable | Qt.ItemIsDragEnabled)
             item.setCheckState(Qt.Checked if ch.enabled else Qt.Unchecked)
@@ -216,6 +247,32 @@ class _ProjectSidebar(QWidget):
             self._chapters[:] = new_order
             self._rebuild_list()
 
+    def _move_up(self) -> None:
+        idx = self._list.currentRow()
+        if idx <= 0 or idx >= len(self._chapters):
+            return
+        self._chapters[idx], self._chapters[idx - 1] = (
+            self._chapters[idx - 1], self._chapters[idx])
+        if self._active_index == idx:
+            self._active_index = idx - 1
+        elif self._active_index == idx - 1:
+            self._active_index = idx
+        self._rebuild_list()
+        self._list.setCurrentRow(idx - 1)
+
+    def _move_down(self) -> None:
+        idx = self._list.currentRow()
+        if idx < 0 or idx >= len(self._chapters) - 1:
+            return
+        self._chapters[idx], self._chapters[idx + 1] = (
+            self._chapters[idx + 1], self._chapters[idx])
+        if self._active_index == idx:
+            self._active_index = idx + 1
+        elif self._active_index == idx + 1:
+            self._active_index = idx
+        self._rebuild_list()
+        self._list.setCurrentRow(idx + 1)
+
     def _on_context_menu(self, pos) -> None:
         item = self._list.itemAt(pos)
         if item is None:
@@ -224,7 +281,27 @@ class _ProjectSidebar(QWidget):
         ch = self._chapters[idx]
         menu = QMenu(self)
         act_rename = menu.addAction("Rename label\u2026")
+
+        # Chapter type submenu
+        ctype = getattr(ch, "chapter_type", "chapter")
+        act_type_menu = menu.addMenu("Section type")
+        type_labels = {
+            "frontmatter": "Front matter (preface, dedication\u2026)",
+            "chapter": "Chapter (numbered)",
+            "appendix": "Appendix",
+            "backmatter": "Back matter (bibliography, index\u2026)",
+        }
+        type_actions = {}
+        for key, label in type_labels.items():
+            a = act_type_menu.addAction(label)
+            a.setCheckable(True)
+            a.setChecked(ctype == key)
+            type_actions[key] = a
+
+        # Chapter number
+        act_set_chnum = menu.addAction("Set chapter number\u2026")
         act_set_page = menu.addAction("Set start page\u2026")
+
         act_numbering = menu.addMenu("Page numbering")
         act_arabic = act_numbering.addAction("Arabic (1, 2, 3\u2026)")
         act_arabic.setCheckable(True)
@@ -232,18 +309,29 @@ class _ProjectSidebar(QWidget):
         act_roman = act_numbering.addAction("Roman (i, ii, iii\u2026)")
         act_roman.setCheckable(True)
         act_roman.setChecked(ch.numbering == "roman")
+
         menu.addSeparator()
         act_remove = menu.addAction("Remove from project")
 
         chosen = menu.exec(self._list.mapToGlobal(pos))
+        if chosen is None:
+            return
         if chosen == act_rename:
             new_label, ok = QInputDialog.getText(
                 self, "Rename chapter", "Label:", text=ch.label)
             if ok and new_label.strip():
                 ch.label = new_label.strip()
                 self._rebuild_list()
+        elif chosen == act_set_chnum:
+            cur = ch.chapter_number if ch.chapter_number is not None else 0
+            val, ok = QInputDialog.getInt(
+                self, "Set chapter number",
+                "Chapter number (0 = auto from position):",
+                cur, 0, 999)
+            if ok:
+                ch.chapter_number = val if val > 0 else None
+                self._rebuild_list()
         elif chosen == act_set_page:
-            # PySide6 getInt signature: parent, title, label, value, min, max
             val, ok = QInputDialog.getInt(
                 self, "Set start page",
                 "Page number (0 = continue from previous):",
@@ -264,6 +352,14 @@ class _ProjectSidebar(QWidget):
             elif self._active_index > idx:
                 self._active_index -= 1
             self._rebuild_list()
+        else:
+            for key, act in type_actions.items():
+                if chosen == act:
+                    ch.chapter_type = key
+                    if key in ("frontmatter", "backmatter"):
+                        ch.numbering = "roman"
+                    self._rebuild_list()
+                    break
 
 
 # ---------- background compile ----------
@@ -1268,7 +1364,7 @@ class MainWindow(QMainWindow):
         # Project
         self.act_new_project = QAction("New &project...", self,
                                        triggered=self._new_project)
-        self.act_open_project = QAction("Open pro&ject...", self,
+        self.act_open_project = QAction(icons.project_open(), "Open pro&ject...", self,
                                         triggered=self._open_project)
         self.act_save_project = QAction("Save projec&t", self,
                                         triggered=self._save_project)
@@ -1732,6 +1828,7 @@ class MainWindow(QMainWindow):
         m_view.addAction(self.act_view_console)
         m_view.addSeparator()
         m_view.addAction(self.act_side_by_side)
+        m_view.addAction(self._project_dock.toggleViewAction())
         m_view.addSeparator()
         m_view.addAction(self.act_fit_page_width)
         m_view.addSeparator()
@@ -1922,6 +2019,7 @@ class MainWindow(QMainWindow):
 
         tb.addAction(self.act_new); tb.addAction(self.act_open)
         tb.addAction(self.act_save); tb.addAction(self.act_export_pdf)
+        tb.addAction(self.act_open_project)
         tb.addSeparator()
         tb.addAction(self.act_undo); tb.addAction(self.act_redo)
         tb.addSeparator()
@@ -3272,6 +3370,7 @@ class MainWindow(QMainWindow):
         self.act_open.setIcon(icons.file_open())
         self.act_save.setIcon(icons.file_save())
         self.act_export_pdf.setIcon(icons.export_pdf())
+        self.act_open_project.setIcon(icons.project_open())
         self.act_undo.setIcon(icons.undo())
         self.act_redo.setIcon(icons.redo())
         self.act_bold.setIcon(icons.bold())
