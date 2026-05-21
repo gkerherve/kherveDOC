@@ -4406,6 +4406,14 @@ class MainWindow(QMainWindow):
             source = serialize_typst(doc)
         else:
             source = serialize_document(doc)
+        # Skip recompile if the source hasn't changed since the last
+        # failed compile — avoids hammering tectonic with the same
+        # broken input on every keystroke.
+        import hashlib
+        source_hash = hashlib.md5(source.encode("utf-8")).hexdigest()
+        if (source_hash == getattr(self, "_last_failed_hash", None)):
+            return
+        self._last_source_hash = source_hash
         source_dir = self._resolved_source_dir()
         self._compile_worker = _CompileWorker(
             source, self._build_dir, source_dir,
@@ -4424,6 +4432,10 @@ class MainWindow(QMainWindow):
         self._compile_progress.hide()
         # Always feed the full log to the console widgets.
         self._update_console(result)
+        if result.ok:
+            self._last_failed_hash = None
+        else:
+            self._last_failed_hash = getattr(self, "_last_source_hash", None)
         if result.ok and result.pdf_path is not None:
             self._preview.show_pdf(result.pdf_path)
             if self._side_by_side:

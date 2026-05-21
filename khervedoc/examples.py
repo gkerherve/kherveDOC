@@ -3695,7 +3695,8 @@ def _daily_planner_latex(year: int, month: int, day: int) -> str:
     L.append("\\noindent\\begin{minipage}[t]{0.48\\textwidth}")
     L.append(
         "\\fbox{\\begin{minipage}"
-        "{\\dimexpr\\textwidth-2\\fboxsep-2\\fboxrule}"
+        "{\\dimexpr\\textwidth-2\\fboxsep-2\\fboxrule}")
+    L.append(
         "{\\scriptsize\\textbf{Top priorities}}\\par\\vspace{1pt}"
     )
     for _ in range(5):
@@ -3712,7 +3713,8 @@ def _daily_planner_latex(year: int, month: int, day: int) -> str:
     # Low priorities
     L.append(
         "\\fbox{\\begin{minipage}"
-        "{\\dimexpr\\textwidth-2\\fboxsep-2\\fboxrule}"
+        "{\\dimexpr\\textwidth-2\\fboxsep-2\\fboxrule}")
+    L.append(
         "{\\scriptsize\\textbf{Low priorities}}\\par\\vspace{2pt}"
     )
     for _ in range(3):
@@ -3726,7 +3728,8 @@ def _daily_planner_latex(year: int, month: int, day: int) -> str:
     # Follow up
     L.append(
         "\\fbox{\\begin{minipage}"
-        "{\\dimexpr\\textwidth-2\\fboxsep-2\\fboxrule}"
+        "{\\dimexpr\\textwidth-2\\fboxsep-2\\fboxrule}")
+    L.append(
         "{\\scriptsize\\textbf{Follow up}}\\par\\vspace{2pt}"
     )
     for _ in range(3):
