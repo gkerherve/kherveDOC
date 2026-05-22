@@ -1031,6 +1031,8 @@ class DocumentEditor(QWidget):
             doc = self._edit.document()
             block = doc.firstBlock()
             zoom = self._zoom_percent / 100 if self._zoom_percent else 1.0
+            c = QTextCursor(block)
+            c.beginEditBlock()
             while block.isValid():
                 state = block.userState()
                 if state in (0, -1):
@@ -1042,6 +1044,7 @@ class DocumentEditor(QWidget):
                     fmt.setFont(bf)
                     bc.setCharFormat(fmt)
                 block = block.next()
+            c.endEditBlock()
         finally:
             self._building = False
 
@@ -1341,6 +1344,7 @@ class DocumentEditor(QWidget):
 
     def _insert_table_widget(self, cursor: QTextCursor, table: Table) -> None:
         """Insert a Table model node as a real QTextTable in the editor."""
+        cursor.beginEditBlock()
         nrows = len(table.rows) if table.rows else 1
         ncols = max((len(r) for r in table.rows), default=1) if table.rows else 1
         p = _palette(self._dark)
@@ -1393,6 +1397,7 @@ class DocumentEditor(QWidget):
             cap_cursor.insertText(f"Caption: {table.caption}", cap_fmt)
         # Move the cursor past the table so subsequent content goes after it.
         cursor.movePosition(QTextCursor.End)
+        cursor.endEditBlock()
 
     def _capped_math_size(self, img: QImage) -> tuple[int, int]:
         """Return (width, height) capped to 90% of the editor viewport."""
@@ -1424,6 +1429,7 @@ class DocumentEditor(QWidget):
     def _insert_figure_widget(self, cursor: QTextCursor, figure: Figure) -> None:
         """Insert a Figure model node as a centered QTextTable with image,
         caption, and label rows."""
+        cursor.beginEditBlock()
         has_caption = bool(figure.caption)
         has_label = bool(figure.label)
         total_rows = 1 + int(has_caption) + int(has_label)
@@ -1484,6 +1490,7 @@ class DocumentEditor(QWidget):
             f = lbl_fmt.font(); f.setPointSize(9); lbl_fmt.setFont(f)
             lbl_cursor.insertText(f"Label: {figure.label}", lbl_fmt)
         cursor.movePosition(QTextCursor.End)
+        cursor.endEditBlock()
 
     def _figure_from_qtexttable(self, qtable: QTextTable) -> Figure:
         """Read a Figure model back from its QTextTable representation."""
@@ -1864,6 +1871,7 @@ class DocumentEditor(QWidget):
         block = cursor.block()
         block_cursor = QTextCursor(block)
         block_cursor.select(QTextCursor.BlockUnderCursor)
+        block_cursor.beginEditBlock()
         if level == -1:
             block.setUserState(_STATE_TITLE)
             QTextCursor(block).setBlockFormat(_title_block_format())
@@ -1895,16 +1903,12 @@ class DocumentEditor(QWidget):
         else:
             block.setUserState(_STATE_PARAGRAPH)
             QTextCursor(block).setBlockFormat(QTextBlockFormat())
-            # Use setCharFormat (not merge) so EVERY font property —
-            # family, size, weight, italic, smallcaps, super/subscript —
-            # gets wiped back to the document defaults. Anything less and a
-            # paragraph carrying an inherited heading font would still
-            # render larger than its neighbours.
             fmt = QTextCharFormat()
             f = QFont(self._visual_font_family)
             f.setPointSizeF(self._body_font_pt * (self._zoom_percent / 100))
             fmt.setFont(f)
             block_cursor.setCharFormat(fmt)
+        block_cursor.endEditBlock()
         self._on_text_changed()
 
     def toggle_heading_numbered(self, numbered: bool) -> None:
@@ -2196,12 +2200,14 @@ class DocumentEditor(QWidget):
         if not latex.strip():
             return
         c = self._edit.textCursor()
+        c.beginEditBlock()
         c.insertBlock()
         c.block().setUserState(_STATE_MATH_BLOCK)
         c.setBlockFormat(QTextBlockFormat())
         self._insert_math_image(c, latex)
         c.insertText(latex.replace("\n", _LINE_SEP), _math_block_char_format())
         c.insertBlock(); c.block().setUserState(_STATE_PARAGRAPH)
+        c.endEditBlock()
 
     def insert_bullet_list(self) -> None:
         self._edit.textCursor().createList(QTextListFormat.ListDisc)
@@ -2455,6 +2461,7 @@ class DocumentEditor(QWidget):
         """Replace the image in row 0 of a figure table with the updated PNG."""
         cell = qtable.cellAt(0, 0)
         cursor = cell.firstCursorPosition()
+        cursor.beginEditBlock()
         end = cell.lastCursorPosition()
         cursor.setPosition(end.position(), QTextCursor.KeepAnchor)
         cursor.removeSelectedText()
@@ -2475,6 +2482,7 @@ class DocumentEditor(QWidget):
             img_fmt.setWidth(img.width())
             img_fmt.setHeight(img.height())
             cursor.insertImage(img_fmt)
+        cursor.endEditBlock()
         self._on_text_changed()
 
     def insert_table(self) -> None:
@@ -2624,6 +2632,7 @@ class DocumentEditor(QWidget):
         "[CODE] " label is prepended — the coloured background and
         the userState already mark this as a raw block."""
         c = self._edit.textCursor()
+        c.beginEditBlock()
         c.insertBlock()
         c.block().setUserState(_STATE_RAW)
         if "\\begin{lstlisting}" in latex or "\\begin{verbatim}" in latex:
@@ -2639,6 +2648,7 @@ class DocumentEditor(QWidget):
         c.insertText(visible, _typed_stub_char_format(color))
         c.insertBlock(QTextBlockFormat(), QTextCharFormat())
         c.block().setUserState(_STATE_PARAGRAPH)
+        c.endEditBlock()
 
     def insert_compile_marker(self, marker_type: str) -> None:
         """Insert a compile-range or not-compile marker at the cursor."""

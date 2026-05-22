@@ -1155,6 +1155,7 @@ class MainWindow(QMainWindow):
         self._project_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self.addDockWidget(Qt.LeftDockWidgetArea, self._project_dock)
         self._project_dock.hide()
+        self._project_dock.toggleViewAction().setShortcut(QKeySequence("Ctrl+5"))
         self._project_sidebar.chapterDoubleClicked.connect(self._switch_chapter)
         self._project_sidebar.chapterToggled.connect(self._on_chapter_toggled)
         self._project_sidebar.addChapterRequested.connect(self._add_chapter_to_project)
@@ -1572,7 +1573,7 @@ class MainWindow(QMainWindow):
                                     shortcut=QKeySequence("Ctrl+3"),
                                     triggered=lambda: self._tabs.setCurrentIndex(2))
         self.act_view_console = QAction("Show Co&nsole tab", self,
-                                        shortcut=QKeySequence("Ctrl+5"),
+                                        shortcut=QKeySequence("Ctrl+6"),
                                         triggered=lambda: self._tabs.setCurrentIndex(3))
         self.act_side_by_side = QAction("PDF &side panel", self,
                                         shortcut=QKeySequence("Ctrl+4"),
