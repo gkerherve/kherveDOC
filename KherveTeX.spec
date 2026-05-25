@@ -42,6 +42,8 @@ a = Analysis(
         # pyspellchecker dictionary files (en.json.gz etc.) — not collected automatically.
         (os.path.join(sysconfig.get_path("purelib"), "spellchecker", "resources"),
          "spellchecker/resources"),
+        # Pre-cached tectonic TeX packages so all templates work offline.
+        (str(ROOT / "khervedoc" / "tectonic_cache"), "khervedoc/tectonic_cache"),
     ],
     hiddenimports=[
         # Lazy imports that Analysis can't see statically.

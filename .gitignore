@@ -13,6 +13,9 @@ venv/
 # Build/preview artefacts
 build/
 dist/
+
+# Bundled tectonic TeX cache (43 MB, built by download_tectonic_bundle)
+khervedoc/tectonic_cache/
 *.aux
 *.log
 *.synctex.gz

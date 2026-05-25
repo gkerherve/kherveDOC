@@ -53,8 +53,37 @@ def _configure_matplotlib_for_frozen() -> None:
             traceback.print_exc(file=fh)
 
 
+def _seed_tectonic_cache() -> None:
+    """Copy bundled tectonic TeX packages to the user's cache on first run.
+
+    The PyInstaller bundle ships a pre-populated tectonic cache so that
+    all document classes work offline out of the box.  We copy any files
+    the user doesn't already have into tectonic's standard cache location.
+    """
+    if not getattr(sys, "frozen", False):
+        return
+    import shutil
+    bundled = Path(sys._MEIPASS) / "khervedoc" / "tectonic_cache"
+    if not bundled.is_dir():
+        return
+    # Tectonic's cache on Windows: %LOCALAPPDATA%/TectonicProject/Tectonic/bundles
+    dest = (Path.home() / "AppData" / "Local"
+            / "TectonicProject" / "Tectonic" / "bundles")
+    dest.mkdir(parents=True, exist_ok=True)
+    # Copy everything that doesn't already exist at the destination.
+    for src_path in bundled.rglob("*"):
+        rel = src_path.relative_to(bundled)
+        dst_path = dest / rel
+        if src_path.is_dir():
+            dst_path.mkdir(parents=True, exist_ok=True)
+        elif not dst_path.exists():
+            dst_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src_path, dst_path)
+
+
 def main() -> int:
     _configure_matplotlib_for_frozen()
+    _seed_tectonic_cache()
     app = QApplication(sys.argv)
     app.setApplicationName("KherveTeX")
     app.setWindowIcon(icons.app_icon())
