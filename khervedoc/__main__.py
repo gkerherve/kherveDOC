@@ -14,12 +14,19 @@ from .mainwindow import MainWindow
 
 
 def _configure_matplotlib_for_frozen() -> None:
-    """Ensure matplotlib can write its font cache in a PyInstaller bundle."""
+    """Ensure matplotlib works correctly in a PyInstaller bundle.
+
+    Two things are needed:
+    1. A writable MPLCONFIGDIR for the font cache.
+    2. The non-interactive Agg backend so Figure.savefig() never tries
+       to open a display window or clash with the running Qt event loop.
+    """
     if not getattr(sys, "frozen", False):
         return
     cfg = os.environ.get("MPLCONFIGDIR")
     if not cfg or not os.path.isdir(cfg):
         os.environ["MPLCONFIGDIR"] = tempfile.mkdtemp(prefix="khervedoc-mpl-")
+    os.environ.setdefault("MPLBACKEND", "Agg")
 
 
 def main() -> int:

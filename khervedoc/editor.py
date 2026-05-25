@@ -193,8 +193,14 @@ def _render_math_image(latex: str, font_size: int = 14,
         _MATH_IMAGE_CACHE[latex] = png_path
         return png_path
     except Exception as exc:
-        import logging
-        logging.getLogger(__name__).debug("math render failed: %s", exc)
+        import traceback, sys as _sys
+        try:
+            log = Path(tempfile.gettempdir()) / "khervedoc-math-errors.log"
+            with open(log, "a") as fh:
+                fh.write(f"--- {latex[:80]!r} ---\n")
+                traceback.print_exc(file=fh)
+        except Exception:
+            pass
         _MATH_IMAGE_CACHE[latex] = None
         return None
 
