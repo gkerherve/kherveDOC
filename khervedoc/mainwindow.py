@@ -4385,18 +4385,18 @@ class MainWindow(QMainWindow):
     def _update_bundle_action_label(self) -> None:
         """Update the download-bundle menu text to reflect cache status."""
         mb = tectonic_cache_size_mb()
-        if mb > 100:
+        if mb > 5:
             self._act_download_bundle.setText(
                 f"&Download offline bundle  \u2714 ({mb:.0f} MB cached)")
             self._act_download_bundle.setStatusTip(
-                f"Offline TeX Live bundle already downloaded ({mb:.0f} MB). "
+                f"TeX packages cached for offline use ({mb:.0f} MB). "
                 "Re-run to update.")
         else:
             self._act_download_bundle.setText(
                 "&Download offline bundle\u2026")
             self._act_download_bundle.setStatusTip(
-                "Download the full TeX Live bundle (~3 GB) so compilation "
-                "never needs the network again")
+                "Pre-download commonly used TeX packages so compilation "
+                "works without an internet connection")
 
     def _download_tectonic_bundle(self) -> None:
         """Download the full TeX Live bundle for offline compilation."""
@@ -4408,10 +4408,9 @@ class MainWindow(QMainWindow):
             return
         reply = QMessageBox.question(
             self, "Download offline bundle",
-            "This will download the full TeX Live package bundle (~3 GB) "
-            "so that tectonic never needs the network again.\n\n"
-            "The download may take several minutes depending on your "
-            "connection speed.\n\nProceed?",
+            "This will pre-download the TeX packages commonly used by "
+            "kherveDOC so that compilation works without an internet "
+            "connection.\n\nProceed?",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
         if reply != QMessageBox.Yes:
             return
