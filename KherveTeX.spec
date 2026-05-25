@@ -63,7 +63,8 @@ a = Analysis(
         "PyQt6",
         # Large packages we don't use — shaves ~100 MB off the bundle.
         "tkinter",
-        "unittest",
+        # NOTE: unittest must NOT be excluded — pyparsing.testing imports it,
+        # and matplotlib needs pyparsing for font config parsing.
         "test",
         "pip",
         "setuptools",
