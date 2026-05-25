@@ -28,7 +28,8 @@ from . import (
 )
 from .compiler import (
     CompileResult, compile_tex, compile_typst,
-    download_tectonic_bundle, tectonic_available, typst_available,
+    download_tectonic_bundle, tectonic_available, tectonic_cache_size_mb,
+    typst_available,
 )
 from .editor import DocumentEditor, TEMPLATE_CHOICES
 from . import examples, importers
@@ -1876,9 +1877,7 @@ class MainWindow(QMainWindow):
         self._act_download_bundle = QAction(
             "&Download offline bundle\u2026", self,
             triggered=self._download_tectonic_bundle)
-        self._act_download_bundle.setStatusTip(
-            "Download the full TeX Live bundle (~3 GB) so compilation "
-            "never needs the network again")
+        self._update_bundle_action_label()
         m_compiler.addAction(self._act_download_bundle)
 
         m_git = mb.addMenu("&Git")
@@ -4383,6 +4382,22 @@ class MainWindow(QMainWindow):
             return serialize_typst(doc)
         return serialize_document(doc)
 
+    def _update_bundle_action_label(self) -> None:
+        """Update the download-bundle menu text to reflect cache status."""
+        mb = tectonic_cache_size_mb()
+        if mb > 100:
+            self._act_download_bundle.setText(
+                f"&Download offline bundle  \u2714 ({mb:.0f} MB cached)")
+            self._act_download_bundle.setStatusTip(
+                f"Offline TeX Live bundle already downloaded ({mb:.0f} MB). "
+                "Re-run to update.")
+        else:
+            self._act_download_bundle.setText(
+                "&Download offline bundle\u2026")
+            self._act_download_bundle.setStatusTip(
+                "Download the full TeX Live bundle (~3 GB) so compilation "
+                "never needs the network again")
+
     def _download_tectonic_bundle(self) -> None:
         """Download the full TeX Live bundle for offline compilation."""
         if not tectonic_available():
@@ -4423,6 +4438,7 @@ class MainWindow(QMainWindow):
     def _on_bundle_done(self, ok: bool, log: str, dlg) -> None:
         dlg.close()
         self._bundle_worker = None
+        self._update_bundle_action_label()
         if ok:
             QMessageBox.information(
                 self, "Bundle downloaded",

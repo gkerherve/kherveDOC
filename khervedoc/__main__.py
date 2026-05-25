@@ -16,10 +16,11 @@ from .mainwindow import MainWindow
 def _configure_matplotlib_for_frozen() -> None:
     """Ensure matplotlib works correctly in a PyInstaller bundle.
 
-    Two things are needed:
+    Three things are needed:
     1. A writable MPLCONFIGDIR for the font cache.
     2. The non-interactive Agg backend so Figure.savefig() never tries
        to open a display window or clash with the running Qt event loop.
+    3. Pre-import matplotlib.figure to catch errors early and log them.
     """
     if not getattr(sys, "frozen", False):
         return
@@ -27,6 +28,29 @@ def _configure_matplotlib_for_frozen() -> None:
     if not cfg or not os.path.isdir(cfg):
         os.environ["MPLCONFIGDIR"] = tempfile.mkdtemp(prefix="khervedoc-mpl-")
     os.environ.setdefault("MPLBACKEND", "Agg")
+    # Eagerly test matplotlib so we can log the real error.
+    _log = Path(tempfile.gettempdir()) / "khervedoc-mpl-diag.log"
+    try:
+        import matplotlib
+        matplotlib.use("Agg", force=True)
+        from matplotlib.figure import Figure
+        fig = Figure(figsize=(2, 0.4), dpi=100)
+        fig.text(0.5, 0.5, r"$\frac{1}{2}$", fontsize=12,
+                 ha="center", va="center", math_fontfamily="cm")
+        from io import BytesIO
+        buf = BytesIO()
+        fig.savefig(buf, format="png", bbox_inches="tight")
+        with open(_log, "w") as fh:
+            fh.write(f"OK — rendered {buf.tell()} bytes\n")
+            fh.write(f"matplotlib {matplotlib.__version__}\n")
+            fh.write(f"backend: {matplotlib.get_backend()}\n")
+            fh.write(f"MPLCONFIGDIR: {os.environ.get('MPLCONFIGDIR')}\n")
+            fh.write(f"data path: {matplotlib.get_data_path()}\n")
+    except Exception:
+        import traceback
+        with open(_log, "w") as fh:
+            fh.write("FAILED\n")
+            traceback.print_exc(file=fh)
 
 
 def main() -> int:
