@@ -132,15 +132,14 @@ def _tectonic_cache_dir() -> Path | None:
 
 
 def download_tectonic_bundle(on_output=None) -> tuple[bool, str]:
-    """Pre-cache all common TeX packages for offline compilation.
+    """Pre-cache TeX packages for offline compilation.
 
-    Compiles a kitchen-sink .tex document that \\usepackage's every
-    package kherveDOC is likely to need.  Each package tectonic hasn't
-    seen yet gets downloaded and cached locally.  After this completes,
-    normal compilation should rarely (if ever) need the network.
+    Compiles a series of small documents — one per document class that
+    kherveDOC offers — plus a kitchen-sink package document.  Each file
+    tectonic hasn't seen gets downloaded and cached locally.
 
-    `on_output` is called with each line of tectonic's output for
-    progress reporting.  Returns (success, log_text).
+    `on_output` is called with each status line for progress reporting.
+    Returns (success, log_text).
     """
     tectonic_path = _find_tectonic()
     if tectonic_path is None:
@@ -149,105 +148,146 @@ def download_tectonic_bundle(on_output=None) -> tuple[bool, str]:
     import tempfile
     workdir = Path(tempfile.mkdtemp(prefix="khervedoc-bundle-"))
 
-    # Kitchen-sink document that loads all commonly-needed packages.
-    kitchen_sink = r"""\documentclass[12pt]{book}
-% --- Core ---
-\usepackage{amsmath,amssymb,amsfonts,amsthm}
+    # Packages every kherveDOC document may need.
+    _COMMON_PACKAGES = r"""\usepackage{amsmath,amssymb,amsfonts,amsthm}
 \usepackage{graphicx,xcolor,float,multicol}
 \usepackage[a4paper]{geometry}
-\usepackage{setspace}
-\usepackage{hyperref}
-\usepackage[colorinlistoftodos]{todonotes}
-% --- Fonts ---
-\usepackage{times}
-\usepackage{courier}
-\usepackage{helvet}
-\usepackage{charter}
-\usepackage{libertine}
-% --- Tables & figures ---
+\usepackage{setspace,hyperref}
 \usepackage{booktabs,longtable,tabularx,multirow}
 \usepackage{caption,subcaption}
-% --- Code listings ---
 \usepackage{listings}
-% --- Bibliography ---
 \usepackage{natbib}
-% --- Cross-references ---
 \usepackage{cleveref}
-% --- PDF features ---
 \usepackage{pdfpages}
-% --- Layout ---
-\usepackage{fancyhdr,titlesec,enumitem}
-\usepackage{parskip}
-% --- Beamer (separate doc needed, but load the class packages) ---
+\usepackage{fancyhdr,titlesec,enumitem,parskip}
 \usepackage{textcomp,fontenc}
-% --- Maths extras ---
 \usepackage{mathtools,bm,siunitx}
-% --- Drawing ---
 \usepackage{tikz}
-% --- Algorithms ---
 \usepackage{algorithm,algpseudocode}
-% --- Strikethrough ---
 \usepackage[normalem]{ulem}
-
-\begin{document}
-\chapter{Package cache warmup}
-This document exists only to populate the tectonic package cache.
-$E = mc^2$
-
-\begin{equation}
-\int_0^\infty e^{-x^2} dx = \frac{\sqrt{\pi}}{2}
-\end{equation}
-
-\begin{itemize}
-\item Item one
-\item Item two
-\end{itemize}
-
-\begin{lstlisting}[language=Python]
-print("hello")
-\end{lstlisting}
-
-\begin{tikzpicture}
-\draw (0,0) -- (1,1);
-\end{tikzpicture}
-
+\usepackage[colorinlistoftodos]{todonotes}
+\usepackage{times,courier,helvet,charter,libertine}
+"""
+    _BODY = r"""\begin{document}
+Hello $E=mc^2$.
 \end{document}
 """
-    tex_path = workdir / "cache_warmup.tex"
-    tex_path.write_text(kitchen_sink, encoding="utf-8")
 
-    try:
-        kw: dict = dict(
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, encoding="utf-8", errors="replace")
-        if sys.platform == "win32":
-            kw["creationflags"] = subprocess.CREATE_NO_WINDOW
-        proc = subprocess.Popen(
-            [tectonic_path,
-             "-Z", "continue-on-errors",
-             "--keep-logs",
-             "--outdir", str(workdir),
-             str(tex_path)],
-            **kw)
-        log_lines: list[str] = []
-        for line in proc.stdout:
-            line = line.rstrip()
-            log_lines.append(line)
-            if on_output is not None:
-                on_output(line)
-        proc.wait()
-        log = "\n".join(log_lines)
-        # Clean up the temp dir
-        shutil.rmtree(workdir, ignore_errors=True)
-        if proc.returncode == 0:
-            return True, log
-        # Even if the return code is non-zero, the packages were
-        # still downloaded and cached — the compile may fail due to
-        # package conflicts in our kitchen-sink doc but that's fine.
-        return True, log + "\n(some packages may have conflicted, but all were cached)"
-    except Exception as exc:
-        shutil.rmtree(workdir, ignore_errors=True)
-        return False, str(exc)
+    # Each document class that kherveDOC's template dropdown offers.
+    # Some need special options or cannot load the common package set.
+    _CLASS_DOCS: list[tuple[str, str]] = [
+        # Standard
+        ("article", rf"\documentclass{{article}}" "\n" + _COMMON_PACKAGES + _BODY),
+        ("report", rf"\documentclass{{report}}" "\n" + _COMMON_PACKAGES + _BODY),
+        ("book", rf"\documentclass{{book}}" "\n" + _COMMON_PACKAGES + _BODY),
+        ("letter", r"\documentclass{letter}" "\n"
+         r"\begin{document}\begin{letter}{To}\opening{Hi}\closing{Bye}"
+         r"\end{letter}\end{document}" "\n"),
+        ("beamer", r"\documentclass{beamer}" "\n"
+         r"\begin{document}\begin{frame}\frametitle{Hi}Hello\end{frame}"
+         r"\end{document}" "\n"),
+        ("memoir", rf"\documentclass{{memoir}}" "\n" + _COMMON_PACKAGES + _BODY),
+        # KOMA-Script
+        ("scrartcl", rf"\documentclass{{scrartcl}}" "\n" + _COMMON_PACKAGES + _BODY),
+        ("scrreprt", rf"\documentclass{{scrreprt}}" "\n" + _COMMON_PACKAGES + _BODY),
+        ("scrbook", rf"\documentclass{{scrbook}}" "\n" + _COMMON_PACKAGES + _BODY),
+        ("scrlttr2", r"\documentclass{scrlttr2}" "\n"
+         r"\begin{document}\begin{letter}{To}\opening{Hi}\closing{Bye}"
+         r"\end{letter}\end{document}" "\n"),
+        # Journal / conference
+        ("elsarticle", r"\documentclass{elsarticle}" "\n"
+         r"\begin{document}Hello $E=mc^2$.\end{document}" "\n"),
+        ("IEEEtran", r"\documentclass{IEEEtran}" "\n"
+         r"\begin{document}Hello $E=mc^2$.\end{document}" "\n"),
+        ("revtex4-2", r"\documentclass{revtex4-2}" "\n"
+         r"\begin{document}Hello $E=mc^2$.\end{document}" "\n"),
+        ("achemso", r"\documentclass{achemso}" "\n"
+         r"\title{T}\author{A}\begin{document}Hello\end{document}" "\n"),
+        ("amsart", rf"\documentclass{{amsart}}" "\n" + _COMMON_PACKAGES + _BODY),
+        ("llncs", r"\documentclass{llncs}" "\n"
+         r"\begin{document}Hello $E=mc^2$.\end{document}" "\n"),
+        ("acmart", r"\documentclass{acmart}" "\n"
+         r"\begin{document}Hello $E=mc^2$.\end{document}" "\n"),
+        ("svjour3", r"\documentclass{svjour3}" "\n"
+         r"\begin{document}Hello $E=mc^2$.\end{document}" "\n"),
+        ("sn-jnl", r"\documentclass{sn-jnl}" "\n"
+         r"\begin{document}Hello $E=mc^2$.\end{document}" "\n"),
+        ("mnras", r"\documentclass[fleqn,usenatbib]{mnras}" "\n"
+         r"\begin{document}Hello $E=mc^2$.\end{document}" "\n"),
+        ("aa", r"\documentclass{aa}" "\n"
+         r"\begin{document}Hello $E=mc^2$.\end{document}" "\n"),
+        # Thesis / long-form
+        ("tufte-handout", r"\documentclass{tufte-handout}" "\n"
+         r"\begin{document}Hello $E=mc^2$.\end{document}" "\n"),
+        ("tufte-book", r"\documentclass{tufte-book}" "\n"
+         r"\begin{document}Hello $E=mc^2$.\end{document}" "\n"),
+        # Book
+        ("amsbook", rf"\documentclass{{amsbook}}" "\n" + _COMMON_PACKAGES + _BODY),
+        # Social-science / humanities
+        ("apa7", r"\documentclass{apa7}" "\n"
+         r"\title{T}\author{A}\begin{document}Hello\end{document}" "\n"),
+        # CV / résumé
+        ("moderncv", r"\documentclass{moderncv}" "\n"
+         r"\moderncvstyle{classic}\name{A}{B}"
+         r"\begin{document}\makecvtitle\end{document}" "\n"),
+        ("europasscv", r"\documentclass{europasscv}" "\n"
+         r"\begin{document}Hello\end{document}" "\n"),
+        # Poster
+        ("tikzposter", r"\documentclass{tikzposter}" "\n"
+         r"\title{T}\author{A}\institute{I}"
+         r"\begin{document}\maketitle"
+         r"\begin{columns}\column{0.5}"
+         r"\block{B}{Hello}\end{columns}\end{document}" "\n"),
+        ("a0poster", r"\documentclass{a0poster}" "\n"
+         r"\begin{document}Hello\end{document}" "\n"),
+        # Exam
+        ("exam", r"\documentclass{exam}" "\n"
+         r"\begin{document}\begin{questions}"
+         r"\question Why?\end{questions}\end{document}" "\n"),
+        # Standalone
+        ("standalone", r"\documentclass{standalone}" "\n"
+         r"\usepackage{tikz}\begin{document}"
+         r"\begin{tikzpicture}\draw(0,0)--(1,1);\end{tikzpicture}"
+         r"\end{document}" "\n"),
+    ]
+
+    all_log: list[str] = []
+    failed: list[str] = []
+    total = len(_CLASS_DOCS)
+
+    for idx, (name, source) in enumerate(_CLASS_DOCS, 1):
+        if on_output is not None:
+            on_output(f"[{idx}/{total}] Caching packages for {name}\u2026")
+        tex_path = workdir / f"{name}.tex"
+        tex_path.write_text(source, encoding="utf-8")
+        try:
+            kw: dict = dict(
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, encoding="utf-8", errors="replace")
+            if sys.platform == "win32":
+                kw["creationflags"] = subprocess.CREATE_NO_WINDOW
+            proc = subprocess.Popen(
+                [tectonic_path,
+                 "-Z", "continue-on-errors",
+                 "--keep-logs",
+                 "--outdir", str(workdir),
+                 str(tex_path)],
+                **kw)
+            for line in proc.stdout:
+                all_log.append(line.rstrip())
+            proc.wait()
+            if proc.returncode != 0:
+                failed.append(name)
+        except Exception as exc:
+            all_log.append(f"{name}: {exc}")
+            failed.append(name)
+
+    shutil.rmtree(workdir, ignore_errors=True)
+    log = "\n".join(all_log)
+    if failed:
+        log += f"\n\nNote: {len(failed)} classes had compile errors " \
+               f"(packages were still cached): {', '.join(failed)}"
+    return True, log
 
 
 def _strip_images(tex_source: str) -> str:
