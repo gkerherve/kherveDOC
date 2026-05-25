@@ -110,7 +110,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    # icon=str(ROOT / "khervedoc" / "icon.ico"),  # uncomment when icon exists
+    icon=str(ROOT / "khervedoc" / "icon.ico"),
 )
 
 # ---- COLLECT: gather everything into the output folder -----------------

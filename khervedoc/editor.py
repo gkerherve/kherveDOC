@@ -192,7 +192,9 @@ def _render_math_image(latex: str, font_size: int = 14,
                     pad_inches=0.04, transparent=True)
         _MATH_IMAGE_CACHE[latex] = png_path
         return png_path
-    except Exception:
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).debug("math render failed: %s", exc)
         _MATH_IMAGE_CACHE[latex] = None
         return None
 

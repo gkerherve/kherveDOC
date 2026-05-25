@@ -1,7 +1,9 @@
 """Entry point: `python -m khervedoc` opens the main window."""
 from __future__ import annotations
 
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 from PySide6.QtCore import QSettings
@@ -11,7 +13,17 @@ from . import icons, themes
 from .mainwindow import MainWindow
 
 
+def _configure_matplotlib_for_frozen() -> None:
+    """Ensure matplotlib can write its font cache in a PyInstaller bundle."""
+    if not getattr(sys, "frozen", False):
+        return
+    cfg = os.environ.get("MPLCONFIGDIR")
+    if not cfg or not os.path.isdir(cfg):
+        os.environ["MPLCONFIGDIR"] = tempfile.mkdtemp(prefix="khervedoc-mpl-")
+
+
 def main() -> int:
+    _configure_matplotlib_for_frozen()
     app = QApplication(sys.argv)
     app.setApplicationName("KherveTeX")
     app.setWindowIcon(icons.app_icon())
