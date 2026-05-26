@@ -11,7 +11,7 @@
 #define MyAppPublisher "Gwilherm Kerherve"
 #define MyAppURL "https://github.com/gkerherve/kherveDOC"
 #define MyAppExeName "KherveTeX.exe"
-#define MyAppVersion "0.146"
+#define MyAppVersion "0.147"
 
 [Setup]
 AppId={{B8A3F2E1-7C4D-4E5F-9A1B-3D6E8F0C2A47}

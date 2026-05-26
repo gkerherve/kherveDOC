@@ -35,7 +35,10 @@ ROOT = Path(SPECPATH)
 a = Analysis(
     [str(ROOT / "kherveDOC.py")],
     pathex=[str(ROOT)],
-    binaries=[],
+    binaries=[
+        # Bundle the tectonic LaTeX engine so PDF export works out of the box.
+        (str(Path.home() / "bin" / "tectonic.exe"), "."),
+    ],
     datas=[
         # Bundled LaTeX style files — available to the compiler via TEXINPUTS.
         (str(ROOT / "khervedoc" / "styles"), "khervedoc/styles"),

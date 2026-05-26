@@ -67,9 +67,18 @@ def _rewrite_includegraphics(tex_source: str, source_dir: Path | None) -> str:
 
 
 def _find_tectonic() -> str | None:
-    """Locate the tectonic binary, falling back to common install locations
-    that may not be on PATH yet (e.g. ~/bin on Windows after a fresh PATH
-    update that hasn't propagated to the current process)."""
+    """Locate the tectonic binary.
+
+    Search order:
+    1. Bundled inside the PyInstaller frozen app (ships with the installer).
+    2. System PATH.
+    3. Common install locations that may not be on PATH yet.
+    """
+    # Frozen PyInstaller bundle — tectonic.exe lives next to the launcher
+    if getattr(sys, "frozen", False):
+        bundled = Path(sys._MEIPASS) / "tectonic.exe"
+        if bundled.exists():
+            return str(bundled)
     found = shutil.which("tectonic")
     if found:
         return found
