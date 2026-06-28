@@ -1,4 +1,4 @@
-"""Serialize a WYSIWYG beamer :class:`~khervedoc.beamer_model.Deck` to
+"""Serialize a WYSIWYG beamer :class:`~kherveslide.model.Deck` to
 LaTeX.
 
 Absolute placement is done with the ``textpos`` package in
@@ -16,7 +16,7 @@ box with ``w=0.5`` is half the slide wide — exactly what the canvas drew.
 """
 from __future__ import annotations
 
-from .beamer_model import Deck, Slide, SlideText, SlidePicture
+from .model import Deck, Slide, SlideText, SlidePicture
 
 
 def _hex_to_rgb_arg(hex_color: str) -> str:

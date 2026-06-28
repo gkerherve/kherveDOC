@@ -15,7 +15,7 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-from .beamer_model import Deck, Slide, SlideText, SlidePicture, _build_slide
+from .model import Deck, Slide, SlideText, SlidePicture, _build_slide
 
 
 # ---------------- Built-in templates ----------------
@@ -120,7 +120,7 @@ def instantiate_builtin(name: str) -> Deck:
 # ---------------- User template store ----------------
 
 def _default_store_path() -> Path:
-    return Path.home() / ".khervetex" / "beamer_templates.json"
+    return Path.home() / ".khervetex" / "slide_templates.json"
 
 
 class TemplateStore:

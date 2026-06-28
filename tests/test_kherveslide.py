@@ -3,13 +3,13 @@ import json
 
 import pytest
 
-from khervedoc.beamer_model import (
+from kherveslide.model import (
     Deck, Slide, SlideText, SlidePicture,
     deck_to_json, deck_from_json,
     raise_object, lower_object, to_front, to_back,
 )
-from khervedoc.beamer_serializer import serialize_deck
-from khervedoc import beamer_templates as templates
+from kherveslide.serializer import serialize_deck
+from kherveslide import templates
 
 
 # --- model round-trip ---

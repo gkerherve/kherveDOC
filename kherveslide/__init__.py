@@ -1,16 +1,16 @@
-"""KherveTeX — WYSIWYG LaTeX editor with Git history."""
+"""kherveSlide — a dedicated WYSIWYG slide designer that compiles to
+beamer LaTeX. Shares KherveTeX's tectonic / preview / icon engine but is
+its own application."""
 from __future__ import annotations
 
 from pathlib import Path
 
-# Bumped by hand only for meaningful feature/behaviour shifts. The patch
-# component is the total commit count and is appended automatically.
-__version__ = "0.149"
+# Minor is bumped by hand for behaviour changes; the patch component is
+# the repo's total commit count, appended automatically at runtime.
+__version__ = "0.1"
 
 
 def _git_build_info() -> tuple[int, str] | None:
-    """Return (commit_count, short_sha) for the KherveTeX source repo, or
-    None if we can't read it (not a git checkout, pygit2 missing, etc.)."""
     repo_root = Path(__file__).resolve().parent.parent
     try:
         import pygit2
@@ -27,10 +27,6 @@ def _git_build_info() -> tuple[int, str] | None:
 
 
 def version_string() -> str:
-    """Format: "v<major>.<minor>.<commit_count>+<sha7>".
-
-    Falls back to "v<major>.<minor>" if git info isn't available.
-    """
     info = _git_build_info()
     if info is None:
         return f"v{__version__}"
