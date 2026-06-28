@@ -1834,12 +1834,6 @@ class MainWindow(QMainWindow):
         m_insert.addAction(self.act_not_compile_start)
         m_insert.addAction(self.act_not_compile_end)
 
-        m_slides = mb.addMenu("&Slides")
-        act_beamer_studio = QAction(
-            "Open kherveSlide (WYSIWYG slides)…", self,
-            triggered=self._open_beamer_studio)
-        m_slides.addAction(act_beamer_studio)
-
         m_view = mb.addMenu("&View")
         m_view.addAction(self.act_view_formatted)
         m_view.addAction(self.act_view_latex)
@@ -1927,13 +1921,6 @@ class MainWindow(QMainWindow):
         m_help.addAction(self.act_shortcuts)
         m_help.addSeparator()
         m_help.addAction(self.act_about)
-
-    def _open_beamer_studio(self) -> None:
-        """Launch the dedicated kherveSlide designer (its own app window)."""
-        from kherveslide.window import SlideWindow
-        # Keep a reference so the window isn't garbage-collected.
-        self._slide_window = SlideWindow(self)
-        self._slide_window.show()
 
     def _open_example(self, factory) -> None:
         """Spawn a new window and load the example into it. User-default
