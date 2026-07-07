@@ -56,48 +56,92 @@ def _glyph_icon(letter: str, *, bold=False, italic=False, underline=False,
     return QIcon(px)
 
 
-# The "KTeX" wordmark, styled after the TeX logo: a lowered "e" between
-# the T and X. Each entry is (char, scale, baseline-shift, kern-after),
-# all but the char in units of the cap size F, so the pieces kern tightly.
-_WORD_SERIF = "Times New Roman"
-_WORD_PIECES = (
-    ("K", 1.00, 0.00, -0.04),
-    ("T", 1.00, 0.00, -0.12),
-    ("e", 1.05, 0.20, -0.04),
+# The classic "LaTeX" logo drawn on the page: L, a raised small A, T, a
+# lowered E, X. Each entry is (char, scale, baseline-shift, kern-after),
+# all but the char in units of the cap size F, so the pieces kern like
+# the real logo.
+_LATEX_SERIF = "Times New Roman"
+_LATEX_PIECES = (
+    ("L", 1.00, 0.00, -0.28),
+    ("A", 0.72, -0.32, -0.06),
+    ("T", 1.00, 0.00, -0.13),
+    ("E", 1.00, 0.24, -0.05),
     ("X", 1.00, 0.00, 0.00),
 )
 
 
-def _word_advance(ch: str, px: float) -> float:
-    f = QFont(_WORD_SERIF)
+def _latex_advance(ch: str, px: float) -> float:
+    f = QFont(_LATEX_SERIF)
     f.setPixelSize(max(1, int(px)))
     return QFontMetricsF(f).horizontalAdvance(ch)
 
 
-def _word_width(F: float) -> float:
-    return sum(_word_advance(ch, sc * F) + kern * F
-               for ch, sc, _dy, kern in _WORD_PIECES)
+def _latex_width(F: float) -> float:
+    return sum(_latex_advance(ch, sc * F) + kern * F
+               for ch, sc, _dy, kern in _LATEX_PIECES)
 
 
-def _draw_wordmark(p: QPainter, cx: float, cy: float, avail: float,
-                   color: str) -> None:
-    """Draw the KTeX wordmark centred at (cx, cy), auto-fit so it spans
-    *avail* pixels wide."""
+def _draw_latex(p: QPainter, cx: float, cy: float, avail: float,
+                color: str) -> None:
+    """Draw the classic LaTeX logo centred at (cx, cy), fit to *avail* wide."""
     F = 100.0
-    F = avail / (_word_width(F) / F)          # cap size that fits *avail*
-    x = cx - _word_width(F) / 2.0
-    base = cy + 0.34 * F                       # baseline for visual centring
+    F = avail / (_latex_width(F) / F)
+    x = cx - _latex_width(F) / 2.0
+    base = cy + 0.34 * F
     p.setPen(QColor(color))
-    for ch, sc, dy, kern in _WORD_PIECES:
-        f = QFont(_WORD_SERIF)
+    for ch, sc, dy, kern in _LATEX_PIECES:
+        f = QFont(_LATEX_SERIF)
         f.setPixelSize(max(1, int(sc * F)))
         p.setFont(f)
         p.drawText(QPointF(x, base + dy * F), ch)
-        x += _word_advance(ch, sc * F) + kern * F
+        x += _latex_advance(ch, sc * F) + kern * F
+
+
+def _draw_ktex(p: QPainter, rect: QRectF, color: str) -> None:
+    """Draw 'KTeX' centred in *rect* with a normal bold font, fit to width."""
+    text = "KTeX"
+    avail = rect.width() * 0.86
+    font = QFont("Segoe UI")
+    font.setBold(True)
+    size = 4
+    while size < rect.height():
+        font.setPixelSize(size + 1)
+        fm = QFontMetricsF(font)
+        if fm.horizontalAdvance(text) > avail or fm.height() > rect.height():
+            break
+        size += 1
+    font.setPixelSize(max(4, size))
+    p.setFont(font)
+    p.setPen(QColor(color))
+    p.drawText(rect, Qt.AlignCenter, text)
+
+
+def _draw_page(p: QPainter, box: QRectF) -> None:
+    """A white document page with a folded corner, bearing the LaTeX logo."""
+    x, y, w, h = box.x(), box.y(), box.width(), box.height()
+    fold = w * 0.22
+    page = QPainterPath()
+    page.moveTo(x, y)
+    page.lineTo(x + w - fold, y)
+    page.lineTo(x + w, y + fold)
+    page.lineTo(x + w, y + h)
+    page.lineTo(x, y + h)
+    page.closeSubpath()
+    p.setPen(QPen(QColor("#cfd6e0"), max(1.0, w * 0.02)))
+    p.setBrush(QColor("#ffffff"))
+    p.drawPath(page)
+    ear = QPainterPath()                       # the dog-ear fold
+    ear.moveTo(x + w - fold, y)
+    ear.lineTo(x + w - fold, y + fold)
+    ear.lineTo(x + w, y + fold)
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(ear)
+    _draw_latex(p, x + w / 2, y + h * 0.58, w * 0.70, "#1a1a1a")
 
 
 def app_pixmap(sz: int) -> QPixmap:
-    """One size of the app icon: the KTeX wordmark on a white page."""
+    """One size of the app icon: 'KTeX' above a page bearing the LaTeX
+    logo, on a rounded blue tile."""
     px = QPixmap(sz, sz)
     px.fill(Qt.transparent)
     p = QPainter(px)
@@ -107,21 +151,24 @@ def app_pixmap(sz: int) -> QPixmap:
     radius = sz * 0.22
     rect = QRectF(m, m, sz - 2 * m, sz - 2 * m)
     p.setPen(Qt.NoPen)
-    p.setBrush(QColor("#ffffff"))              # the white "page"
+    p.setBrush(QColor("#1a6dd8"))              # the blue tile
     p.drawRoundedRect(rect, radius, radius)
-    pen = QPen(QColor("#c9ced6"))              # light border so it reads
-    pen.setWidthF(max(1.0, sz * 0.015))
+    pen = QPen(QColor("#155bb5"))
+    pen.setWidthF(max(1.0, sz * 0.02))
     p.setPen(pen)
     p.setBrush(Qt.NoBrush)
     p.drawRoundedRect(rect, radius, radius)
-    _draw_wordmark(p, sz / 2, sz / 2, rect.width() * 0.68, "#1a1a1a")
+    x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
+    _draw_ktex(p, QRectF(x, y + h * 0.05, w, h * 0.33), "#ffffff")
+    pw, ph = w * 0.54, h * 0.48
+    _draw_page(p, QRectF(x + (w - pw) / 2.0, y + h * 0.45, pw, ph))
     p.end()
     return px
 
 
 def app_icon() -> QIcon:
-    """Application icon: the 'KTeX' wordmark (TeX-logo style) on a white
-    page — a rounded white tile with a light border.
+    """Application icon: the 'KTeX' wordmark above a page bearing the
+    LaTeX logo, on a rounded blue tile.
 
     Rendered at several sizes so the taskbar, title bar, and Alt-Tab all
     get a sharp copy.
