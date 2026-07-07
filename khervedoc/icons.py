@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, Qt
 from PySide6.QtGui import (
-    QBrush, QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap,
-    QPolygonF,
+    QBrush, QColor, QFont, QFontMetricsF, QIcon, QPainter, QPainterPath,
+    QPen, QPixmap, QPolygonF,
 )
 
 _SIZE = 24
@@ -56,33 +56,79 @@ def _glyph_icon(letter: str, *, bold=False, italic=False, underline=False,
     return QIcon(px)
 
 
+# The "KTeX" wordmark, styled after the TeX logo: a lowered "e" between
+# the T and X. Each entry is (char, scale, baseline-shift, kern-after),
+# all but the char in units of the cap size F, so the pieces kern tightly.
+_WORD_SERIF = "Times New Roman"
+_WORD_PIECES = (
+    ("K", 1.00, 0.00, -0.04),
+    ("T", 1.00, 0.00, -0.12),
+    ("e", 1.05, 0.20, -0.04),
+    ("X", 1.00, 0.00, 0.00),
+)
+
+
+def _word_advance(ch: str, px: float) -> float:
+    f = QFont(_WORD_SERIF)
+    f.setPixelSize(max(1, int(px)))
+    return QFontMetricsF(f).horizontalAdvance(ch)
+
+
+def _word_width(F: float) -> float:
+    return sum(_word_advance(ch, sc * F) + kern * F
+               for ch, sc, _dy, kern in _WORD_PIECES)
+
+
+def _draw_wordmark(p: QPainter, cx: float, cy: float, avail: float,
+                   color: str) -> None:
+    """Draw the KTeX wordmark centred at (cx, cy), auto-fit so it spans
+    *avail* pixels wide."""
+    F = 100.0
+    F = avail / (_word_width(F) / F)          # cap size that fits *avail*
+    x = cx - _word_width(F) / 2.0
+    base = cy + 0.34 * F                       # baseline for visual centring
+    p.setPen(QColor(color))
+    for ch, sc, dy, kern in _WORD_PIECES:
+        f = QFont(_WORD_SERIF)
+        f.setPixelSize(max(1, int(sc * F)))
+        p.setFont(f)
+        p.drawText(QPointF(x, base + dy * F), ch)
+        x += _word_advance(ch, sc * F) + kern * F
+
+
+def app_pixmap(sz: int) -> QPixmap:
+    """One size of the app icon: the KTeX wordmark on a white page."""
+    px = QPixmap(sz, sz)
+    px.fill(Qt.transparent)
+    p = QPainter(px)
+    p.setRenderHint(QPainter.Antialiasing, True)
+    p.setRenderHint(QPainter.TextAntialiasing, True)
+    m = sz * 0.06
+    radius = sz * 0.22
+    rect = QRectF(m, m, sz - 2 * m, sz - 2 * m)
+    p.setPen(Qt.NoPen)
+    p.setBrush(QColor("#ffffff"))              # the white "page"
+    p.drawRoundedRect(rect, radius, radius)
+    pen = QPen(QColor("#c9ced6"))              # light border so it reads
+    pen.setWidthF(max(1.0, sz * 0.015))
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+    p.drawRoundedRect(rect, radius, radius)
+    _draw_wordmark(p, sz / 2, sz / 2, rect.width() * 0.68, "#1a1a1a")
+    p.end()
+    return px
+
+
 def app_icon() -> QIcon:
-    """Application icon: white 'KT' monogram on a rounded accent-blue square.
+    """Application icon: the 'KTeX' wordmark (TeX-logo style) on a white
+    page — a rounded white tile with a light border.
 
     Rendered at several sizes so the taskbar, title bar, and Alt-Tab all
     get a sharp copy.
     """
     icon = QIcon()
     for sz in (16, 24, 32, 48, 64, 128, 256):
-        px = QPixmap(sz, sz)
-        px.fill(Qt.transparent)
-        p = QPainter(px)
-        p.setRenderHint(QPainter.Antialiasing, True)
-        p.setRenderHint(QPainter.TextAntialiasing, True)
-        # Rounded-rect background in accent blue.
-        radius = sz * 0.18
-        p.setPen(Qt.NoPen)
-        p.setBrush(QColor("#1a6dd8"))
-        p.drawRoundedRect(QRectF(0, 0, sz, sz), radius, radius)
-        # White "KT" text, sized to fill the square.
-        f = QFont("Georgia")
-        f.setPixelSize(int(sz * 0.52))
-        f.setBold(True)
-        p.setFont(f)
-        p.setPen(QColor("#ffffff"))
-        p.drawText(QRectF(0, 0, sz, sz), Qt.AlignCenter, "KT")
-        p.end()
-        icon.addPixmap(px)
+        icon.addPixmap(app_pixmap(sz))
     return icon
 
 
