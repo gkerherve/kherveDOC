@@ -207,7 +207,7 @@ def welcome() -> Document:
                 "document.",
             ),
             _p(
-                "The Symbol palette (Ctrl+Shift+S) is a clickable grid "
+                "The Symbol palette (Ctrl+Shift+G) is a clickable grid "
                 "of Greek letters, operators, relations, arrows, calculus "
                 "symbols and accents. Click any symbol to drop it at the "
                 "cursor as inline math. Text-mode macros that would not "
@@ -239,7 +239,7 @@ def welcome() -> Document:
                     ["Italic",              "Ctrl+I",          "Format"],
                     ["Inline math",         "Ctrl+M",          "Insert"],
                     ["Math block",          "Ctrl+Shift+M",    "Insert"],
-                    ["Symbol palette",      "Ctrl+Shift+S",    "Insert"],
+                    ["Symbol palette",      "Ctrl+Shift+G",    "Insert"],
                     ["Equation builder",    "Ctrl+Shift+E",    "Insert"],
                     ["Hyperlink",           "Ctrl+K",          "Insert"],
                     ["New document",        "Ctrl+N",          "File"],

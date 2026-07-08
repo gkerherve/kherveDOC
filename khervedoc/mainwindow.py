@@ -1627,8 +1627,10 @@ class MainWindow(QMainWindow):
             triggered=lambda: e.insert_compile_marker("not_end"))
         self.act_code_block = QAction("&Code block...", self,
                                       triggered=e.insert_code_block)
+        # Not Ctrl+Shift+S — that is the standard Save As binding, and Qt
+        # resolves the clash by silently firing neither action.
         self.act_symbol = QAction(icons.symbol(), "&Symbol...", self,
-                                  shortcut=QKeySequence("Ctrl+Shift+S"),
+                                  shortcut=QKeySequence("Ctrl+Shift+G"),
                                   triggered=self._insert_symbol)
         self.act_equation_builder = QAction(
             icons.equation_builder(), "&Equation builder...", self,
@@ -4163,7 +4165,7 @@ class MainWindow(QMainWindow):
             "reaction; palettes cover arrows, charges, states and bonds. "
             "The <code>mhchem</code> package is added to the document "
             "automatically on first use.</p>"
-            "<p><b>Symbol picker</b> (<code>Ctrl+Shift+S</code>): browse Greek "
+            "<p><b>Symbol picker</b> (<code>Ctrl+Shift+G</code>): browse Greek "
             "letters, operators, arrows and other symbols.</p>"
 
             "<h3>Figures &amp; tables</h3>"
@@ -4380,7 +4382,7 @@ class MainWindow(QMainWindow):
                 ("Ctrl+M", "Inline math"),
                 ("Ctrl+Shift+M", "Math block"),
                 ("Ctrl+K", "Hyperlink"),
-                ("Ctrl+Shift+S", "Symbol picker"),
+                ("Ctrl+Shift+G", "Symbol picker"),
                 ("Ctrl+Shift+E", "Equation builder"),
                 ("Ctrl+Shift+R", "Chemical reaction"),
             ]),
@@ -4389,7 +4391,8 @@ class MainWindow(QMainWindow):
                 ("Ctrl+2", "Code tab"),
                 ("Ctrl+3", "PDF tab"),
                 ("Ctrl+4", "PDF side panel"),
-                ("Ctrl+5", "Console tab"),
+                ("Ctrl+5", "Project panel"),
+                ("Ctrl+6", "Console tab"),
                 ("Ctrl+F", "Find (text or PDF search)"),
                 ("Ctrl+H", "Find & Replace"),
             ]),
