@@ -4,7 +4,7 @@ import pytest
 
 from khervedoc import chemistry
 from khervedoc.chemistry import (
-    CHEM_GROUPS, all_templates, ce_to_mathtext, wrap_ce,
+    CHEM_GROUPS, all_templates, ce_to_mathtext, unwrap_ce, wrap_ce,
 )
 from khervedoc.model import Document, DocMeta, MathBlock, MathInline, Paragraph
 from khervedoc.serializer import serialize_document
@@ -145,3 +145,25 @@ def test_numbered_block_chemistry_serializes_as_numbered_equation():
     )
     tex = serialize_document(doc)
     assert r"\begin{equation}" in tex
+
+
+def test_unwrap_ce():
+    assert unwrap_ce(r"\ce{H2O}") == "H2O"
+    assert unwrap_ce(r"  \ce{2H2 + O2 -> 2H2O}  ") == "2H2 + O2 -> 2H2O"
+    assert unwrap_ce(r"\ce{$\square$ -> $\square$}") == r"$\square$ -> $\square$"
+
+
+def test_unwrap_ce_rejects_non_chemistry():
+    assert unwrap_ce(r"\frac{x}{y}") is None
+    assert unwrap_ce("") is None
+    assert unwrap_ce(r"\cerium{x}") is None
+
+
+def test_unwrap_ce_rejects_two_separate_formulae():
+    r""""\ce{A} + \ce{B}" is not one body, despite starting \ce{ and ending }."""
+    assert unwrap_ce(r"\ce{A} + \ce{B}") is None
+
+
+def test_wrap_unwrap_round_trip():
+    for body in ("H2O", "2H2 + O2 -> 2H2O", r"$\square$ + $\square$"):
+        assert unwrap_ce(wrap_ce(body)) == body

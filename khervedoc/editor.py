@@ -1431,6 +1431,11 @@ class DocumentEditor(QWidget):
         img_fmt.setName(url.toString())
         img_fmt.setWidth(w)
         img_fmt.setHeight(h)
+        # Stamp the source onto the picture itself. Without this the image
+        # fragment has no back-link to its LaTeX, so a click on the rendered
+        # equation can't find it — and get_document() can't tell a math
+        # preview apart from an image the user pasted.
+        img_fmt.setProperty(_P_MATH, latex)
         cursor.insertImage(img_fmt)
         cursor.insertText(_LINE_SEP)
 
@@ -1612,11 +1617,25 @@ class DocumentEditor(QWidget):
     def _inlines_from_block(self, block) -> list:
         out: list = []
         it = block.begin()
+        # A complex inline MathInline is three fragments: the rendered
+        # preview image, a U+2028 separator, then the LaTeX text. Only the
+        # last carries the content — emitting the other two would leak
+        # U+FFFC and U+2028 straight into the serialized LaTeX.
+        after_math_image = False
         while not it.atEnd():
             frag = it.fragment()
             if frag.isValid():
                 fmt = frag.charFormat()
                 text = frag.text()
+                if fmt.isImageFormat() and fmt.property(_P_MATH):
+                    after_math_image = True
+                    it += 1
+                    continue
+                if after_math_image and text == _LINE_SEP:
+                    after_math_image = False
+                    it += 1
+                    continue
+                after_math_image = False
                 if fmt.property(_P_MATH):
                     out.append(MathInline(latex=text))
                 elif fmt.property(_P_LINK):
@@ -2431,7 +2450,11 @@ class DocumentEditor(QWidget):
     # ----- double-click-to-re-edit drawings ---------------------------
 
     def eventFilter(self, obj, event):
-        if obj is self._edit and event.type() == QEvent.Type.MouseButtonDblClick:
+        # Qt can still deliver events while this widget is being torn down,
+        # after _edit has gone; guard rather than raise from the override.
+        edit = getattr(self, "_edit", None)
+        if (edit is not None and obj is edit
+                and event.type() == QEvent.Type.MouseButtonDblClick):
             cursor = self._edit.cursorForPosition(event.pos())
             qtable = cursor.currentTable()
             if qtable is not None:
@@ -2439,7 +2462,129 @@ class DocumentEditor(QWidget):
                 if tfmt.property(_P_IS_FIGURE):
                     self._edit_existing_figure(qtable)
                     return True
+            if self._edit_math_at(cursor):
+                return True
         return super().eventFilter(obj, event)
+
+    # ----- double-click-to-re-edit equations --------------------------
+
+    def _ask_math(self, latex: str) -> str | None:
+        """Reopen the editor that built *latex*, seeded with it. Returns the
+        new LaTeX, or None if cancelled or unchanged.
+
+        A \\ce{} formula goes back to the chemistry editor — sending it to the
+        equation builder would show the user a wrapper they never typed."""
+        from . import chemistry
+        from .equation_editor import ChemistryEditorDialog, EquationEditorDialog
+
+        body = chemistry.unwrap_ce(latex)
+        if body is not None:
+            dlg = ChemistryEditorDialog(self, initial_latex=body)
+        else:
+            dlg = EquationEditorDialog(self, initial_latex=latex)
+        if dlg.exec() != QDialog.Accepted:
+            return None
+        new = dlg.latex()
+        return new if new and new != latex else None
+
+    def _edit_math_at(self, cursor: QTextCursor) -> bool:
+        """Re-open the equation builder for the math under *cursor*.
+
+        Returns True if a math node was found (whether or not it changed),
+        so the caller can swallow the double-click."""
+        block = cursor.block()
+        if block.userState() == _STATE_MATH_BLOCK:
+            raw = block.text().replace("\ufffc", "").strip(_LINE_SEP).strip()
+            latex = raw.replace(_LINE_SEP, "\n")
+            if not latex:
+                return False
+            new = self._ask_math(latex)
+            if new:
+                self._replace_math_block(block, new)
+            return True
+
+        span = self._inline_math_span(block, cursor.position())
+        if span is None:
+            return False
+        start, end, latex = span
+        new = self._ask_math(latex)
+        if new:
+            self._replace_inline_math(start, end, new)
+        return True
+
+    def _inline_math_span(self, block, pos: int):
+        """(start, end, latex) of the MathInline under *pos*, else None.
+
+        Inline math is laid out as either ``[text]`` (simple) or
+        ``[image][U+2028][text]`` (complex); a click can land on any of the
+        three, and all three must be replaced together."""
+        frags = []
+        it = block.begin()
+        while not it.atEnd():
+            f = it.fragment()
+            if f.isValid():
+                frags.append(f)
+            it += 1
+
+        def math_of(i):
+            if 0 <= i < len(frags):
+                return frags[i].charFormat().property(_P_MATH)
+            return None
+
+        hit = None
+        for i, f in enumerate(frags):
+            if f.position() <= pos <= f.position() + f.length():
+                if math_of(i):
+                    hit = i
+                    break
+        if hit is None:
+            return None
+
+        latex = math_of(hit)
+        # The U+2028 separator inherits the image's char format, so a click
+        # can resolve to any of the three fragments. Normalise to the LaTeX
+        # text one, then widen back over the preview image if there is one.
+        if frags[hit].charFormat().isImageFormat():
+            text_i = hit + 2
+        elif frags[hit].text() == _LINE_SEP:
+            text_i = hit + 1
+        else:
+            text_i = hit
+        if text_i >= len(frags) or math_of(text_i) != latex:
+            return None
+
+        img_i = text_i - 2
+        has_image = (img_i >= 0
+                     and math_of(img_i) == latex
+                     and frags[img_i].charFormat().isImageFormat()
+                     and frags[text_i - 1].text() == _LINE_SEP)
+        lo = img_i if has_image else text_i
+        return (frags[lo].position(),
+                frags[text_i].position() + frags[text_i].length(),
+                latex)
+
+    def _replace_math_block(self, block, latex: str) -> None:
+        c = QTextCursor(block)
+        c.beginEditBlock()
+        c.setPosition(block.position())
+        c.setPosition(block.position() + block.length() - 1,
+                      QTextCursor.KeepAnchor)
+        c.removeSelectedText()
+        c.block().setUserState(_STATE_MATH_BLOCK)
+        self._insert_math_image(c, latex)
+        c.insertText(latex.replace("\n", _LINE_SEP), _math_block_char_format())
+        c.endEditBlock()
+        self._on_text_changed()
+
+    def _replace_inline_math(self, start: int, end: int, latex: str) -> None:
+        c = QTextCursor(self._edit.document())
+        c.beginEditBlock()
+        c.setPosition(start)
+        c.setPosition(end, QTextCursor.KeepAnchor)
+        c.removeSelectedText()
+        self._insert_inline(c, MathInline(latex=latex))
+        c.endEditBlock()
+        self._on_text_changed()
 
     def _edit_existing_figure(self, qtable: QTextTable) -> None:
         """Re-open the drawing dialog for a figure that has a JSON sidecar."""
@@ -2782,6 +2927,7 @@ class DocumentEditor(QWidget):
                     img_fmt.setName(url.toString())
                     img_fmt.setWidth(w)
                     img_fmt.setHeight(h)
+                    img_fmt.setProperty(_P_MATH, latex)
                     cursor = QTextCursor(block)
                     cursor.setPosition(frag.position())
                     cursor.setPosition(frag.position() + frag.length(),

@@ -311,3 +311,25 @@ def wrap_ce(body: str) -> str:
     if body.startswith(r"\ce{") and body.endswith("}"):
         return body
     return r"\ce{" + body + "}"
+
+
+def unwrap_ce(latex: str) -> str | None:
+    """The body of a single ``\\ce{...}``, or None if *latex* isn't one.
+
+    Used to decide whether a double-clicked equation should reopen the
+    chemistry editor rather than the equation builder.
+    """
+    s = (latex or "").strip()
+    if not (s.startswith(r"\ce{") and s.endswith("}")):
+        return None
+    depth = 0
+    for i, ch in enumerate(s[3:], start=3):
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                # Only a single \ce{} spanning the whole string counts;
+                # "\ce{A} + \ce{B}" is two of them, not one body.
+                return s[4:i] if i == len(s) - 1 else None
+    return None
