@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import (
-    __version__, equations, git_backend, icons, kdocz, page_sizes,
+    __version__, chemistry, equations, git_backend, icons, kdocz, page_sizes,
     symbols, themes, version_string,
 )
 from .compiler import (
@@ -694,9 +694,14 @@ _BEGIN_RE = __import__("re").compile(r"\\begin\{(\w+\*?)\}$")
 
 class _EquationLatexEdit(QPlainTextEdit):
     """LaTeX input field that intercepts Tab/Shift+Tab to navigate
-    between \\square placeholders instead of inserting tab chars."""
+    between placeholder slots instead of inserting tab chars.
 
-    _PLACEHOLDER = r"\square"
+    The slot token is configurable because mhchem chokes on a bare
+    ``\\square`` — see ``chemistry.PLACEHOLDER``."""
+
+    def __init__(self, placeholder: str = r"\square", parent=None):
+        super().__init__(parent)
+        self._PLACEHOLDER = placeholder
 
     def keyPressEvent(self, ev):
         if ev.key() == Qt.Key_Tab and not ev.modifiers():
@@ -722,7 +727,7 @@ class _EquationLatexEdit(QPlainTextEdit):
         if not m:
             return False
         env = m.group(1)
-        self.insertPlainText(f"}}\n\\square\n\\end{{{env}}}")
+        self.insertPlainText(f"}}\n{self._PLACEHOLDER}\n\\end{{{env}}}")
         return True
 
     def _jump_placeholder(self, forward: bool) -> None:
@@ -745,26 +750,46 @@ class _EquationLatexEdit(QPlainTextEdit):
         self.setTextCursor(cursor)
 
 
-class EquationEditorDialog(QDialog):
-    """Live-preview equation editor.
+class _TemplatePaletteDialog(QDialog):
+    """Shared shell for the equation and chemistry editors.
 
     Shows a rendered preview that updates as you type, a category
-    toolbar with template buttons, and a LaTeX input field with
+    toolbar with template buttons, and a source field with
     Tab-navigable placeholders. Clicking Insert emits the final
     LaTeX for insertion into the document.
+
+    Subclasses supply the template data, the two preview renderers and
+    the placeholder token; everything else is identical.
     """
 
-    _CATEGORY_ICONS = [
-        icons.eq_fractions, icons.eq_sums, icons.eq_integrals,
-        icons.eq_scripts, icons.eq_derivatives, icons.eq_greek,
-        icons.eq_vectors, icons.eq_brackets, icons.eq_relations,
-        icons.eq_functions, icons.eq_environments,
-    ]
+    _TITLE = "Template editor"
+    # Each entry is a zero-arg QIcon factory, or a str to label the button
+    # with text when no drawn icon exists for that category.
+    _CATEGORY_ICONS: list = []
+    _CAT_COLS = 6
+    _CAT_BTN_SIZE = (40, 34)
+    _EMPTY_HINT = "Click a template to start"
+    _EDIT_HINT = ""
+    _SOURCE_LABEL = "LaTeX source:"
+    _PLACEHOLDER = r"\square"
+
+    def _groups(self) -> list:
+        raise NotImplementedError
+
+    def _render_template(self, latex: str):
+        raise NotImplementedError
+
+    def _render_live(self, latex: str):
+        raise NotImplementedError
+
+    def _extra_widgets(self, root: QVBoxLayout) -> None:
+        """Hook for subclass controls between the source field and the
+        button box."""
 
     def __init__(self, parent: QWidget | None = None,
                  initial_latex: str = ""):
         super().__init__(parent)
-        self.setWindowTitle("Equation editor")
+        self.setWindowTitle(self._TITLE)
         self.resize(640, 560)
 
         root = QVBoxLayout(self)
@@ -779,11 +804,10 @@ class EquationEditorDialog(QDialog):
             "QLabel { background: white; border: 1px solid #ccc; "
             "border-radius: 4px; padding: 12px; }")
         self._preview.setText(
-            "<span style='color:#999;'>Click a template to start "
-            "building your equation</span>")
+            f"<span style='color:#999;'>{self._EMPTY_HINT}</span>")
         root.addWidget(self._preview)
 
-        # ---- category toolbar (2 rows x 5 cols) ----
+        # ---- category toolbar ----
         toolbar = QFrame()
         toolbar.setFrameShape(QFrame.StyledPanel)
         tb_grid = QGridLayout(toolbar)
@@ -791,18 +815,20 @@ class EquationEditorDialog(QDialog):
         tb_grid.setContentsMargins(4, 4, 4, 4)
         self._btn_group = QButtonGroup(self)
         self._btn_group.setExclusive(True)
-        groups = equations.EQUATION_GROUPS
-        cols = 6
+        groups = self._groups()
+        cols = self._CAT_COLS
         for idx, (group_name, _items) in enumerate(groups):
             btn = QToolButton()
             btn.setCheckable(True)
-            icon_fn = (self._CATEGORY_ICONS[idx]
-                       if idx < len(self._CATEGORY_ICONS)
-                       else icons.eq_fractions)
-            btn.setIcon(icon_fn())
-            btn.setIconSize(QSize(24, 24))
+            spec = (self._CATEGORY_ICONS[idx]
+                    if idx < len(self._CATEGORY_ICONS) else None)
+            if callable(spec):
+                btn.setIcon(spec())
+                btn.setIconSize(QSize(24, 24))
+            else:
+                btn.setText(spec if spec else group_name[:3])
             btn.setToolTip(group_name)
-            btn.setFixedSize(40, 34)
+            btn.setFixedSize(*self._CAT_BTN_SIZE)
             btn.setStyleSheet(
                 "QToolButton { border: 1px solid transparent; "
                 "border-radius: 3px; }"
@@ -835,18 +861,19 @@ class EquationEditorDialog(QDialog):
             self._show_category(0)
 
         # ---- LaTeX input field ----
-        latex_label = QLabel("LaTeX source:")
+        latex_label = QLabel(self._SOURCE_LABEL)
         latex_label.setStyleSheet("color: #666; font-size: 9pt;")
         root.addWidget(latex_label)
-        self._edit = _EquationLatexEdit()
+        self._edit = _EquationLatexEdit(self._PLACEHOLDER)
         self._edit.setMaximumHeight(72)
         from PySide6.QtGui import QFont as _QFont
         mf = _QFont("Consolas"); mf.setStyleHint(_QFont.Monospace)
         mf.setPointSize(10)
         self._edit.setFont(mf)
-        self._edit.setPlaceholderText(
-            r"e.g.  \frac{x+1}{2} + \sqrt{y}")
+        self._edit.setPlaceholderText(self._EDIT_HINT)
         root.addWidget(self._edit)
+
+        self._extra_widgets(root)
 
         # ---- Insert / Cancel buttons ----
         btn_box = QDialogButtonBox(
@@ -873,7 +900,7 @@ class EquationEditorDialog(QDialog):
     # ---- category / template plumbing (reused from old builder) ----
 
     def _show_category(self, index: int) -> None:
-        groups = equations.EQUATION_GROUPS
+        groups = self._groups()
         if index < 0 or index >= len(groups):
             return
         group_name, items = groups[index]
@@ -901,7 +928,7 @@ class EquationEditorDialog(QDialog):
         for i, (latex, preview_text) in enumerate(items):
             btn = QToolButton()
             btn.setToolTip(f"{preview_text}\n{latex}")
-            pixmap = equations.render_template_preview(latex)
+            pixmap = self._render_template(latex)
             if pixmap and not pixmap.isNull():
                 btn.setIcon(QIcon(pixmap))
                 pw, ph = pixmap.width(), pixmap.height()
@@ -935,18 +962,77 @@ class EquationEditorDialog(QDialog):
         if not text:
             self._preview.setPixmap(QPixmap())
             self._preview.setText(
-                "<span style='color:#999;'>Click a template to start "
-                "building your equation</span>")
+                f"<span style='color:#999;'>{self._EMPTY_HINT}</span>")
             return
-        px = equations.render_live_preview(text)
+        px = self._render_live(text)
         if px and not px.isNull():
             self._preview.setText("")
             self._preview.setPixmap(px)
         else:
             self._preview.setPixmap(QPixmap())
             self._preview.setText(
-                f"<span style='color:#c00;'>Cannot render: check "
-                f"LaTeX syntax</span>")
+                "<span style='color:#c00;'>Cannot render: check "
+                "syntax</span>")
+
+
+class EquationEditorDialog(_TemplatePaletteDialog):
+    """Live-preview LaTeX equation editor."""
+
+    _TITLE = "Equation editor"
+    _EMPTY_HINT = "Click a template to start building your equation"
+    _EDIT_HINT = r"e.g.  \frac{x+1}{2} + \sqrt{y}"
+    _CATEGORY_ICONS = [
+        icons.eq_fractions, icons.eq_sums, icons.eq_integrals,
+        icons.eq_scripts, icons.eq_derivatives, icons.eq_greek,
+        icons.eq_vectors, icons.eq_brackets, icons.eq_relations,
+        icons.eq_functions, icons.eq_environments,
+    ]
+
+    def _groups(self):
+        return equations.EQUATION_GROUPS
+
+    def _render_template(self, latex: str):
+        return equations.render_template_preview(latex)
+
+    def _render_live(self, latex: str):
+        return equations.render_live_preview(latex)
+
+
+class ChemistryEditorDialog(_TemplatePaletteDialog):
+    """Live-preview editor for mhchem chemical equations.
+
+    The source field holds the *body* of ``\\ce{...}`` — the user never
+    types the wrapper. :meth:`latex` adds it back.
+    """
+
+    _TITLE = "Chemistry editor"
+    _EMPTY_HINT = "Click a template to start building your reaction"
+    _EDIT_HINT = "e.g.  2H2 + O2 -> 2H2O"
+    _SOURCE_LABEL = "Formula (mhchem syntax, inserted inside \\ce{…}):"
+    _PLACEHOLDER = chemistry.PLACEHOLDER
+    _CAT_COLS = 6
+    _CAT_BTN_SIZE = (48, 34)
+    _CATEGORY_ICONS = ["A→B", "→", "(s)", "±", "H₂O", "A−B"]
+
+    def _groups(self):
+        return chemistry.CHEM_GROUPS
+
+    def _render_template(self, latex: str):
+        return chemistry.render_template_preview(latex)
+
+    def _render_live(self, latex: str):
+        return chemistry.render_live_preview(latex)
+
+    def _extra_widgets(self, root: QVBoxLayout) -> None:
+        self._display_cb = QCheckBox(
+            "Display on its own line (numbered equation)")
+        root.addWidget(self._display_cb)
+
+    def is_display(self) -> bool:
+        return self._display_cb.isChecked()
+
+    def latex(self) -> str:
+        return chemistry.wrap_ce(self._edit.toPlainText())
 
 
 # ---------- main window ----------
@@ -1548,6 +1634,10 @@ class MainWindow(QMainWindow):
             icons.equation_builder(), "&Equation builder...", self,
             shortcut=QKeySequence("Ctrl+Shift+E"),
             triggered=self._insert_equation_template)
+        self.act_chemistry = QAction(
+            icons.chemistry(), "C&hemical reaction...", self,
+            shortcut=QKeySequence("Ctrl+Shift+R"),
+            triggered=self._insert_chemistry)
         # Quick-applies the corresponding paragraph style to the current
         # block. Same effect as picking it from the heading combo, but
         # surfaced in the Insert menu and toolbar so it's discoverable
@@ -1786,6 +1876,7 @@ class MainWindow(QMainWindow):
         m_insert = mb.addMenu("&Insert")
         m_insert.addAction(self.act_math_inline); m_insert.addAction(self.act_math_block)
         m_insert.addAction(self.act_symbol); m_insert.addAction(self.act_equation_builder)
+        m_insert.addAction(self.act_chemistry)
         m_env = m_insert.addMenu("Math &environment")
         _ENVS = [
             ("equation",  r"\begin{equation}" "\n" r"\square" "\n" r"\end{equation}"),
@@ -2150,6 +2241,7 @@ class MainWindow(QMainWindow):
         self._side_tb.addAction(self.act_math_block)
         self._side_tb.addAction(self.act_symbol)
         self._side_tb.addAction(self.act_equation_builder)
+        self._side_tb.addAction(self.act_chemistry)
         self._side_tb.addSeparator()
         self._side_tb.addAction(self.act_link)
         self._side_tb.addAction(self.act_footnote)
@@ -2216,7 +2308,7 @@ class MainWindow(QMainWindow):
     def _new(self) -> None:
         self._current_path = None
         self._import_source_dir = None
-        self._editor.set_document(_starter_document())
+        self._editor.set_document(_blank_document())
         self._update_title()
 
     def _new_window(self) -> MainWindow:
@@ -3419,6 +3511,7 @@ class MainWindow(QMainWindow):
         self.act_table.setIcon(icons.table())
         self.act_symbol.setIcon(icons.symbol())
         self.act_equation_builder.setIcon(icons.equation_builder())
+        self.act_chemistry.setIcon(icons.chemistry())
         self.act_pagebreak.setIcon(icons.page_break())
         self.act_hrule.setIcon(icons.horizontal_rule())
         self.act_commit_now.setIcon(icons.commit())
@@ -3529,6 +3622,28 @@ class MainWindow(QMainWindow):
 
     def _apply_equation_template(self, latex: str) -> None:
         if "\\begin{" in latex:
+            self._editor.insert_math_block_with(latex)
+        else:
+            self._editor.insert_inline_math_with(latex)
+
+    def _insert_chemistry(self) -> None:
+        """Open the chemistry editor and insert the \\ce{} it builds.
+
+        Chemistry needs no document-model node of its own: \\ce{} is a
+        math-mode macro, so it rides inside the ordinary math nodes and
+        the existing serialisers emit it unchanged.
+        """
+        dlg = ChemistryEditorDialog(self)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        latex = dlg.latex()
+        if not latex:
+            return
+        meta = self._editor.meta()
+        if "mhchem" not in meta.packages:
+            meta.packages.append("mhchem")
+            self._editor.set_meta(meta)
+        if dlg.is_display():
             self._editor.insert_math_block_with(latex)
         else:
             self._editor.insert_inline_math_with(latex)
@@ -4042,6 +4157,12 @@ class MainWindow(QMainWindow):
             "(fractions, integrals, matrices, sums, brackets, etc.) to "
             "build equations visually, use Tab to jump between "
             "placeholders, and see the rendered result in real time.</p>"
+            "<p><b>Chemical reaction</b> (<code>Ctrl+Shift+R</code>): the same "
+            "idea for chemistry. Type mhchem syntax such as "
+            "<code>2H2 + O2 -&gt; 2H2O</code> and it becomes a typeset "
+            "reaction; palettes cover arrows, charges, states and bonds. "
+            "The <code>mhchem</code> package is added to the document "
+            "automatically on first use.</p>"
             "<p><b>Symbol picker</b> (<code>Ctrl+Shift+S</code>): browse Greek "
             "letters, operators, arrows and other symbols.</p>"
 
@@ -4261,6 +4382,7 @@ class MainWindow(QMainWindow):
                 ("Ctrl+K", "Hyperlink"),
                 ("Ctrl+Shift+S", "Symbol picker"),
                 ("Ctrl+Shift+E", "Equation builder"),
+                ("Ctrl+Shift+R", "Chemical reaction"),
             ]),
             ("View", [
                 ("Ctrl+1", "Visual tab"),
@@ -4742,8 +4864,17 @@ def _apply_user_defaults(meta: DocMeta) -> DocMeta:
 
 
 def _starter_document() -> Document:
-    """First-launch / File>New document — a multi-page welcome tour so
-    users see what KherveTeX can do before they have to type anything."""
+    """First-launch document — a multi-page welcome tour so users see what
+    KherveTeX can do before they have to type anything."""
     doc = examples.welcome()
+    doc.meta = _apply_user_defaults(doc.meta)
+    return doc
+
+
+def _blank_document() -> Document:
+    """File > New — an empty page. The welcome tour is a first-launch
+    greeting, not something to re-read every time you start a document;
+    it is still reachable from Help > Examples."""
+    doc = examples.blank()
     doc.meta = _apply_user_defaults(doc.meta)
     return doc

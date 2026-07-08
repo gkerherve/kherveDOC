@@ -663,6 +663,37 @@ def equation_builder() -> QIcon:
     return QIcon(px)
 
 
+def chemistry() -> QIcon:
+    """Erlenmeyer flask with an accent-coloured liquid."""
+    px, p = _new_canvas()
+    p.setRenderHint(QPainter.Antialiasing, True)
+
+    body = QPainterPath()
+    body.moveTo(9.5, 4)
+    body.lineTo(9.5, 9.5)
+    body.lineTo(4, 19.5)
+    body.lineTo(20, 19.5)
+    body.lineTo(14.5, 9.5)
+    body.lineTo(14.5, 4)
+
+    liquid = QPainterPath()
+    liquid.moveTo(6.9, 14.5)
+    liquid.lineTo(4, 19.5)
+    liquid.lineTo(20, 19.5)
+    liquid.lineTo(17.1, 14.5)
+    liquid.closeSubpath()
+    p.setPen(Qt.NoPen)
+    p.setBrush(_accent())
+    p.drawPath(liquid)
+
+    p.setBrush(Qt.NoBrush)
+    p.setPen(QPen(_fg(), 1.6, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    p.drawPath(body)
+    p.drawLine(8, 4, 16, 4)  # lip
+    p.end()
+    return QIcon(px)
+
+
 def zoom_out() -> QIcon:
     px, p = _new_canvas()
     p.setPen(QPen(_fg(), 1.8, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))

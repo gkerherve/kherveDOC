@@ -374,7 +374,7 @@ def welcome() -> Document:
 # ---------------------------------------------------------------- examples
 
 def blank() -> Document:
-    """A bare-bones single-paragraph document — what File > New also opens."""
+    """A bare-bones single-paragraph document — what File > New opens."""
     return Document(
         meta=_meta(),
         children=[
