@@ -508,7 +508,13 @@ class DocSettingsDialog(QDialog):
 
     def _build_metadata_tab(self, meta: DocMeta) -> QWidget:
         self._title = QLineEdit(meta.title)
-        self._author = QLineEdit(meta.author)
+        # Multi-line: name on one line, affiliation on the next. Each line
+        # becomes a LaTeX \\ break in \author{...}.
+        self._author = QPlainTextEdit(meta.author)
+        self._author.setPlaceholderText(
+            "Name\nDepartment, Institution, City, Country")
+        fm = self._author.fontMetrics()
+        self._author.setFixedHeight(fm.lineSpacing() * 3 + 12)
         self._docclass = QComboBox(); self._docclass.setEditable(True)
         self._docclass.addItems(TEMPLATE_CHOICES)
         self._docclass.setCurrentText(meta.documentclass)
@@ -610,7 +616,7 @@ class DocSettingsDialog(QDialog):
                 if p.strip()]
         return DocMeta(
             title=self._title.text(),
-            author=self._author.text(),
+            author=self._author.toPlainText().strip(),
             documentclass=self._docclass.currentText().strip() or "article",
             packages=pkgs,
             page_size=self._orig_meta.page_size,

@@ -33,6 +33,20 @@ def escape_text(s: str) -> str:
     return "".join(_LATEX_ESCAPES.get(ch, ch) for ch in s)
 
 
+def escape_author(s: str) -> str:
+    r"""Escape a plain-text author string for ``\author{...}``.
+
+    Users naturally put the name on one line and the affiliation on the
+    next. Both a literal newline and a LaTeX ``\\`` break typed into the
+    single Author field are treated as a line break: each line is escaped
+    on its own and re-joined with a real ``\\`` so the block wraps in the
+    PDF. Without this, a typed ``\\`` was escaped to ``\textbackslash{}``
+    and printed literally instead of breaking the line."""
+    parts = re.split(r"\s*\\\\\s*|\n", s.strip())
+    lines = [escape_text(p.strip()) for p in parts if p.strip()]
+    return " \\\\\n".join(lines)
+
+
 _MARK_WRAPPERS = {
     "bold": (r"\textbf{", "}"),
     "italic": (r"\textit{", "}"),
@@ -474,7 +488,7 @@ def serialize_document(doc: Document) -> str:
     # Join multiple Author blocks with \\ so they wrap in the PDF.
     inline_author = " \\\\\n".join(author_parts) if author_parts else None
     author_text = inline_author if inline_author is not None else (
-        escape_text((doc.meta.author or "").strip()))
+        escape_author(doc.meta.author or ""))
     # LaTeX's \maketitle puts \@author inside a non-wrapping tabular{c}.
     # Long author lists overflow the margins. Wrap in a \parbox so the
     # text reflows naturally.
@@ -793,7 +807,7 @@ def serialize_project_master(proj: Project) -> str:
     if m.title and m.title != "Untitled":
         preamble_meta += f"\\title{{{escape_text(m.title)}}}\n"
     if m.author:
-        preamble_meta += f"\\author{{{escape_text(m.author)}}}\n"
+        preamble_meta += f"\\author{{{escape_author(m.author)}}}\n"
 
     # Bibliography
     bib_lines = ""

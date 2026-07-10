@@ -4,7 +4,8 @@ from khervedoc.model import (
     MathInline, Paragraph, RawLatex, Section, Table, Text, Title,
 )
 from khervedoc.serializer import (
-    escape_text, serialize_block, serialize_document, serialize_inline,
+    escape_author, escape_text, serialize_block, serialize_document,
+    serialize_inline,
 )
 
 
@@ -12,6 +13,30 @@ def test_escape_text_handles_specials():
     assert escape_text("100% & $5") == r"100\% \& \$5"
     assert escape_text("a_b^c") == r"a\_b\textasciicircum{}c"
     assert escape_text("{x}") == r"\{x\}"
+
+
+def test_escape_author_treats_newline_as_line_break():
+    assert escape_author("Jane Doe\nDept, University") == "Jane Doe \\\\\nDept, University"
+
+
+def test_escape_author_treats_latex_backslash_as_line_break():
+    # A \\ typed into the single Author field must break the line, not
+    # print a literal \textbackslash{}.
+    assert escape_author("Jane Doe \\\\ Dept, University") == "Jane Doe \\\\\nDept, University"
+
+
+def test_escape_author_still_escapes_specials_per_line():
+    assert escape_author("A & B\nC_D") == "A \\& B \\\\\nC\\_D"
+
+
+def test_document_author_renders_on_two_lines():
+    doc = Document(
+        meta=DocMeta(title="T", author="Jane Doe\nDepartment of Physics, Some University, City, Country"),
+        children=[Title(children=[Text(text="T")])],
+    )
+    out = serialize_document(doc)
+    assert "Jane Doe \\\\\n" in out
+    assert "textbackslash" not in out
 
 
 def test_text_with_marks_nests_in_stable_order():
