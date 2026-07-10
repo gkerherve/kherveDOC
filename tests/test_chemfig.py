@@ -14,15 +14,41 @@ from khervedoc.chemfig import (
 # ------------------------------------------------------------ palette data
 
 def test_groups_are_wellformed():
-    assert len(CHEMFIG_GROUPS) == 6
+    assert len(CHEMFIG_GROUPS) == 13
     names = [n for n, _ in CHEMFIG_GROUPS]
-    assert names == ["Structures", "Rings", "Bonds", "Groups",
-                     "Scheme", "Polymer"]
+    assert names == ["Structures", "Molecules", "Hydrocarbons", "Aromatics",
+                     "Heterocycles", "Rings", "Bonds", "Groups", "Stereo",
+                     "Bio", "Charges", "Scheme", "Polymer"]
     for name, items in CHEMFIG_GROUPS:
         assert items
         for frag, label in items:
             assert isinstance(frag, str) and frag
             assert isinstance(label, str) and label
+
+
+def test_templates_have_balanced_delimiters():
+    # A template with unbalanced {} or () can never compile; catch the
+    # palette typo in a unit test instead of a "Cannot render" preview.
+    for _, items in CHEMFIG_GROUPS:
+        for frag, label in items:
+            for op, cl in (("{", "}"), ("(", ")"), ("[", "]")):
+                assert frag.count(op) == frag.count(cl), (label, frag)
+
+
+def test_molecule_groups_hold_complete_chemfig_macros():
+    for gname in ("Molecules", "Hydrocarbons", "Aromatics",
+                  "Heterocycles", "Bio"):
+        for frag, label in dict(CHEMFIG_GROUPS)[gname]:
+            assert frag.startswith(r"\chemfig{"), (gname, label)
+
+
+def test_arrow_label_placeholders_are_math_wrapped():
+    # \square is math-only and arrow labels are text mode: a bare \square
+    # in a label aborts the compile, so every label placeholder must be
+    # wrapped in $...$ (this was a real palette bug).
+    for frag, label in dict(CHEMFIG_GROUPS)["Scheme"]:
+        if PLACEHOLDER in frag and "->[" in frag:
+            assert f"[${PLACEHOLDER}$]" in frag, (label, frag)
 
 
 def test_placeholder_compiles_inside_chemfig():
@@ -97,7 +123,7 @@ def test_dialog_constructs_and_populates_every_category(qapp):
     d = ChemfigEditorDialog()
     try:
         assert d.windowTitle() == "Chemical structure editor"
-        assert len(d._groups()) == 6
+        assert len(d._groups()) == 13
         for i in range(len(d._groups())):
             d._show_category(i)          # builds each palette page
         d._edit.setPlainText(r"\chemfig{*6(======)}")   # timer won't fire here

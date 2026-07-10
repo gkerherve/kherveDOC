@@ -255,6 +255,41 @@ def _extract_braced(src: str, command: str) -> str | None:
         return None
     content, _ = _consume_braced(src, pos)
     return content
+
+
+def _split_author_lines(author: str) -> list[str]:
+    r"""Split an \author argument on top-level ``\\`` line breaks.
+
+    "Name\thanks{...} \\ \small Affiliation" becomes two display lines.
+    Breaks inside brace groups (a ``\\`` within \thanks{...}) don't split,
+    and escaped braces don't disturb the depth count.
+    """
+    parts: list[str] = []
+    buf: list[str] = []
+    depth = 0
+    i, n = 0, len(author)
+    while i < n:
+        c = author[i]
+        if c == "\\" and i + 1 < n:
+            nxt = author[i + 1]
+            if nxt == "\\" and depth == 0:
+                parts.append("".join(buf)); buf = []
+                i += 2
+                continue
+            if nxt in "{}\\":
+                buf.append(c); buf.append(nxt)
+                i += 2
+                continue
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+        buf.append(c)
+        i += 1
+    parts.append("".join(buf))
+    return [p.strip() for p in parts if p.strip()]
+
+
 _SECTION_LEVEL = {
     "chapter": 0,
     "section": 1, "subsection": 2, "subsubsection": 3,
@@ -429,6 +464,15 @@ _MARK_MACROS = {
 
 _ESCAPED_SPECIAL = {"%", "&", "$", "#", "_", "{", "}"}
 
+# Single-character accent macros → combining marks. \'e (Kerhervé), \"o
+# (Schrödinger) etc. decode to the composed Unicode letter; leaving the
+# backslash in the Text run made escape_text() re-emit it as
+# \textbackslash{}'e, corrupting every accented author/title on import.
+_ACCENT_COMBINING = {
+    "'": "\u0301", "`": "\u0300", "^": "\u0302", '"': "\u0308",
+    "~": "\u0303", "=": "\u0304", ".": "\u0307",
+}
+
 
 def _match_macro(s: str, i: int) -> tuple[object, int] | None:
     """Try to consume a recognised macro at position i. Returns (node, end)
@@ -436,6 +480,20 @@ def _match_macro(s: str, i: int) -> tuple[object, int] | None:
     # Escaped specials (\%, \&, \$, \#, \_, \{, \}) — emit as literal text.
     if i + 1 < len(s) and s[i + 1] in _ESCAPED_SPECIAL:
         return Text(text=s[i + 1]), i + 2
+    # Accent macros: \'e and \'{e} both compose to é.
+    if i + 1 < len(s) and s[i + 1] in _ACCENT_COMBINING:
+        mark = _ACCENT_COMBINING[s[i + 1]]
+        j = i + 2
+        base, end = None, j
+        if j < len(s) and s[j] == "{":
+            arg, after = _consume_braced(s, j)
+            if arg is not None and len(arg) == 1 and arg.isalpha():
+                base, end = arg, after
+        elif j < len(s) and s[j].isalpha():
+            base, end = s[j], j + 1
+        if base is not None:
+            import unicodedata
+            return Text(text=unicodedata.normalize("NFC", base + mark)), end
     m = re.match(r"\\([A-Za-z@]+)\*?", s[i:])
     if not m:
         return None
@@ -1058,6 +1116,21 @@ def import_tex(tex_source: str) -> Document:
         title_inlines = _parse_inlines(title_text) or [Text(text=title_text)]
         children.insert(0, Title(children=title_inlines))
         meta.title = ""
+
+    # Surface the author in the editor. \maketitle vanishes during block
+    # parsing, so without this the name / \thanks / affiliation lived only
+    # in meta.author and the Visual view showed no author line at all.
+    # One Author block per \\-separated line ("Name \\ \small Address")
+    # mirrors how \maketitle stacks them; the serializer re-joins Author
+    # blocks with \\, so the rich author still round-trips verbatim.
+    if author_text and not any(isinstance(b, Author) for b in children):
+        insert_at = next((idx + 1 for idx, b in enumerate(children)
+                          if isinstance(b, Title)), 0)
+        for line in _split_author_lines(author_text):
+            line_inlines = _parse_inlines(line)
+            if line_inlines:
+                children.insert(insert_at, Author(children=line_inlines))
+                insert_at += 1
 
     # Insert Abstract / Keywords from body frontmatter (Wiley-style) as
     # proper model nodes so the editor highlights them.

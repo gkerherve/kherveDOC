@@ -3,9 +3,9 @@ generating a meaningful .docx fixture costs more than the test is worth."""
 
 from khervedoc.importers import import_tex
 from khervedoc.model import (
-    Abstract, Citation, CrossRef, Figure, Footnote, InlineRaw, Keywords, Link,
-    List as ListNode, MathBlock, MathInline, Paragraph, RawLatex, Section,
-    Table, Text, Title,
+    Abstract, Author, Citation, CrossRef, Figure, Footnote, InlineRaw,
+    Keywords, Link, List as ListNode, MathBlock, MathInline, Paragraph,
+    RawLatex, Section, Table, Text, Title,
 )
 from khervedoc.serializer import serialize_document
 
@@ -79,6 +79,82 @@ def test_plain_author_still_clean():
 \begin{document}\maketitle body\end{document}"""
     doc = _round_trip(src)
     assert doc.meta.author == "Jane Doe"
+
+
+_RICH_SRC = (
+    "\\documentclass[11pt,a4paper]{article}\n"
+    "\\title{KhervePDF: A PDF Viewer\\\\with Built-In Git Version History}\n"
+    "\\author{Gwilherm Kerherve\\thanks{ORCID: 0000, \\texttt{g@x.org}}\\\\\n"
+    "\\small Department of Materials, Imperial College London}\n"
+    "\\begin{document}\\maketitle body\\end{document}"
+)
+
+
+def test_author_becomes_visible_author_blocks():
+    # The author used to live only in meta.author, so the Visual view
+    # showed the title but no author name or address at all.
+    doc = _round_trip(_RICH_SRC)
+    authors = [b for b in doc.children if isinstance(b, Author)]
+    assert len(authors) == 2               # name line + affiliation line
+    assert isinstance(doc.children[0], Title)
+    assert doc.children[1] is authors[0]   # stacked right under the title
+    name = "".join(c.text for c in authors[0].children if isinstance(c, Text))
+    assert "Gwilherm Kerherve" in name
+    addr = "".join(c.text for c in authors[1].children if isinstance(c, Text))
+    assert "Department of Materials, Imperial College London" in addr
+    # \thanks survives on the name line as raw LaTeX, not flattened away.
+    assert any(isinstance(c, InlineRaw) and c.latex.startswith("\\thanks{")
+               for c in authors[0].children)
+
+
+def test_author_blocks_serialize_a_single_author():
+    # The Author display blocks and meta.author must not each emit their
+    # own \author{...}.
+    out = serialize_document(_round_trip(_RICH_SRC))
+    assert out.count("\\author{") == 1
+
+
+def test_plain_author_gets_a_display_block_too():
+    src = r"""\documentclass{article}
+\title{T}
+\author{Jane Doe}
+\begin{document}\maketitle body\end{document}"""
+    doc = _round_trip(src)
+    authors = [b for b in doc.children if isinstance(b, Author)]
+    assert len(authors) == 1
+    out = serialize_document(doc)
+    assert out.count("\\author{") == 1
+    assert "\\author{Jane Doe}" in out
+
+
+def test_accent_macros_decode_to_unicode():
+    # \'e used to survive as a literal backslash in the Text run, which
+    # escape_text() then re-emitted as \textbackslash{}'e — a corrupted,
+    # uncompilable author for every accented name.
+    src = (
+        "\\documentclass{article}\n"
+        "\\title{Caf\\'{e} chemistry}\n"
+        "\\author{Gwilherm Kerherv\\'e}\n"
+        "\\begin{document}\\maketitle Schr\\\"odinger's cat\\end{document}"
+    )
+    out = serialize_document(_round_trip(src))
+    assert "Kerhervé" in out
+    assert "Café" in out
+    assert "Schrödinger" in out
+    assert "textbackslash" not in out
+
+
+def test_linebreak_inside_thanks_does_not_split_author():
+    src = (
+        "\\documentclass{article}\n"
+        "\\author{Ann Author\\thanks{line one\\\\line two}}\n"
+        "\\begin{document}\\maketitle body\\end{document}"
+    )
+    doc = _round_trip(src)
+    authors = [b for b in doc.children if isinstance(b, Author)]
+    assert len(authors) == 1
+    out = serialize_document(doc)
+    assert "\\thanks{line one\\\\line two}" in out
 
 
 def test_section_levels():

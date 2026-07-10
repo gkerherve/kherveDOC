@@ -342,9 +342,10 @@ class ChemistryEditorDialog(_TemplatePaletteDialog):
     _EDIT_HINT = "e.g.  2H2 + O2 -> 2H2O"
     _SOURCE_LABEL = "Formula (mhchem syntax, inserted inside \\ce{…}):"
     _PLACEHOLDER = chemistry.PLACEHOLDER
-    _CAT_COLS = 6
+    _CAT_COLS = 5
     _CAT_BTN_SIZE = (48, 34)
-    _CATEGORY_ICONS = ["A→B", "→", "(s)", "±", "H₂O", "A−B"]
+    _CATEGORY_ICONS = ["A→B", "→", "(s)", "±", "H₂O",
+                       "A−B", "Δ", "pH", "e⁻", "α"]
 
     def _groups(self):
         return chemistry.CHEM_GROUPS
@@ -359,6 +360,12 @@ class ChemistryEditorDialog(_TemplatePaletteDialog):
         self._display_cb = QCheckBox(
             "Display on its own line (numbered equation)")
         root.addWidget(self._display_cb)
+        hint = QLabel(
+            "For 2-D molecular structures (rings, bonds, wedges) use "
+            "Insert ▸ Chemical structure… — it draws native chemfig.")
+        hint.setStyleSheet("color: #888; font-size: 8pt;")
+        hint.setWordWrap(True)
+        root.addWidget(hint)
 
     def is_display(self) -> bool:
         return self._display_cb.isChecked()
@@ -417,9 +424,11 @@ class ChemfigEditorDialog(_TemplatePaletteDialog):
     _EDIT_HINT = r"e.g.  \chemfig{*6(======)}"
     _SOURCE_LABEL = "chemfig source (inserted as-is into the document):"
     _PLACEHOLDER = chemfig.PLACEHOLDER
-    _CAT_COLS = 6
-    _CAT_BTN_SIZE = (64, 34)
-    _CATEGORY_ICONS = ["struct", "rings", "bonds", "groups", "scheme", "poly"]
+    _CAT_COLS = 7
+    _CAT_BTN_SIZE = (58, 30)
+    _CATEGORY_ICONS = ["struct", "molec", "hydro", "arom", "hetero",
+                       "rings", "bonds", "groups", "stereo", "bio",
+                       "charge", "scheme", "poly"]
 
     def __init__(self, parent=None, initial_latex: str = ""):
         self._worker: _ChemfigPreviewWorker | None = None

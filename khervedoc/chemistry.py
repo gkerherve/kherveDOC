@@ -80,6 +80,38 @@ CHEM_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
         (r"^{227}_{90}Th+", "nuclide"),
         (r"^{13}C", "isotope"),
     ]),
+    ("Conditions", [
+        (f" ->[$\\Delta$] ", "heat Δ"),
+        (f" ->[$h\\nu$] ", "light hν"),
+        (r" ->[\text{cat.}] ", "catalyst"),
+        (r" ->[\text{Pt}] ", "Pt catalyst"),
+        (r" ->[H+] ", "acid"),
+        (f" ->[{_S}][{_S}] ", "above/below"),
+    ]),
+    ("Acids & bases", [
+        (r"HCl + NaOH -> NaCl + H2O", "neutralisation"),
+        (r"2H2O <=> H3O+ + OH-", "autoionisation"),
+        (r"NH3 + H2O <=> NH4+ + OH-", "weak base"),
+        (r"CH3COOH <=> CH3COO- + H+", "weak acid"),
+        (r"H3O+", "hydronium"),
+        (r"NH4+", "ammonium"),
+    ]),
+    ("Redox", [
+        (r"Zn -> Zn^2+ + 2e-", "oxidation"),
+        (r"Cu^2+ + 2e- -> Cu", "reduction"),
+        (r"Fe^2+ -> Fe^3+ + e-", "Fe(II)→Fe(III)"),
+        (r"2H+ + 2e- -> H2", "H+ reduction"),
+        (r"O2 + 4H+ + 4e- -> 2H2O", "O2 reduction"),
+        (r"MnO4- + 8H+ + 5e- -> Mn^2+ + 4H2O", "permanganate"),
+    ]),
+    ("Nuclear", [
+        (r"^{238}_{92}U -> ^{234}_{90}Th + ^{4}_{2}He", "α decay"),
+        (r"^{14}_{6}C -> ^{14}_{7}N + e-", "β decay"),
+        (r"^{1}_{0}n", "neutron"),
+        (r"^{1}_{1}p", "proton"),
+        (r"^{4}_{2}He", "α particle"),
+        (r"^{2}_{1}H", "deuterium"),
+    ]),
 ]
 
 

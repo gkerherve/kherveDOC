@@ -108,7 +108,11 @@ def test_every_template_previews():
 
 
 def test_groups_are_wellformed():
-    assert len(CHEM_GROUPS) == 6
+    assert len(CHEM_GROUPS) == 10
+    names = [n for n, _ in CHEM_GROUPS]
+    assert names == ["Reactions", "Arrows", "States", "Charges", "Species",
+                     "Bonds", "Conditions", "Acids & bases", "Redox",
+                     "Nuclear"]
     for name, items in CHEM_GROUPS:
         assert name and items
         for body, label in items:
