@@ -1109,6 +1109,35 @@ class DocumentEditor(QWidget):
             self._building = False
         self.documentChanged.emit()
 
+    def insert_blocks(self, blocks: list) -> None:
+        """Insert model *blocks* at the current cursor as real, editable
+        content — the write path used by the AI assistant.
+
+        Unlike `set_document`, this does not clear the document and does
+        not suppress change signals: the insertion registers as a normal
+        user edit (one undo step, marks the document dirty, retriggers the
+        preview). Each block is rendered with the same `_render_block`
+        machinery `set_document` uses, so sections, math, lists, tables
+        and raw LaTeX all come out identical to typed content.
+        """
+        if not blocks:
+            return
+        cursor = self._edit.textCursor()
+        cursor.beginEditBlock()
+        first = True
+        for block in blocks:
+            # Start a fresh paragraph before the first block only when the
+            # cursor sits in a non-empty block, so inserting into an empty
+            # document (or an empty trailing line) doesn't leave a blank
+            # line above the inserted content.
+            if not first or cursor.block().text().strip():
+                cursor.insertBlock(QTextBlockFormat(), QTextCharFormat())
+            first = False
+            self._render_block(cursor, block)
+        cursor.endEditBlock()
+        self._edit.setTextCursor(cursor)
+        self._edit.ensureCursorVisible()
+
     def get_document(self) -> Document:
         qdoc = self._edit.document()
         blocks: list = []

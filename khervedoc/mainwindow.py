@@ -31,6 +31,7 @@ from .compiler import (
     download_tectonic_bundle, tectonic_available, tectonic_cache_size_mb,
     typst_available,
 )
+from .ai_assistant import AiDock
 from .editor import DocumentEditor, TEMPLATE_CHOICES
 from .equation_editor import (
     ChemfigEditorDialog, ChemistryEditorDialog, EquationEditorDialog,
@@ -913,6 +914,15 @@ class MainWindow(QMainWindow):
         self._project_sidebar.addChapterRequested.connect(self._add_chapter_to_project)
         self._project_sidebar.compileRequested.connect(self._compile_project)
 
+        # AI chat side panel (hidden until toggled from the View menu or
+        # Ctrl+7). Writes generated LaTeX straight into the visual editor.
+        self._ai_dock = AiDock(lambda: self._editor, self)
+        self._ai_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.addDockWidget(Qt.RightDockWidgetArea, self._ai_dock)
+        self._ai_dock.hide()
+        self._ai_dock.toggleViewAction().setText("AI &Chat")
+        self._ai_dock.toggleViewAction().setShortcut(QKeySequence("Ctrl+7"))
+
         self._status = QStatusBar(self)
         self.setStatusBar(self._status)
 
@@ -1605,6 +1615,7 @@ class MainWindow(QMainWindow):
         m_view.addSeparator()
         m_view.addAction(self.act_side_by_side)
         m_view.addAction(self._project_dock.toggleViewAction())
+        m_view.addAction(self._ai_dock.toggleViewAction())
         m_view.addSeparator()
         m_view.addAction(self.act_fit_page_width)
         m_view.addSeparator()

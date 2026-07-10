@@ -1080,6 +1080,23 @@ def import_tex(tex_source: str) -> Document:
     return Document(meta=meta, children=children)
 
 
+def import_body_fragment(latex: str) -> list:
+    r"""Parse a LaTeX *body* fragment (no preamble) into a list of Block
+    nodes, reusing the same block parser as `import_tex`.
+
+    Used by the AI assistant to turn a generated LaTeX snippet into real,
+    editable editor content. Comments are stripped first; if the fragment
+    happens to contain a full ``\begin{document}...\end{document}`` only
+    the body between them is parsed, so a model that ignores the "body
+    only" instruction still yields sensible blocks instead of nothing.
+    """
+    src = _strip_tex_comments(latex or "")
+    body_m = _BODY_RE.search(src)
+    if body_m:
+        src = body_m.group(1)
+    return _parse_blocks(src)
+
+
 # ============================================================
 #                       .pdf importer
 # ============================================================
