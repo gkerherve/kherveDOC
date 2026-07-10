@@ -38,6 +38,16 @@ def test_escape_author_guards_bare_specials_without_double_escaping():
     assert escape_author("Smith \\& Co") == "Smith \\& Co"
 
 
+def test_escape_author_neutralises_stray_braces():
+    # A stray } (e.g. left by an older corrupted author) must not close
+    # \author{ early — it caused "Too many }'s" / "Paragraph ended before
+    # \author was complete". Balanced \thanks{} groups stay untouched.
+    assert escape_author("Gwilherm Kerherve}") == "Gwilherm Kerherve\\}"
+    assert escape_author("{Gwilherm Kerherve") == "\\{Gwilherm Kerherve"
+    assert (escape_author("Jane\\thanks{ORCID, \\texttt{j@x.org}}")
+            == "Jane\\thanks{ORCID, \\texttt{j@x.org}}")
+
+
 def test_document_author_with_thanks_is_not_parboxed():
     doc = Document(
         meta=DocMeta(title="T", author=(

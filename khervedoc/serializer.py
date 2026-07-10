@@ -33,6 +33,40 @@ def escape_text(s: str) -> str:
     return "".join(_LATEX_ESCAPES.get(ch, ch) for ch in s)
 
 
+def _guard_stray_braces(p: str) -> str:
+    r"""Escape only *unbalanced* braces, leaving balanced groups intact.
+
+    The author field carries LaTeX, so ``\thanks{...}`` and ``\texttt{...}``
+    must keep their braces. But a stray ``}`` (e.g. left behind by an older
+    corrupted author line) would close ``\author{`` early and abort the
+    compile with "Too many }'s". Walk the run, skipping ``\x`` escape pairs,
+    and turn any brace with no partner into ``\{`` / ``\}``."""
+    out: list[str] = []
+    open_positions: list[int] = []
+    i, n = 0, len(p)
+    while i < n:
+        ch = p[i]
+        if ch == "\\" and i + 1 < n:      # command or escaped char: verbatim
+            out.append(p[i:i + 2])
+            i += 2
+            continue
+        if ch == "{":
+            open_positions.append(len(out))
+            out.append("{")
+        elif ch == "}":
+            if open_positions:
+                open_positions.pop()
+                out.append("}")
+            else:
+                out.append("\\}")         # stray closer
+        else:
+            out.append(ch)
+        i += 1
+    for idx in open_positions:            # stray openers
+        out[idx] = "\\{"
+    return "".join(out)
+
+
 def escape_author(s: str) -> str:
     r"""Format the author metadata for ``\author{...}``.
 
@@ -42,14 +76,16 @@ def escape_author(s: str) -> str:
     a literal newline and a typed ``\\`` become a real ``\\`` line break, so
     a name on one line and an affiliation on the next wrap in the PDF. Only
     bare ``& % # $`` — which a user is unlikely to mean as LaTeX and which
-    otherwise abort the compile — are escaped, and never a copy already
-    written as ``\&``."""
+    otherwise abort the compile — are escaped (never a copy already written
+    as ``\&``), and stray unbalanced braces are neutralised so a malformed
+    author can't run away and break the whole document."""
     parts = re.split(r"\s*\\\\\s*|\n", s.strip())
     lines = []
     for p in parts:
         p = p.strip()
         if p:
-            lines.append(re.sub(r"(?<!\\)([&%#$])", r"\\\1", p))
+            p = re.sub(r"(?<!\\)([&%#$])", r"\\\1", p)
+            lines.append(_guard_stray_braces(p))
     return " \\\\\n".join(lines)
 
 
