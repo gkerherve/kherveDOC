@@ -172,6 +172,7 @@ def download_tectonic_bundle(on_output=None) -> tuple[bool, str]:
 \usepackage{textcomp,fontenc}
 \usepackage{mathtools,bm,siunitx}
 \usepackage{mhchem}
+\usepackage{chemfig}
 \usepackage{tikz}
 \usepackage{algorithm,algpseudocode}
 \usepackage[normalem]{ulem}

@@ -32,7 +32,9 @@ from .compiler import (
     typst_available,
 )
 from .editor import DocumentEditor, TEMPLATE_CHOICES
-from .equation_editor import ChemistryEditorDialog, EquationEditorDialog
+from .equation_editor import (
+    ChemfigEditorDialog, ChemistryEditorDialog, EquationEditorDialog,
+)
 from . import examples, importers
 from .latex_view import LatexView
 from .model import (
@@ -1303,6 +1305,10 @@ class MainWindow(QMainWindow):
             icons.chemistry(), "C&hemical reaction...", self,
             shortcut=QKeySequence("Ctrl+Shift+R"),
             triggered=self._insert_chemistry)
+        self.act_chemfig = QAction(
+            icons.chemfig_structure(), "Chemical &structure...", self,
+            shortcut=QKeySequence("Ctrl+Shift+T"),
+            triggered=self._insert_chemfig)
         # Quick-applies the corresponding paragraph style to the current
         # block. Same effect as picking it from the heading combo, but
         # surfaced in the Insert menu and toolbar so it's discoverable
@@ -1542,6 +1548,7 @@ class MainWindow(QMainWindow):
         m_insert.addAction(self.act_math_inline); m_insert.addAction(self.act_math_block)
         m_insert.addAction(self.act_symbol); m_insert.addAction(self.act_equation_builder)
         m_insert.addAction(self.act_chemistry)
+        m_insert.addAction(self.act_chemfig)
         m_env = m_insert.addMenu("Math &environment")
         _ENVS = [
             ("equation",  r"\begin{equation}" "\n" r"\square" "\n" r"\end{equation}"),
@@ -1907,6 +1914,7 @@ class MainWindow(QMainWindow):
         self._side_tb.addAction(self.act_symbol)
         self._side_tb.addAction(self.act_equation_builder)
         self._side_tb.addAction(self.act_chemistry)
+        self._side_tb.addAction(self.act_chemfig)
         self._side_tb.addSeparator()
         self._side_tb.addAction(self.act_link)
         self._side_tb.addAction(self.act_footnote)
@@ -3177,6 +3185,7 @@ class MainWindow(QMainWindow):
         self.act_symbol.setIcon(icons.symbol())
         self.act_equation_builder.setIcon(icons.equation_builder())
         self.act_chemistry.setIcon(icons.chemistry())
+        self.act_chemfig.setIcon(icons.chemfig_structure())
         self.act_pagebreak.setIcon(icons.page_break())
         self.act_hrule.setIcon(icons.horizontal_rule())
         self.act_commit_now.setIcon(icons.commit())
@@ -3312,6 +3321,25 @@ class MainWindow(QMainWindow):
             self._editor.insert_math_block_with(latex)
         else:
             self._editor.insert_inline_math_with(latex)
+
+    def _insert_chemfig(self) -> None:
+        """Open the chemical-structure editor and insert the chemfig it builds.
+
+        chemfig is text-mode (not math), so it goes in as a RawLatex block and
+        the serializer emits it verbatim — the compiled document draws native,
+        vector chemfig. The package is added on first use, like mhchem.
+        """
+        dlg = ChemfigEditorDialog(self)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        latex = dlg.latex()
+        if not latex:
+            return
+        meta = self._editor.meta()
+        if "chemfig" not in meta.packages:
+            meta.packages.append("chemfig")
+            self._editor.set_meta(meta)
+        self._editor.insert_raw_block_with(latex)
 
     def _insert_link_with_hyperref(self) -> None:
         # Ensure hyperref is in the package list before inserting.
@@ -3693,8 +3721,6 @@ class MainWindow(QMainWindow):
             "</table>")
 
         html = (
-            f"<h2 style='margin-bottom:2pt'>KherveTeX {version_string()}</h2>"
-            f"<hr>"
             f"<h3>About the author</h3>"
             f"<p><b>Gwilherm Kerherv&eacute;</b> &nbsp;—&nbsp; "
             f"Research Associate, Department of Materials, "
@@ -3726,7 +3752,25 @@ class MainWindow(QMainWindow):
 
         dlg = QDialog(self)
         dlg.setWindowTitle("About KherveTeX")
-        dlg.resize(680, 740)
+        dlg.resize(680, 760)
+
+        # Header: the big app icon beside the name/version, like KherveBook.
+        logo = QLabel(dlg)
+        logo.setPixmap(icons.app_pixmap(96))
+        logo.setFixedSize(96, 96)
+        logo.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
+        heading = QLabel(
+            f"<h2 style='margin:0'>KherveTeX</h2>"
+            f"<p style='color:#888;margin:3px 0 0 0'>{version_string()}</p>"
+            f"<p style='margin:8px 0 0 0'>A WYSIWYG LaTeX document editor "
+            f"with built-in Git version history.</p>", dlg)
+        heading.setWordWrap(True)
+        heading.setOpenExternalLinks(True)
+        header = QHBoxLayout()
+        header.addWidget(logo, 0, Qt.AlignTop)
+        header.addSpacing(16)
+        header.addWidget(heading, 1)
+
         browser = QTextBrowser(dlg)
         browser.setOpenExternalLinks(True)
         browser.setHtml(html)
@@ -3734,6 +3778,7 @@ class MainWindow(QMainWindow):
         buttons.rejected.connect(dlg.reject)
         buttons.accepted.connect(dlg.accept)
         layout = QVBoxLayout(dlg)
+        layout.addLayout(header)
         layout.addWidget(browser, 1)
         layout.addWidget(buttons)
         dlg.exec()
@@ -3832,6 +3877,13 @@ class MainWindow(QMainWindow):
             "reaction; palettes cover arrows, charges, states and bonds. "
             "The <code>mhchem</code> package is added to the document "
             "automatically on first use.</p>"
+            "<p><b>Chemical structure</b> (<code>Ctrl+Shift+T</code>): draw "
+            "skeletal structures and reaction schemes with "
+            "<code>chemfig</code> — benzene rings, bonds, functional groups, "
+            "arrows and polymer brackets. The preview compiles the real "
+            "structure with LaTeX (so it is a little slower than the equation "
+            "preview). Insert drops it into the document as native, vector "
+            "chemfig; the <code>chemfig</code> package is added on first use.</p>"
             "<p><b>Symbol picker</b> (<code>Ctrl+Shift+G</code>): browse Greek "
             "letters, operators, arrows and other symbols.</p>"
 
@@ -4052,6 +4104,7 @@ class MainWindow(QMainWindow):
                 ("Ctrl+Shift+G", "Symbol picker"),
                 ("Ctrl+Shift+E", "Equation builder"),
                 ("Ctrl+Shift+R", "Chemical reaction"),
+                ("Ctrl+Shift+T", "Chemical structure"),
             ]),
             ("View", [
                 ("Ctrl+1", "Visual tab"),

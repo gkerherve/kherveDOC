@@ -7,16 +7,18 @@ user double-clicks a rendered equation without importing the main window
 from __future__ import annotations
 
 import re as _re
+import tempfile
+from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, QTimer
-from PySide6.QtGui import QIcon, QPixmap, QTextCursor
+from PySide6.QtCore import QSize, Qt, QThread, QTimer, Signal
+from PySide6.QtGui import QIcon, QImage, QPixmap, QTextCursor
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QDialog, QDialogButtonBox, QFrame, QGridLayout,
     QLabel, QPlainTextEdit, QScrollArea, QStackedWidget, QToolButton,
     QVBoxLayout, QWidget,
 )
 
-from . import chemistry, equations, icons
+from . import chemfig, chemistry, equations, icons
 
 
 _BEGIN_RE = _re.compile(r"\\begin\{(\w+\*?)\}$")
@@ -363,3 +365,124 @@ class ChemistryEditorDialog(_TemplatePaletteDialog):
 
     def latex(self) -> str:
         return chemistry.wrap_ce(self._edit.toPlainText())
+
+
+class _ChemfigPreviewWorker(QThread):
+    """Compiles a chemfig snippet with tectonic off the UI thread and hands
+    back a rendered QImage. chemfig is TikZ — there is no mathtext shortcut,
+    so every preview is a real (~1-2 s) LaTeX compile."""
+
+    done = Signal(bool, object, str)   # ok, QImage | None, log tail
+
+    def __init__(self, body: str, workdir: Path, parent=None):
+        super().__init__(parent)
+        self._body = body
+        self._workdir = workdir
+
+    def run(self) -> None:
+        from .compiler import compile_tex, render_pdf_pages
+
+        doc = chemfig.build_preview_doc(self._body)
+        res = compile_tex(doc, self._workdir, basename="chemfig_preview")
+        if not res.ok or res.pdf_path is None:
+            self.done.emit(False, None, res.log or res.error or "")
+            return
+        try:
+            pages = render_pdf_pages(res.pdf_path, dpi=200)
+        except Exception as exc:                       # pragma: no cover
+            self.done.emit(False, None, str(exc))
+            return
+        if not pages:
+            self.done.emit(False, None, "empty PDF")
+            return
+        p = pages[0]
+        # QImage over the raw buffer, then .copy() so it owns its pixels once
+        # the RenderedPage is gone. QImage is safe to build off-thread;
+        # QPixmap is not, so the UI slot does that conversion.
+        img = QImage(p.rgb, p.width, p.height, p.stride,
+                     QImage.Format_RGB888).copy()
+        self.done.emit(True, img, res.log)
+
+
+class ChemfigEditorDialog(_TemplatePaletteDialog):
+    """Live-preview editor for chemfig structures and reaction schemes.
+
+    The preview is a real tectonic compile rendered off-thread, not mathtext,
+    so it is slower and debounced harder than the equation editor. The source
+    the user builds is inserted verbatim as a RawLatex block.
+    """
+
+    _TITLE = "Chemical structure editor"
+    _EMPTY_HINT = "Pick a structure or scheme template to start"
+    _EDIT_HINT = r"e.g.  \chemfig{*6(======)}"
+    _SOURCE_LABEL = "chemfig source (inserted as-is into the document):"
+    _PLACEHOLDER = chemfig.PLACEHOLDER
+    _CAT_COLS = 6
+    _CAT_BTN_SIZE = (64, 34)
+    _CATEGORY_ICONS = ["struct", "rings", "bonds", "groups", "scheme", "poly"]
+
+    def __init__(self, parent=None, initial_latex: str = ""):
+        self._worker: _ChemfigPreviewWorker | None = None
+        self._pending = False
+        self._tmpdir = Path(tempfile.mkdtemp(prefix="khervedoc-chemfig-"))
+        super().__init__(parent, initial_latex)
+        self.setWindowTitle(self._TITLE)
+        self.resize(680, 620)
+        self._preview.setMinimumHeight(200)
+        # tectonic is far slower than mathtext; don't compile on every keystroke
+        self._preview_timer.setInterval(700)
+        if initial_latex:
+            self._update_preview()
+
+    def _groups(self):
+        return chemfig.CHEMFIG_GROUPS
+
+    def _render_template(self, latex: str):
+        # No per-button previews: one tectonic compile per palette button
+        # would be unusable. Buttons fall back to their text label.
+        return None
+
+    def _render_live(self, latex: str):        # unused; preview is async
+        return None
+
+    def _update_preview(self) -> None:
+        text = self._edit.toPlainText().strip()
+        if not text:
+            self._preview.setPixmap(QPixmap())
+            self._preview.setText(
+                f"<span style='color:#999;'>{self._EMPTY_HINT}</span>")
+            return
+        if self._worker is not None and self._worker.isRunning():
+            self._pending = True      # coalesce; re-kick when the current one ends
+            return
+        self._preview.setPixmap(QPixmap())
+        self._preview.setText(
+            "<span style='color:#888;'>Rendering…</span>")
+        self._worker = _ChemfigPreviewWorker(text, self._tmpdir, self)
+        self._worker.done.connect(self._on_preview_done)
+        self._worker.start()
+
+    def _on_preview_done(self, ok: bool, img, log: str) -> None:
+        self._worker = None
+        if self._pending:
+            self._pending = False
+            self._update_preview()
+            return
+        if ok and img is not None and not img.isNull():
+            self._preview.setText("")
+            self._preview.setPixmap(QPixmap.fromImage(img))
+        else:
+            self._preview.setPixmap(QPixmap())
+            self._preview.setText(
+                "<span style='color:#c00;'>Cannot render — check the chemfig "
+                "syntax.</span>")
+
+    def latex(self) -> str:
+        return self._edit.toPlainText().strip()
+
+    def closeEvent(self, event):
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.wait(3000)
+        import shutil
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+        super().closeEvent(event)

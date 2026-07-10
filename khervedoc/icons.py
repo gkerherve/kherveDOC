@@ -694,6 +694,27 @@ def chemistry() -> QIcon:
     return QIcon(px)
 
 
+def chemfig_structure() -> QIcon:
+    """A benzene hexagon with the accent-coloured aromatic ring inside —
+    the chemical-structure editor."""
+    import math as _math
+    px, p = _new_canvas()
+    p.setRenderHint(QPainter.Antialiasing, True)
+    cx, cy, r = 12.0, 12.0, 8.0
+    pts = [QPointF(cx + r * _math.cos(_math.radians(60 * i - 90)),
+                   cy + r * _math.sin(_math.radians(60 * i - 90)))
+           for i in range(6)]
+    hexagon = QPolygonF(pts)
+    p.setPen(QPen(_fg(), 1.7, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(hexagon)
+    # inner aromatic ring
+    p.setPen(QPen(_accent(), 1.4))
+    p.drawEllipse(QPointF(cx, cy), r * 0.5, r * 0.5)
+    p.end()
+    return QIcon(px)
+
+
 def zoom_out() -> QIcon:
     px, p = _new_canvas()
     p.setPen(QPen(_fg(), 1.8, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))

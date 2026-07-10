@@ -2236,6 +2236,14 @@ class DocumentEditor(QWidget):
         c.insertBlock(); c.block().setUserState(_STATE_PARAGRAPH)
         c.endEditBlock()
 
+    def insert_raw_block_with(self, latex: str) -> None:
+        """Insert *latex* as a RawLatex block without prompting. Used by the
+        chemfig editor, whose \\chemfig{}/\\schemestart output is text-mode
+        (not math) and must reach the document verbatim."""
+        if not latex.strip():
+            return
+        self._insert_raw_block(latex)
+
     def insert_bullet_list(self) -> None:
         self._edit.textCursor().createList(QTextListFormat.ListDisc)
 
