@@ -370,6 +370,14 @@ def _parse_inlines(s: str) -> list:
             i = j + 1
             continue
         if ch == "\\":
+            if s[i + 1:i + 2] == "\\":
+                # LaTeX line break \\ — keep it verbatim so titles and
+                # paragraphs that force a break round-trip and compile,
+                # instead of the second backslash starting a bogus macro
+                # (e.g. `\\with` was parsed as the control word \with).
+                out.append(InlineRaw(latex="\\\\"))
+                i += 2
+                continue
             m = _match_macro(s, i)
             if m is not None:
                 node, end = m
@@ -935,6 +943,14 @@ def import_tex(tex_source: str) -> Document:
                               "", author_text).strip()
     else:
         author_clean = ""
+    # A standard-class title block often carries LaTeX the flat name can't
+    # hold: \thanks{...} footnotes, \\ breaks, \small affiliations. Flattening
+    # those away broke the round-trip (and produced garbled `Name}\\` authors).
+    # Keep such an author verbatim so it re-serialises and compiles unchanged;
+    # journal/Elsevier classes keep their raw author in frontmatter_extras and
+    # still want the cleaned display name here.
+    author_is_rich = bool(author_text) and bool(
+        re.search(r"\\[A-Za-z@]+|\\\\", author_text))
     doc_class = docclass_m.group(1) if docclass_m else "article"
     _STANDARD_CLASSES = {
         "article", "report", "book", "letter", "memoir", "beamer",
@@ -989,9 +1005,10 @@ def import_tex(tex_source: str) -> Document:
     # syntax-coloured code blocks the user authored upstream.
     preamble_extras = _extract_preamble_extras(tex_source,
                                                strip_author=is_standard)
+    keep_raw_author = is_standard and not is_elsarticle and author_is_rich
     meta = DocMeta(
         title=(title_text or "").strip(),
-        author=author_clean,
+        author=(author_text.strip() if keep_raw_author else author_clean),
         documentclass=doc_class,
         class_options=class_options,
         packages=packages or ["amsmath", "graphicx"],

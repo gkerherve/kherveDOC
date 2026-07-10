@@ -34,16 +34,22 @@ def escape_text(s: str) -> str:
 
 
 def escape_author(s: str) -> str:
-    r"""Escape a plain-text author string for ``\author{...}``.
+    r"""Format the author metadata for ``\author{...}``.
 
-    Users naturally put the name on one line and the affiliation on the
-    next. Both a literal newline and a LaTeX ``\\`` break typed into the
-    single Author field are treated as a line break: each line is escaped
-    on its own and re-joined with a real ``\\`` so the block wraps in the
-    PDF. Without this, a typed ``\\`` was escaped to ``\textbackslash{}``
-    and printed literally instead of breaking the line."""
+    The author field accepts LaTeX: ``\thanks{...}`` footnotes, ``\small``
+    affiliations, ``\texttt{...}`` and the like pass through untouched so a
+    real title block can be built (and so an imported one round-trips). Both
+    a literal newline and a typed ``\\`` become a real ``\\`` line break, so
+    a name on one line and an affiliation on the next wrap in the PDF. Only
+    bare ``& % # $`` — which a user is unlikely to mean as LaTeX and which
+    otherwise abort the compile — are escaped, and never a copy already
+    written as ``\&``."""
     parts = re.split(r"\s*\\\\\s*|\n", s.strip())
-    lines = [escape_text(p.strip()) for p in parts if p.strip()]
+    lines = []
+    for p in parts:
+        p = p.strip()
+        if p:
+            lines.append(re.sub(r"(?<!\\)([&%#$])", r"\\\1", p))
     return " \\\\\n".join(lines)
 
 
@@ -490,9 +496,11 @@ def serialize_document(doc: Document) -> str:
     author_text = inline_author if inline_author is not None else (
         escape_author(doc.meta.author or ""))
     # LaTeX's \maketitle puts \@author inside a non-wrapping tabular{c}.
-    # Long author lists overflow the margins. Wrap in a \parbox so the
-    # text reflows naturally.
-    if author_text and len(author_text) > 80:
+    # A single long author line overflows the margins, so wrap it in a
+    # \parbox to reflow. But when the author already sets its own line
+    # breaks (name \\ affiliation), \maketitle centres each line for us —
+    # wrapping then would swallow the \thanks{} footnote, so leave it be.
+    if author_text and "\\\\" not in author_text and len(author_text) > 80:
         author_text = (
             f"\\parbox{{\\textwidth}}{{\\centering {author_text}}}"
         )

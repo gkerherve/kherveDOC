@@ -52,6 +52,35 @@ def test_title_preamble_creates_title_block():
     assert doc.meta.author == "Me"
 
 
+def test_rich_title_block_round_trips():
+    # A KhervePDF-style title block: \\ break in the title, plus a
+    # \thanks{} footnote and a \small affiliation in the author. These
+    # must survive import -> serialize instead of being flattened away
+    # (which used to yield an uncompilable `\with` and a garbled author).
+    src = (
+        "\\documentclass[11pt,a4paper]{article}\n"
+        "\\title{KhervePDF: A PDF Viewer\\\\with Built-In Git Version History}\n"
+        "\\author{Gwilherm Kerherve\\thanks{ORCID: 0000, \\texttt{g@x.org}}\\\\\n"
+        "\\small Department of Materials, Imperial College London}\n"
+        "\\begin{document}\\maketitle body\\end{document}"
+    )
+    out = serialize_document(_round_trip(src))
+    assert "\\thanks{ORCID: 0000, \\texttt{g@x.org}}" in out
+    assert "\\small Department of Materials" in out
+    assert "\\\\with Built-In" in out       # title line break preserved as \\
+    # old bug turned the title \\ into `\textbackslash{}\with` (uncompilable)
+    assert "\\textbackslash{}\\with" not in out
+    assert "textbackslash" not in out       # author not double-escaped
+
+
+def test_plain_author_still_clean():
+    src = r"""\documentclass{article}
+\author{Jane Doe}
+\begin{document}\maketitle body\end{document}"""
+    doc = _round_trip(src)
+    assert doc.meta.author == "Jane Doe"
+
+
 def test_section_levels():
     src = r"""\documentclass{article}\begin{document}
 \section{Intro}

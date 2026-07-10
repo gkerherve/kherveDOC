@@ -25,8 +25,31 @@ def test_escape_author_treats_latex_backslash_as_line_break():
     assert escape_author("Jane Doe \\\\ Dept, University") == "Jane Doe \\\\\nDept, University"
 
 
-def test_escape_author_still_escapes_specials_per_line():
-    assert escape_author("A & B\nC_D") == "A \\& B \\\\\nC\\_D"
+def test_escape_author_passes_latex_macros_through():
+    # \thanks / \small / \texttt must survive so a real title block works.
+    src = "Jane Doe\\thanks{ORCID: 1234, \\texttt{j@x.org}}\n\\small Dept, University"
+    out = escape_author(src)
+    assert out == "Jane Doe\\thanks{ORCID: 1234, \\texttt{j@x.org}} \\\\\n\\small Dept, University"
+
+
+def test_escape_author_guards_bare_specials_without_double_escaping():
+    # bare & is escaped; an already-escaped \& is left alone.
+    assert escape_author("Smith & Co, 50%") == "Smith \\& Co, 50\\%"
+    assert escape_author("Smith \\& Co") == "Smith \\& Co"
+
+
+def test_document_author_with_thanks_is_not_parboxed():
+    doc = Document(
+        meta=DocMeta(title="T", author=(
+            "Jane Doe\\thanks{ORCID: 0000, \\texttt{j@x.org}}\n"
+            "\\small Department of Physics, Some University, City, Country")),
+        children=[Title(children=[Text(text="T")])],
+    )
+    out = serialize_document(doc)
+    assert "\\thanks{ORCID: 0000, \\texttt{j@x.org}}" in out
+    assert "\\small Department of Physics" in out
+    assert "parbox" not in out          # explicit \\ breaks => no parbox wrap
+    assert "textbackslash" not in out
 
 
 def test_document_author_renders_on_two_lines():
