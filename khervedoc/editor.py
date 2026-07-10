@@ -1138,6 +1138,35 @@ class DocumentEditor(QWidget):
         self._edit.setTextCursor(cursor)
         self._edit.ensureCursorVisible()
 
+    def replace_body(self, blocks: list) -> None:
+        """Replace the whole document body with *blocks* in a single undoable
+        edit — the rewrite path used by the AI assistant to move, delete,
+        reorder or rewrite existing content.
+
+        Leading Title / Author blocks are preserved (they carry the
+        document's front-matter identity and aren't part of the body the
+        assistant reasons about), and `meta` is untouched. Everything else
+        is discarded and rebuilt from *blocks*, so an AI reordering — e.g.
+        moving a Conclusion above Availability, or de-duplicating a repeated
+        section — takes effect wholesale rather than appending.
+        """
+        preserved = [b for b in self.get_document().children
+                     if isinstance(b, (Title, Author))]
+        cursor = self._edit.textCursor()
+        cursor.beginEditBlock()
+        cursor.select(QTextCursor.Document)
+        cursor.removeSelectedText()
+        first = True
+        for block in preserved + list(blocks):
+            if not first:
+                cursor.insertBlock(QTextBlockFormat(), QTextCharFormat())
+            first = False
+            self._render_block(cursor, block)
+        cursor.endEditBlock()
+        cursor.movePosition(QTextCursor.Start)
+        self._edit.setTextCursor(cursor)
+        self._edit.ensureCursorVisible()
+
     def get_document(self) -> Document:
         qdoc = self._edit.document()
         blocks: list = []
@@ -1609,7 +1638,13 @@ class DocumentEditor(QWidget):
             display = f"<{node.kind}:{node.label}>"
             cursor.insertText(display, _crossref_format(payload))
         elif isinstance(node, InlineRaw):
-            cursor.insertText(node.latex, _raw_inline_format(node.latex))
+            # A \\ break should LOOK like a break (titles imported with
+            # "...Editor\\with..." showed literal backslashes mid-line).
+            # U+2028 breaks the line inside the same QTextBlock while the
+            # format property still carries "\\", so the round-trip
+            # re-emits the LaTeX break unchanged.
+            display = "\u2028" if node.latex == "\\\\" else node.latex
+            cursor.insertText(display, _raw_inline_format(node.latex))
         elif isinstance(node, Highlight):
             fmt = _highlight_format(node.color)
             for child in node.children:

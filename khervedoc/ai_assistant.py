@@ -25,8 +25,15 @@ from PySide6.QtWidgets import (
 
 from . import ai_providers as providers
 from .importers import import_body_fragment
+from .serializer import serialize_chapter_body
 
 _SETTINGS = ("kherveDOC", "kherveDOC")
+
+#: A latex block whose first line is this sentinel replaces the WHOLE body
+#: instead of inserting at the cursor — the assistant's move/delete/reorder/
+#: rewrite path. Matched case-insensitively, with or without the space.
+_REWRITE_SENTINEL = re.compile(r"^\s*%\s*(?:rewrite|replace(?:-?all)?)\b.*$",
+                               re.IGNORECASE)
 
 try:                                    # optional — nicer icons when present
     import qtawesome as _qta
@@ -46,20 +53,40 @@ def _icon(glyph):
 
 
 SYSTEM_PROMPT = r"""You are a writing assistant embedded in kherveDOC, a \
-WYSIWYG LaTeX document editor. Help the user draft and edit their document.
+WYSIWYG LaTeX document editor. Help the user draft AND edit their document.
 
-The document class is "{docclass}". The document currently contains: \
-{summary}.
+The document class is "{docclass}". Here is the current document body, \
+verbatim, between the markers (it is what the user sees on screen):
+<<<CURRENT DOCUMENT
+{body}
+CURRENT DOCUMENT
 
-When the user asks you to write, add, insert, draft or continue content, \
-reply with one short sentence of plain prose and then a single fenced code \
-block tagged latex holding ONLY document BODY LaTeX to insert. Do NOT \
-output a code block unless the user actually wants content written into the \
-document — answer questions with plain prose only.
+You have two ways to change the document. Reply with one short sentence of \
+plain prose, then AT MOST ONE fenced code block tagged latex:
 
-Rules for the latex block:
+1. INSERT (default, for adding new content at the cursor): put ONLY the new \
+BODY LaTeX in the block. It is inserted at the cursor; the rest of the \
+document is untouched.
+
+2. REWRITE (for editing what already exists — moving, reordering, deleting, \
+de-duplicating, renaming or rewriting sections): make the VERY FIRST line of \
+the block exactly:
+% REWRITE
+and then put the COMPLETE new document body below it. This REPLACES the \
+whole body, so you MUST reproduce every part the user wants to keep, in the \
+order you want, with your changes applied. Use REWRITE whenever the request \
+is about existing content (e.g. "move the conclusion before availability", \
+"delete the duplicate section", "merge these two paragraphs"). Never claim \
+you cannot reorder or delete — a REWRITE block does exactly that.
+
+Only output a code block when the user wants the document changed — answer \
+questions with plain prose only.
+
+Rules for the latex block (both modes):
 - BODY ONLY. Never emit \documentclass, \usepackage, \begin{document} or \
 \end{document} — the document already has a preamble.
+- Do not include \title or \author; the front matter is managed separately \
+and preserved automatically.
 - Use \section{...}, \subsection{...} for headings; blank lines separate \
 paragraphs.
 - Inline maths uses $...$; display maths uses \[ ... \] or \
@@ -67,8 +94,8 @@ paragraphs.
 - Lists use \begin{itemize}/\begin{enumerate} with \item.
 - Tables use \begin{tabular}; figures use \begin{figure}.
 - Emphasis: \textbf{...}, \textit{...}, \emph{...}.
-- Keep it clean, compilable LaTeX. Do not wrap the whole answer in the \
-code block — the prose sentence stays outside it."""
+- Keep it clean, compilable LaTeX. The prose sentence stays OUTSIDE the \
+code block."""
 
 
 # ---------------------------------------------------------------- parsing
@@ -84,35 +111,36 @@ def prose_only(reply: str) -> str:
     return (reply[:fence] if fence != -1 else reply).strip()
 
 
-def extract_latex(reply: str) -> str:
-    """Concatenate every fenced latex/tex block in *reply* (blank if none)."""
+def extract_latex(reply: str) -> tuple[str, str]:
+    """Parse a reply into ``(mode, latex)``.
+
+    *mode* is ``"rewrite"`` when the first non-empty latex block opens with a
+    ``% REWRITE`` (or ``% REPLACE``) sentinel line — that block replaces the
+    whole document body. Otherwise *mode* is ``"insert"`` and every latex
+    block is concatenated for insertion at the cursor. ``latex`` is empty
+    when the reply contains no code block at all."""
     blocks = [m.group(1).strip() for m in _FENCE_RE.finditer(reply)]
-    return "\n\n".join(b for b in blocks if b)
+    blocks = [b for b in blocks if b]
+    if not blocks:
+        return "insert", ""
+    first_line = blocks[0].splitlines()[0] if blocks[0] else ""
+    if _REWRITE_SENTINEL.match(first_line):
+        # Drop the sentinel line; the rest is the full replacement body.
+        body = "\n".join(blocks[0].splitlines()[1:]).strip()
+        return "rewrite", body
+    return "insert", "\n\n".join(blocks)
 
 
-def document_summary(doc) -> str:
-    """A short description of the current document for the system prompt."""
+def document_body_latex(doc) -> str:
+    """The current document body as LaTeX, for the system prompt. Empty
+    documents report a short placeholder instead of a blank block."""
     if doc is None or not doc.children:
-        return "nothing yet (an empty document)"
-    from .model import Section, Title
-    titles = []
-    for block in doc.children:
-        if isinstance(block, Title):
-            txt = _plain_text(block.children)
-            if txt:
-                titles.append(f"title “{txt}”")
-        elif isinstance(block, Section):
-            txt = _plain_text(block.children)
-            if txt:
-                titles.append(f"section “{txt}”")
-    n = len(doc.children)
-    head = ", ".join(titles[:8]) if titles else "no headings yet"
-    return f"{n} block(s); {head}"
-
-
-def _plain_text(inlines) -> str:
-    from .model import Text
-    return "".join(i.text for i in inlines if isinstance(i, Text)).strip()
+        return "(the document is currently empty)"
+    try:
+        body = serialize_chapter_body(doc).strip()
+    except Exception:                       # pragma: no cover - defensive
+        return "(unable to read the current document)"
+    return body or "(the document is currently empty)"
 
 
 # ---------------------------------------------------------------- worker
@@ -597,20 +625,21 @@ class AiDock(QDockWidget):
 
         editor = self._get_editor()
         docclass = "article"
-        summary = "nothing yet"
+        body = "(the document is currently empty)"
         if editor is not None:
             try:
                 doc = editor.get_document()
                 docclass = doc.meta.documentclass or "article"
-                summary = document_summary(doc)
+                body = document_body_latex(doc)
             except Exception:               # pragma: no cover - defensive
                 pass
         # Substitute placeholders with str.replace, NOT str.format — the
-        # prompt contains literal LaTeX braces (\section{...}) that
-        # str.format would misread as fields and raise.
+        # prompt and the document body both contain literal LaTeX braces
+        # (\section{...}) that str.format would misread as fields and raise.
+        # Replace {body} last so a stray token in the doc can't be re-expanded.
         system = (SYSTEM_PROMPT
                   .replace("{docclass}", str(docclass))
-                  .replace("{summary}", summary))
+                  .replace("{body}", body))
         messages = [{"role": "system", "content": system}] + self._history
         self._busy(True)
         self._run(lambda: providers.chat(provider, model, messages, key, base),
@@ -620,14 +649,14 @@ class AiDock(QDockWidget):
         self._busy(False)
         self._history.append({"role": "assistant", "content": reply})
         self._save_history()
-        latex = extract_latex(reply)
+        mode, latex = extract_latex(reply)
         prose = prose_only(reply)
         if latex:
-            self._insert_latex(latex, prose)
+            self._apply_latex(mode, latex, prose)
         else:
             self._log("ai", prose or reply)
 
-    def _insert_latex(self, latex, prose):
+    def _apply_latex(self, mode, latex, prose):
         editor = self._get_editor()
         if editor is None:
             self._log("ai", prose or "(no editor to write into)")
@@ -643,10 +672,16 @@ class AiDock(QDockWidget):
             # prose (or the raw snippet) rather than silently doing nothing.
             self._log("ai", prose or latex)
             return
-        editor.insert_blocks(blocks)
-        self._log("ai", prose or "Done.")
-        self._log("system", f"Inserted {len(blocks)} block(s) into the "
-                            f"document.")
+        if mode == "rewrite":
+            editor.replace_body(blocks)
+            self._log("ai", prose or "Done.")
+            self._log("system", f"Rewrote the document "
+                                f"({len(blocks)} block(s)).")
+        else:
+            editor.insert_blocks(blocks)
+            self._log("ai", prose or "Done.")
+            self._log("system", f"Inserted {len(blocks)} block(s) into the "
+                                f"document.")
 
     # ------------------------------------------------------- threading
     def _run(self, fn, on_done):

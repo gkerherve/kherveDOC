@@ -6,7 +6,7 @@ import pytest
 
 from khervedoc import ai_providers as providers
 from khervedoc.ai_assistant import (
-    document_summary, extract_latex, prose_only,
+    document_body_latex, extract_latex, prose_only,
 )
 from khervedoc.importers import import_body_fragment
 from khervedoc.model import (
@@ -28,15 +28,33 @@ def test_prose_only_handles_truncated_block():
     assert prose_only(reply) == "Sure!"
 
 
-def test_extract_latex_untagged_and_tagged_fences():
-    assert extract_latex("x ```latex\n\\section{A}\n``` y") == "\\section{A}"
-    assert extract_latex("```tex\nhi\n```") == "hi"
-    assert extract_latex("no code here") == ""
+def test_extract_latex_insert_mode():
+    assert extract_latex("x ```latex\n\\section{A}\n``` y") == (
+        "insert", "\\section{A}")
+    assert extract_latex("```tex\nhi\n```") == ("insert", "hi")
+    assert extract_latex("no code here") == ("insert", "")
 
 
-def test_extract_latex_joins_multiple_blocks():
+def test_extract_latex_joins_multiple_insert_blocks():
     reply = "```latex\n\\section{A}\n```\nand\n```latex\ntext\n```"
-    assert extract_latex(reply) == "\\section{A}\n\ntext"
+    assert extract_latex(reply) == ("insert", "\\section{A}\n\ntext")
+
+
+def test_extract_latex_rewrite_sentinel():
+    reply = ("Reordered.\n\n```latex\n% REWRITE\n"
+             "\\section{B}\n\n\\section{A}\n```")
+    mode, latex = extract_latex(reply)
+    assert mode == "rewrite"
+    # the sentinel line is stripped; the full new body remains
+    assert latex.startswith("\\section{B}")
+    assert "% REWRITE" not in latex
+
+
+def test_extract_latex_rewrite_sentinel_variants():
+    for line in ("% REWRITE", "%rewrite", "% REPLACE", "% replace-all",
+                 "%  Replace All  the body"):
+        mode, _ = extract_latex(f"```latex\n{line}\n\\section{{X}}\n```")
+        assert mode == "rewrite", line
 
 
 # --------------------------- fragment importer ---------------------------
@@ -76,20 +94,25 @@ def test_import_body_fragment_empty():
     assert import_body_fragment("   \n  ") == []
 
 
-# --------------------------- document summary ----------------------------
+# --------------------------- document context ----------------------------
 
-def test_document_summary_empty():
+def test_document_body_latex_empty():
     doc = Document(children=[], meta=DocMeta())
-    assert "nothing yet" in document_summary(doc)
+    assert "empty" in document_body_latex(doc)
 
 
-def test_document_summary_lists_headings():
+def test_document_body_latex_serializes_body():
     doc = Document(meta=DocMeta(), children=[
         Title(children=[Text(text="My Paper")]),
         Section(children=[Text(text="Methods")]),
+        Paragraph(children=[Text(text="We did science.")]),
     ])
-    summary = document_summary(doc)
-    assert "My Paper" in summary and "Methods" in summary
+    body = document_body_latex(doc)
+    # body-only: the section and prose are present; no preamble/title macros
+    assert "\\section{Methods}" in body
+    assert "We did science." in body
+    assert "\\documentclass" not in body
+    assert "\\title" not in body
 
 
 # ------------------------- provider request shaping ----------------------
@@ -215,3 +238,41 @@ def test_insert_blocks_appends_after_existing(qapp):
     assert any(isinstance(b, Paragraph) and
                b.children and b.children[0].text == "Existing."
                for b in out.children)
+
+
+def _section_names(doc):
+    return [b.children[0].text for b in doc.children
+            if isinstance(b, Section) and b.children]
+
+
+def test_replace_body_reorders_and_deletes(qapp):
+    # The core of what the AI could not do before: move/reorder/dedupe.
+    from khervedoc.editor import DocumentEditor
+    ed = DocumentEditor()
+    ed.set_document(Document(meta=DocMeta(), children=[
+        Section(children=[Text(text="Conclusion")]),
+        Section(children=[Text(text="Availability")]),
+        Section(children=[Text(text="Conclusion")]),   # duplicate
+    ]))
+    # Rewrite: single Conclusion, placed before Availability.
+    ed.replace_body(import_body_fragment(
+        "\\section{Conclusion}\n\n\\section{Availability}"))
+    assert _section_names(ed.get_document()) == ["Conclusion", "Availability"]
+
+
+def test_replace_body_preserves_title_and_author(qapp):
+    from khervedoc.editor import DocumentEditor
+    from khervedoc.model import Author
+    ed = DocumentEditor()
+    ed.set_document(Document(meta=DocMeta(), children=[
+        Title(children=[Text(text="My Paper")]),
+        Author(children=[Text(text="Jane Doe")]),
+        Section(children=[Text(text="Old")]),
+    ]))
+    ed.replace_body(import_body_fragment("\\section{New}"))
+    out = ed.get_document()
+    assert any(isinstance(b, Title) and b.children[0].text == "My Paper"
+               for b in out.children)
+    assert any(isinstance(b, Author) and b.children[0].text == "Jane Doe"
+               for b in out.children)
+    assert _section_names(out) == ["New"]           # body replaced
