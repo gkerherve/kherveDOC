@@ -914,14 +914,19 @@ class MainWindow(QMainWindow):
         self._project_sidebar.addChapterRequested.connect(self._add_chapter_to_project)
         self._project_sidebar.compileRequested.connect(self._compile_project)
 
-        # AI chat side panel (hidden until toggled from the View menu or
-        # Ctrl+7). Writes generated LaTeX straight into the visual editor.
+        # AI chat side panel. Visible by default (persisted per user);
+        # toggled from the toolbar sparkle button, the View menu or Ctrl+7.
+        # Writes generated LaTeX straight into the visual editor.
         self._ai_dock = AiDock(lambda: self._editor, self)
         self._ai_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self.addDockWidget(Qt.RightDockWidgetArea, self._ai_dock)
-        self._ai_dock.hide()
-        self._ai_dock.toggleViewAction().setText("AI &Chat")
-        self._ai_dock.toggleViewAction().setShortcut(QKeySequence("Ctrl+7"))
+        self._ai_dock.setVisible(
+            self._settings.value("ai_dock_visible", True, bool))
+        self._act_ai_chat = self._ai_dock.toggleViewAction()
+        self._act_ai_chat.setText("AI &Chat")
+        self._act_ai_chat.setShortcut(QKeySequence("Ctrl+7"))
+        self._act_ai_chat.setIcon(icons.ai_chat())
+        self._act_ai_chat.setToolTip("Show or hide the AI chat panel (Ctrl+7)")
 
         self._status = QStatusBar(self)
         self.setStatusBar(self._status)
@@ -1898,6 +1903,8 @@ class MainWindow(QMainWindow):
         tb.addAction(self.act_reject_comment)
         tb.addSeparator()
         tb.addAction(self.act_commit_now); tb.addAction(self.act_history)
+        tb.addSeparator()
+        tb.addAction(self._act_ai_chat)
 
         # Right-aligned compile buttons: push them to the far right
         # with a stretching spacer widget.
@@ -2028,6 +2035,12 @@ class MainWindow(QMainWindow):
         self._settings.setValue("theme_name", self._theme_name)
         self._settings.setValue("theme_dark", self._is_dark)
         self._settings.setValue("side_by_side", self._side_by_side)
+        if self.isVisible():
+            # Only trust the dock state when the window was actually shown;
+            # an offscreen construct-and-close (tests) would persist False
+            # and silently hide the panel for real sessions.
+            self._settings.setValue("ai_dock_visible",
+                                    self._ai_dock.isVisible())
         self._settings.setValue("fit_page_width", self._editor.fit_to_width())
         # Persist document-default preferences so new documents start
         # with the user's preferred font size, family, margins etc.
@@ -3197,6 +3210,7 @@ class MainWindow(QMainWindow):
         self.act_equation_builder.setIcon(icons.equation_builder())
         self.act_chemistry.setIcon(icons.chemistry())
         self.act_chemfig.setIcon(icons.chemfig_structure())
+        self._act_ai_chat.setIcon(icons.ai_chat())
         self.act_pagebreak.setIcon(icons.page_break())
         self.act_hrule.setIcon(icons.horizontal_rule())
         self.act_commit_now.setIcon(icons.commit())
@@ -3302,7 +3316,13 @@ class MainWindow(QMainWindow):
         dlg = EquationEditorDialog(self)
         if dlg.exec() == QDialog.Accepted:
             latex = dlg.latex()
-            if latex:
+            if not latex:
+                return
+            if dlg.is_display():
+                # \begin{equation} (numbered) unless the template already
+                # carries its own environment (align, cases, ...).
+                self._editor.insert_math_block_with(latex, numbered=True)
+            else:
                 self._apply_equation_template(latex)
 
     def _apply_equation_template(self, latex: str) -> None:
@@ -3329,7 +3349,7 @@ class MainWindow(QMainWindow):
             meta.packages.append("mhchem")
             self._editor.set_meta(meta)
         if dlg.is_display():
-            self._editor.insert_math_block_with(latex)
+            self._editor.insert_math_block_with(latex, numbered=True)
         else:
             self._editor.insert_inline_math_with(latex)
 

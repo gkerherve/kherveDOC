@@ -116,6 +116,10 @@ def _render_math_image(latex: str, font_size: int = 14,
         _MATH_IMAGE_CACHE[latex] = None
         return None
     # Translate LaTeX commands that mathtext doesn't know about.
+    # \square (the palette placeholder) renders as a bullet, matching the
+    # equation-editor preview — otherwise an equation inserted with an
+    # unfilled slot showed no picture at all in the Visual view.
+    raw = raw.replace("\\square", "\\bullet")
     raw = raw.replace("\\tfrac", "\\frac")
     raw = raw.replace("\\dfrac", "\\frac")
     raw = raw.replace("\\text{", "\\mathrm{")
@@ -261,6 +265,11 @@ _P_RAW = QTextCharFormat.UserProperty + 6       # value = raw LaTeX source
 _P_HIGHLIGHT = QTextCharFormat.UserProperty + 7  # value = color name
 _P_COMMENT = QTextCharFormat.UserProperty + 8    # value = "note|author|timestamp|resolved"
 _P_RAW_BLOCK = QTextCharFormat.UserProperty + 9  # original RawLatex source on block format
+# Block-format properties for math blocks. Without them every visual edit
+# demoted \begin{equation} to equation* and dropped the \label{} — the
+# block text only carries the LaTeX body.
+_P_MATH_NUMBERED = QTextCharFormat.UserProperty + 10  # value = bool
+_P_MATH_LABEL = QTextCharFormat.UserProperty + 11     # value = label str
 
 
 # ---- block payload storage (figures/tables/raw) ----
@@ -1212,7 +1221,11 @@ class DocumentEditor(QWidget):
                 text = block.text()
                 if state == _STATE_MATH_BLOCK:
                     raw = text.replace("\ufffc", "").strip(_LINE_SEP).strip()
-                    blocks.append(MathBlock(latex=raw.replace(_LINE_SEP, "\n")))
+                    bf = block.blockFormat()
+                    blocks.append(MathBlock(
+                        latex=raw.replace(_LINE_SEP, "\n"),
+                        numbered=bool(bf.property(_P_MATH_NUMBERED)),
+                        label=bf.property(_P_MATH_LABEL) or None))
                 elif state == _STATE_FIGURE:
                     blocks.append(self._figure_from_stub(text))
                 elif state == _STATE_TABLE:
@@ -1312,6 +1325,11 @@ class DocumentEditor(QWidget):
                 self._insert_inline(cursor, inline, base_format=body_fmt)
         elif isinstance(block, MathBlock):
             cursor.block().setUserState(_STATE_MATH_BLOCK)
+            bfmt = cursor.blockFormat()
+            bfmt.setProperty(_P_MATH_NUMBERED, bool(block.numbered))
+            if block.label:
+                bfmt.setProperty(_P_MATH_LABEL, block.label)
+            cursor.setBlockFormat(bfmt)
             self._insert_math_image(cursor, block.latex)
             visible = block.latex.replace("\n", _LINE_SEP)
             cursor.insertText(visible, _math_block_char_format())
@@ -2282,19 +2300,23 @@ class DocumentEditor(QWidget):
     def insert_math_block(self) -> None:
         latex, ok = QInputDialog.getMultiLineText(self, "Insert math block", "LaTeX:")
         if ok and latex.strip():
-            self.insert_math_block_with(latex)
+            # The in-app help promises a *numbered* display equation.
+            self.insert_math_block_with(latex, numbered=True)
 
-    def insert_math_block_with(self, latex: str) -> None:
+    def insert_math_block_with(self, latex: str, numbered: bool = False) -> None:
         """Insert a display math block at the cursor without prompting.
         Used by the equation builder so multi-line templates drop in
-        directly."""
+        directly. `numbered` makes it a \\begin{equation} (not equation*)
+        on serialization."""
         if not latex.strip():
             return
         c = self._edit.textCursor()
         c.beginEditBlock()
         c.insertBlock()
         c.block().setUserState(_STATE_MATH_BLOCK)
-        c.setBlockFormat(QTextBlockFormat())
+        bfmt = QTextBlockFormat()
+        bfmt.setProperty(_P_MATH_NUMBERED, numbered)
+        c.setBlockFormat(bfmt)
         self._insert_math_image(c, latex)
         c.insertText(latex.replace("\n", _LINE_SEP), _math_block_char_format())
         c.insertBlock(); c.block().setUserState(_STATE_PARAGRAPH)

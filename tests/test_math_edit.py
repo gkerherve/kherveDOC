@@ -293,3 +293,50 @@ def test_clicking_ordinary_math_does_not_open_the_chemistry_editor(
     e.set_document(_doc())
     _click(e, 2)
     assert opened == []
+
+
+# ------------------------------------------------- numbered display blocks
+
+def test_numbered_math_block_survives_the_editor(qapp):
+    # \begin{equation} + \label used to demote to equation* (and lose the
+    # label) after ANY visual edit — the block text only carries the body.
+    e = DocumentEditor()
+    e.set_document(Document(meta=DocMeta(title="T"), children=[
+        MathBlock(latex="E=mc^2", numbered=True, label="eq:emc"),
+    ]))
+    out = [b for b in e.get_document().children if isinstance(b, MathBlock)]
+    assert out and out[0].numbered is True
+    assert out[0].label == "eq:emc"
+    tex = serialize_document(e.get_document())
+    assert r"\begin{equation}" in tex
+    assert r"\begin{equation*}" not in tex
+
+
+def test_insert_math_block_with_numbered_flag(qapp):
+    e = DocumentEditor()
+    e.set_document(Document(meta=DocMeta(title="T"), children=[
+        Paragraph(children=[Text(text="x")]),
+    ]))
+    e.insert_math_block_with(r"a^2+b^2=c^2", numbered=True)
+    blocks = [b for b in e.get_document().children if isinstance(b, MathBlock)]
+    assert blocks and blocks[0].numbered is True
+    assert r"\begin{equation}" in serialize_document(e.get_document())
+
+
+def test_unnumbered_insert_stays_starred(qapp):
+    e = DocumentEditor()
+    e.set_document(Document(meta=DocMeta(title="T"), children=[
+        Paragraph(children=[Text(text="x")]),
+    ]))
+    e.insert_math_block_with(r"a=b")
+    blocks = [b for b in e.get_document().children if isinstance(b, MathBlock)]
+    assert blocks and blocks[0].numbered is False
+    assert r"\begin{equation*}" in serialize_document(e.get_document())
+
+
+def test_placeholder_square_still_renders_a_preview_image(qapp):
+    # \square is unknown to mathtext; without the \bullet substitution an
+    # equation inserted with an unfilled slot showed no picture at all.
+    from khervedoc.editor import _render_math_image
+    png = _render_math_image(r"\left( X^{\square} \right)")
+    assert png is not None and png.exists()

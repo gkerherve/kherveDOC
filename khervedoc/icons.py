@@ -1047,3 +1047,28 @@ def compile_range() -> QIcon:
     p.drawLine(QPointF(5, 14), QPointF(14, 14))
     p.end()
     return QIcon(px)
+
+
+def ai_chat() -> QIcon:
+    """Chat bubble with a four-point sparkle — the AI assistant panel."""
+    px, p = _new_canvas()
+    # Speech bubble: rounded rect + small tail.
+    p.setPen(QPen(_fg(), 1.6)); p.setBrush(Qt.NoBrush)
+    p.drawRoundedRect(QRectF(3, 3.5, 18, 13), 4, 4)
+    tail = QPainterPath(QPointF(7.5, 16.2))
+    tail.lineTo(QPointF(7.5, 20.5))
+    tail.lineTo(QPointF(12, 16.4))
+    p.setBrush(QBrush(_fg())); p.setPen(Qt.NoPen)
+    p.drawPath(tail)
+    # Four-point sparkle inside the bubble.
+    from math import cos, radians, sin
+    cx, cy, r_out, r_in = 12.0, 10.0, 4.6, 1.5
+    pts = []
+    for i in range(8):
+        r = r_out if i % 2 == 0 else r_in
+        ang = radians(i * 45.0)
+        pts.append(QPointF(cx + r * sin(ang), cy - r * cos(ang)))
+    p.setBrush(QBrush(_accent())); p.setPen(Qt.NoPen)
+    p.drawPolygon(QPolygonF(pts))
+    p.end()
+    return QIcon(px)

@@ -11,11 +11,13 @@ import tempfile
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QIcon, QImage, QPixmap, QTextCursor
+from PySide6.QtGui import (
+    QColor, QIcon, QImage, QPixmap, QTextCharFormat, QTextCursor,
+)
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QDialog, QDialogButtonBox, QFrame, QGridLayout,
-    QLabel, QPlainTextEdit, QScrollArea, QStackedWidget, QToolButton,
-    QVBoxLayout, QWidget,
+    QLabel, QPlainTextEdit, QScrollArea, QStackedWidget, QTextEdit,
+    QToolButton, QVBoxLayout, QWidget,
 )
 
 from . import chemfig, chemistry, equations, icons
@@ -28,12 +30,70 @@ class _EquationLatexEdit(QPlainTextEdit):
     """LaTeX input field that intercepts Tab/Shift+Tab to navigate
     between placeholder slots instead of inserting tab chars.
 
+    Placeholders are first-class here: every occurrence is highlighted so
+    the user can see the empty slots at a glance, and a single click on
+    one selects the whole token so typing replaces it — no more manually
+    dragging over ``\\square`` character by character.
+
     The slot token is configurable because mhchem chokes on a bare
     ``\\square`` — see ``chemistry.PLACEHOLDER``."""
 
     def __init__(self, placeholder: str = r"\square", parent=None):
         super().__init__(parent)
         self._PLACEHOLDER = placeholder
+        self.textChanged.connect(self._highlight_placeholders)
+
+    # ---- placeholder plumbing ----
+
+    def placeholder_spans(self) -> list[tuple[int, int]]:
+        """(start, end) of every placeholder occurrence in the source."""
+        text = self.toPlainText()
+        ph = self._PLACEHOLDER
+        spans = []
+        idx = text.find(ph)
+        while idx >= 0:
+            spans.append((idx, idx + len(ph)))
+            idx = text.find(ph, idx + len(ph))
+        return spans
+
+    def _highlight_placeholders(self) -> None:
+        sels = []
+        for start, end in self.placeholder_spans():
+            sel = QTextEdit.ExtraSelection()
+            fmt = QTextCharFormat()
+            fmt.setBackground(QColor("#cfe4fb"))
+            fmt.setForeground(QColor("#1a4d8f"))
+            sel.format = fmt
+            cur = self.textCursor()
+            cur.setPosition(start)
+            cur.setPosition(end, QTextCursor.KeepAnchor)
+            sel.cursor = cur
+            sels.append(sel)
+        self.setExtraSelections(sels)
+
+    def _select_placeholder_at(self, pos: int) -> bool:
+        """Select the placeholder containing (or ending at) *pos*."""
+        for start, end in self.placeholder_spans():
+            if start <= pos <= end:
+                cur = self.textCursor()
+                cur.setPosition(start)
+                cur.setPosition(end, QTextCursor.KeepAnchor)
+                self.setTextCursor(cur)
+                return True
+        return False
+
+    def mouseReleaseEvent(self, ev):
+        super().mouseReleaseEvent(ev)
+        # Only promote a plain click to a placeholder selection; keep
+        # drag-selections exactly as the user made them.
+        if not self.textCursor().hasSelection():
+            self._select_placeholder_at(self.textCursor().position())
+
+    def mouseDoubleClickEvent(self, ev):
+        cur = self.cursorForPosition(ev.position().toPoint())
+        if self._select_placeholder_at(cur.position()):
+            return
+        super().mouseDoubleClickEvent(ev)
 
     def keyPressEvent(self, ev):
         if ev.key() == Qt.Key_Tab and not ev.modifiers():
@@ -205,6 +265,13 @@ class _TemplatePaletteDialog(QDialog):
         self._edit.setPlaceholderText(self._EDIT_HINT)
         root.addWidget(self._edit)
 
+        # ---- placeholder hint (live count + how to fill them) ----
+        self._ph_hint = QLabel()
+        self._ph_hint.setStyleSheet("color: #888; font-size: 8pt;")
+        root.addWidget(self._ph_hint)
+        self._edit.textChanged.connect(self._update_placeholder_hint)
+        self._update_placeholder_hint()
+
         self._extra_widgets(root)
 
         # ---- Insert / Cancel buttons ----
@@ -222,12 +289,25 @@ class _TemplatePaletteDialog(QDialog):
         self._preview_timer.timeout.connect(self._update_preview)
         self._edit.textChanged.connect(self._preview_timer.start)
 
-        # Seed with initial LaTeX if provided
+        # Seed with initial LaTeX if provided, with the first empty slot
+        # pre-selected so the user can start typing straight away.
         if initial_latex:
             self._edit.setPlainText(initial_latex)
+            self._edit._jump_placeholder(forward=True)
+            self._edit.setFocus()
 
     def latex(self) -> str:
         return self._edit.toPlainText().strip()
+
+    def _update_placeholder_hint(self) -> None:
+        n = len(self._edit.placeholder_spans())
+        if n:
+            plural = "s" if n != 1 else ""
+            self._ph_hint.setText(
+                f"{n} empty slot{plural} — click one (or press Tab) to "
+                "select it, then type to fill it in.")
+        else:
+            self._ph_hint.setText("")
 
     # ---- category / template plumbing (reused from old builder) ----
 
@@ -328,6 +408,25 @@ class EquationEditorDialog(_TemplatePaletteDialog):
 
     def _render_live(self, latex: str):
         return equations.render_live_preview(latex)
+
+    def __init__(self, parent=None, initial_latex: str = ""):
+        super().__init__(parent, initial_latex)
+        if initial_latex:
+            # Double-click re-edit replaces the equation in place, so
+            # whether it is inline or display is already decided.
+            self._display_cb.hide()
+
+    def _extra_widgets(self, root: QVBoxLayout) -> None:
+        # Checked by default: the builder is for real display equations
+        # (\begin{equation} in the LaTeX); quick inline math already has
+        # its own Ctrl+M path.
+        self._display_cb = QCheckBox(
+            "Display on its own line (numbered \\begin{equation})")
+        self._display_cb.setChecked(True)
+        root.addWidget(self._display_cb)
+
+    def is_display(self) -> bool:
+        return self._display_cb.isChecked()
 
 
 class ChemistryEditorDialog(_TemplatePaletteDialog):
