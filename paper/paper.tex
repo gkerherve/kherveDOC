@@ -1,0 +1,51 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[hidelinks]{hyperref}
+\usepackage{parskip}
+
+\title{KherveTeX (kherveDOC): A WYSIWYG LaTeX Document Editor\\with Git-Based Version History}
+\author{Gwilherm Kerhervé\thanks{ORCID: 0000-0002-6449-1828, \texttt{g.kerherve@imperial.ac.uk}}\\
+\small Department of Materials, Imperial College London, London SW7 2AZ, United Kingdom}
+\date{10 July 2026 --- Version 0.153}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+KherveTeX (repository name \texttt{kherveDOC}) is an open-source WYSIWYG document editor that produces publication-quality PDFs via LaTeX. Documents are edited on a Word-style paginated surface backed by a typed document model; on every edit the model is serialised to LaTeX and compiled with the \texttt{tectonic} engine, giving a live PDF preview. The editor supports inline and display mathematics, figures, tables, citations, cross-references, footnotes, and import of \texttt{.docx} and \texttt{.tex} files. Every document carries its own Git repository with auto-commit on save and optional push to a remote. KherveTeX is written in Python with PySide6 and released under the GNU General Public License v3.0 at \url{https://github.com/gkerherve/kherveDOC}.
+\end{abstract}
+
+\section{Statement of need}
+
+Scientific writing is split between two workflows. Word processors are approachable but offer weak support for mathematics, cross-referencing and consistent typography; LaTeX produces excellent documents but presents a steep learning curve that excludes many students and experimentalists. Bridging tools exist --- LyX~\cite{lyx} and TeXmacs~\cite{texmacs} pioneered structured WYSIWYG editing, and Overleaf moved LaTeX into the browser --- yet there remains room for a lightweight, native editor that (i) looks and behaves like a familiar word processor, (ii) keeps human-readable LaTeX as its archival output, and (iii) records the full history of a document automatically.
+
+KherveTeX addresses this gap. It was developed to let researchers and students who have never written LaTeX produce properly typeset reports, theses and manuscripts, while still emitting clean \texttt{.tex} sources that collaborators or journals can consume directly. The built-in Git history removes the ``\texttt{report\_final\_v3\_REALLY\_final.docx}'' problem: every save is a commit, and the history viewer allows any previous state to be inspected or restored.
+
+\section{Functionality}
+
+The editing surface is a Word-style page card rendered at real A4, Letter or Legal dimensions, with dashed page-break lines at every layout pagination. Users write with a paragraph-style picker (Body, Title, Headings 1--5) and inline marks (bold, italic, underline, strikethrough, code, small caps, sub/superscript). Structured inserts include inline and display mathematics (typed as LaTeX), bulleted and numbered lists, hyperlinks, footnotes, citations (\texttt{cite}/\texttt{citep}/\texttt{citet}), cross-references (\texttt{ref}/\texttt{eqref}/\texttt{pageref}), captioned and labelled figures, tables, page breaks, horizontal rules, and a raw-LaTeX escape hatch for anything not covered by the model.
+
+Three synchronised tabs show the same document as (1) the formatted WYSIWYG view, (2) live, read-only, syntax-highlighted LaTeX source, and (3) the compiled PDF preview. The native format is \texttt{.ktex.json}, a JSON serialisation of the document model, saved alongside a sibling \texttt{.tex}; a bundled \texttt{.ktexz} ZIP format embeds images. Import is supported from \texttt{.tex} (a regex-based subset parser with raw-LaTeX fallback) and from \texttt{.docx} via python-docx, including extraction of embedded images. Export targets \texttt{.tex} and \texttt{.pdf}.
+
+\section{Implementation}
+
+KherveTeX follows a strict model-driven architecture: a typed document tree (Python dataclasses) is the single source of truth. The editor reads and writes the model; a serialiser converts the model to LaTeX; the \texttt{tectonic} engine~\cite{tectonic} compiles it; and PyMuPDF~\cite{pymupdf} rasterises the resulting pages into the preview pane. No component edits LaTeX strings directly. Version control uses pygit2~\cite{pygit2}: each document folder is initialised as its own Git repository, saving auto-commits the human-readable \texttt{.tex}, and pushes to \texttt{origin} on a best-effort basis. The GUI is built with PySide6 (Qt~6). The test suite covers the document model, the LaTeX serialiser and the importers.
+
+\section{Availability}
+
+Source code, a Windows installer and documentation are available at \url{https://github.com/gkerherve/kherveDOC} under the GPL-3.0 license. KherveTeX runs on Python~3.10+ with PySide6, PyMuPDF, pygit2 and the tectonic binary. It is part of the Kherve family of open-source scientific tools, which includes KherveFitting~\cite{khervefitting}, KherveBook and KhervePDF.
+
+\begin{thebibliography}{9}
+\bibitem{lyx} The LyX Team, \emph{LyX --- The Document Processor}, \url{https://www.lyx.org}.
+\bibitem{texmacs} J.~van der Hoeven, \emph{GNU TeXmacs: A free, structured, wysiwyg and technical text editor}, Cahiers GUTenberg 39--40 (2001) 39--50.
+\bibitem{tectonic} P.~K.~G. Williams et al., \emph{Tectonic: a modernized, complete, self-contained TeX/LaTeX engine}, \url{https://tectonic-typesetting.github.io}.
+\bibitem{pymupdf} J.~X. McKie, \emph{PyMuPDF: Python bindings for MuPDF}, \url{https://github.com/pymupdf/PyMuPDF}.
+\bibitem{pygit2} \emph{pygit2: Python bindings for libgit2}, \url{https://www.pygit2.org}.
+\bibitem{khervefitting} G.~Kerhervé, D.~J. Payne, \emph{KherveFitting: An Open Source Software for Fitting X-Ray Photoelectron Spectroscopy Data}, Surf. Interface Anal. (2026), doi:10.1002/sia.70032.
+\end{thebibliography}
+
+\end{document}

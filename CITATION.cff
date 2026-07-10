@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "KherveTeX (kherveDOC): A WYSIWYG LaTeX document editor with Git-based version history"
+authors:
+  - family-names: "Kerhervé"
+    given-names: "Gwilherm"
+    orcid: "https://orcid.org/0000-0002-6449-1828"
+    affiliation: "Department of Materials, Imperial College London"
+version: "0.153"
+date-released: "2026-07-10"
+license: GPL-3.0
+repository-code: "https://github.com/gkerherve/kherveDOC"
+keywords:
+  - LaTeX
+  - WYSIWYG editor
+  - document preparation
+  - scientific writing
+  - tectonic
+  - version control
+abstract: >-
+  KherveTeX (kherveDOC) is an open-source WYSIWYG document editor that
+  produces publication-quality PDFs via LaTeX. Documents are edited on a
+  Word-style page surface backed by a typed document model, serialised to
+  LaTeX and compiled live with the tectonic engine. It supports inline and
+  display mathematics, figures, tables, citations, cross-references,
+  footnotes, .docx and .tex import, and per-document Git version history
+  with auto-commit and push.

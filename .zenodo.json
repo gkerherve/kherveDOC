@@ -1,0 +1,22 @@
+{
+  "title": "KherveTeX (kherveDOC): A WYSIWYG LaTeX document editor with Git-based version history",
+  "upload_type": "software",
+  "creators": [
+    {
+      "name": "Kerhervé, Gwilherm",
+      "orcid": "0000-0002-6449-1828",
+      "affiliation": "Department of Materials, Imperial College London"
+    }
+  ],
+  "description": "<p>KherveTeX (kherveDOC) is an open-source WYSIWYG document editor that produces publication-quality PDFs via LaTeX. Documents are edited on a Word-style page surface backed by a typed document model, serialised to LaTeX and compiled live with the tectonic engine. It supports inline and display mathematics, figures, tables, citations, cross-references, footnotes, .docx and .tex import, and per-document Git version history with auto-commit and push.</p>",
+  "license": "GPL-3.0-or-later",
+  "access_right": "open",
+  "keywords": ["LaTeX", "WYSIWYG editor", "document preparation", "scientific writing", "tectonic", "version control", "Python", "PySide6"],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/gkerherve/kherveDOC",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    }
+  ]
+}
