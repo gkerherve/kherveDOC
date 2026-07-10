@@ -140,7 +140,12 @@ def serialize_inline(node: Inline) -> str:
     if isinstance(node, MathInline):
         return f"${node.latex}$"
     if isinstance(node, Link):
-        body = serialize_inlines(node.children) or escape_text(node.url)
+        body = serialize_inlines(node.children)
+        # A bare URL (no distinct display text) is emitted as \url{} so a
+        # long address can wrap (with xurl) rather than overflow the margin
+        # — \href's display text does not break. Custom text keeps \href.
+        if not body or body == escape_text(node.url):
+            return f"\\url{{{node.url}}}"
         return f"\\href{{{node.url}}}{{{body}}}"
     if isinstance(node, Footnote):
         return f"\\footnote{{{serialize_inlines(node.children)}}}"
@@ -310,6 +315,19 @@ def serialize_block(node: Block, *, has_chapters: bool = False,
         return serialize_inlines(node.children)
 
     raise TypeError(f"Unknown block node: {type(node).__name__}")
+
+
+def _with_url_breaking(packages: str, *scanned: str) -> str:
+    r"""Append ``\usepackage{xurl}`` when the document emits a URL.
+
+    ``url`` (and hence ``\url`` / ``\href``) refuses to break a link
+    mid-token, so a long address overflows the right margin. xurl lets it
+    wrap anywhere. Added only when a URL is actually present, and never
+    twice. Loading it after hyperref is fine — xurl supports either order."""
+    combined = "".join(scanned)
+    if ("\\url" in combined or "\\href" in combined) and "xurl" not in packages:
+        return packages + "\n\\usepackage{xurl}"
+    return packages
 
 
 # --- Review-feature helpers (highlight / comment package injection) ---
@@ -597,6 +615,7 @@ def serialize_document(doc: Document) -> str:
         if getattr(m, "column_count", 1) >= 3:
             body = _wrap_multicols(body, m.column_count)
 
+        packages = _with_url_breaking(packages, packages, frontmatter, body)
         return (
             f"{_documentclass_line(m)}\n"
             f"{packages}\n"
@@ -728,6 +747,7 @@ def serialize_document(doc: Document) -> str:
     if getattr(m, "column_count", 1) >= 3:
         body = _wrap_multicols(body, m.column_count)
 
+    packages = _with_url_breaking(packages, packages, preamble_meta, body)
     return (
         f"{_documentclass_line(m)}\n"
         f"{packages}\n"

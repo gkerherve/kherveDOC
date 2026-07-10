@@ -86,9 +86,24 @@ def test_link_serializes_with_href():
     assert serialize_inline(n) == r"\href{https://example.com}{click here}"
 
 
-def test_link_without_children_uses_url_as_text():
+def test_link_without_children_uses_bare_url():
+    # Bare URL -> \url{} so a long address can wrap instead of overflowing.
     assert serialize_inline(Link(url="https://x.com", children=[])) == \
-        r"\href{https://x.com}{https://x.com}"
+        r"\url{https://x.com}"
+    assert serialize_inline(
+        Link(url="https://x.com", children=[Text(text="https://x.com")])) == \
+        r"\url{https://x.com}"
+
+
+def test_document_with_url_loads_xurl():
+    doc = Document(
+        meta=DocMeta(title="T"),
+        children=[Title(children=[Text(text="T")]),
+                  Paragraph(children=[Link(url="https://example.com/very/long", children=[])])],
+    )
+    out = serialize_document(doc)
+    assert "\\usepackage{xurl}" in out
+    assert "\\url{https://example.com/very/long}" in out
 
 
 def test_footnote_serializes():
